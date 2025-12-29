@@ -8,8 +8,12 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     cors_origins: list[str] = []
 
+    database_url: str
+    sqlalchemy_echo: bool = False
+    data_dir: str = "./data"
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
