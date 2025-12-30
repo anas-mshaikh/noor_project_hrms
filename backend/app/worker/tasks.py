@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.models.models import Job, Video
+from app.models.models import Job, Video, Camera, Employee
 from app.worker.rollup import (
     get_related_job_ids,
     get_store_day_context,

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 from uuid import UUID
 
-import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.models.models import (
@@ -29,7 +28,8 @@ def _pair_sessions(
     events: list[Event],
 ) -> tuple[list[tuple[datetime, datetime]], dict[str, Any]]:
     """
-    Greedy pairing of entry/exit in time order, using both observed and inferred events.
+    Greedy pairing of entry/exit in time order, using both observed and
+    inferred events.
     Returns (sessions, anomalies_partial).
     """
     anomalies: dict[str, Any] = {}
@@ -94,11 +94,16 @@ def recompute_attendance_for_store_day(
         inferred_entries = [
             e.ts for e in emp_events if e.event_type == "entry" and e.is_inferred
         ]
-        punch_in = (
-            min(observed_entries)
-            if observed_entries
-            else (min(inferred_entries) if inferred_entries else None)
-        )
+
+        if observed_entries:
+            punch_in = min(observed_entries)
+            punch_in_is_inferred = False
+        elif inferred_entries:
+            punch_in = min(inferred_entries)
+            punch_in_is_inferred = True
+        else:
+            punch_in = None
+            punch_in_is_inferred = False
 
         # Punch-out priority: observed exit -> inferred exit -> None
         observed_exits = [
@@ -107,22 +112,32 @@ def recompute_attendance_for_store_day(
         inferred_exits = [
             e.ts for e in emp_events if e.event_type == "exit" and e.is_inferred
         ]
-        punch_out = (
-            max(observed_exits)
-            if observed_exits
-            else (max(inferred_exits) if inferred_exits else None)
-        )
+
+        if observed_exits:
+            punch_out = max(observed_exits)
+            punch_out_is_inferred = False
+        elif inferred_exits:
+            punch_out = max(inferred_exits)
+            punch_out_is_inferred = True
+        else:
+            punch_out = None
+            punch_out_is_inferred = False
 
         sessions, anomalies = _pair_sessions(emp_events)
-
         if punch_in is None and punch_out is None:
             anomalies = {"absent": True}
-            total_minutes: int | None = 0
+            total_minutes = 0
         else:
-            if punch_in is None:
+            # “missing_*” means “we did not OBSERVE a clean event”
+            if punch_in is None or punch_in_is_inferred:
                 anomalies["missing_entry"] = True
-            if punch_out is None:
+                if punch_in_is_inferred:
+                    anomalies["inferred_entry"] = True
+
+            if punch_out is None or punch_out_is_inferred:
                 anomalies["missing_exit"] = True
+                if punch_out_is_inferred:
+                    anomalies["inferred_exit"] = True
 
             if sessions:
                 total_minutes = int(
