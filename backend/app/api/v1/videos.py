@@ -9,6 +9,11 @@ finalize computes sha256 (useful for dedupe/audit); worker can fill fps/
 duration later.
 """
 
+import json
+import subprocess
+from fractions import Fraction
+from typing import Any
+
 import hashlib
 from datetime import date, datetime
 from pathlib import Path
@@ -50,6 +55,39 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _parse_rate(rate: str | None) -> float | None:
+    """
+    ffprobe returns fps as a fraction string (e.g. "30000/1001").
+    """
+    if not rate:
+        return None
+    try:
+        return float(Fraction(rate))
+    except Exception:
+        return None
+
+
+def _ffprobe_video(path: Path) -> dict[str, Any]:
+    """
+    Uses ffprobe to extract video metadata.
+    ffprobe must be installed on the server (it’s part of ffmpeg).
+    """
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height,avg_frame_rate,r_frame_rate,duration:format=duration",
+        "-of",
+        "json",
+        str(path),
+    ]
+    out = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    return json.loads(out.stdout)
 
 
 class VideoInitRequest(BaseModel):
@@ -154,6 +192,29 @@ def finalize_video(
         raise HTTPException(status_code=400, detail="Video file not uploaded yet")
 
     video.sha256 = _sha256_file(path)
+
+    # Fill metadata (best-effort).
+    # If ffprobe fails, we keep sha256 but don't block finalize.
+    try:
+        meta = _ffprobe_video(path)
+        streams = meta.get("streams") or []
+        stream0 = streams[0] if streams else {}
+        fmt = meta.get("format") or {}
+
+        video.width = stream0.get("width")
+        video.height = stream0.get("height")
+
+        fps = _parse_rate(stream0.get("avg_frame_rate")) or _parse_rate(
+            stream0.get("r_frame_rate")
+        )
+        video.fps = fps
+
+        dur = stream0.get("duration") or fmt.get("duration")
+        video.duration_sec = float(dur) if dur is not None else None
+    except Exception:
+        # Keep finalize robust during local dev; you can log this later if needed.
+        pass
+
     db.commit()
     db.refresh(video)
 
@@ -161,4 +222,8 @@ def finalize_video(
         "video_id": str(video.id),
         "sha256": video.sha256,
         "file_path": video.file_path,
+        "fps": video.fps,
+        "duration_sec": video.duration_sec,
+        "width": video.width,
+        "height": video.height,
     }
