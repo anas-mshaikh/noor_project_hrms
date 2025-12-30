@@ -184,6 +184,9 @@ class Video(Base):
     fps: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     width: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    recorded_start_ts: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
 
     uploaded_by: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(

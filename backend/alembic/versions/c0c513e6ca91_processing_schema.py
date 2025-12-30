@@ -1,7 +1,7 @@
 """processing schema
 
 Revision ID: c0c513e6ca91
-Revises: c7e0be12984c
+Revises: 4b3b2960cbe7
 Create Date: 2025-12-29 23:24:27.696384
 
 """
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'c0c513e6ca91'
-down_revision: Union[str, Sequence[str], None] = 'c7e0be12984c'
+down_revision: Union[str, Sequence[str], None] = "4b3b2960cbe7"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

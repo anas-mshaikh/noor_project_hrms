@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = []
 
     database_url: str
+    redis_url: str = "redis://localhost:6379/0"
     sqlalchemy_echo: bool = False
     data_dir: str = "./data"
 

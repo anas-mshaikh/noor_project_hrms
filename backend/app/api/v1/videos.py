@@ -1,9 +1,12 @@
 """
 Why this design:
 
-init creates the DB row and decides the final storage path (no path traversal issues).
-upload writes to *.part and then atomically renames → avoids partial file corruption.
-finalize computes sha256 (useful for dedupe/audit); worker can fill fps/duration later.
+init creates the DB row and decides the final storage path (no path
+traversal issues).
+upload writes to *.part and then atomically renames → avoids partial file
+corruption.
+finalize computes sha256 (useful for dedupe/audit); worker can fill fps/
+duration later.
 """
 
 import hashlib
