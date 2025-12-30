@@ -2,8 +2,10 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
+from pathlib import Path
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -16,8 +18,18 @@ from app.models.models import (
     MetricsHourly,
     Video,
 )
+from app.core.config import settings
+from app.models.models import Artifact
+
 
 router = APIRouter(tags=["results"])
+
+
+class ArtifactOut(BaseModel):
+    id: UUID
+    type: str
+    path: str
+    created_at: datetime
 
 
 class EventOut(BaseModel):
@@ -176,3 +188,47 @@ def list_metrics_hourly(
         )
         for m in rows
     ]
+
+
+@router.get("/jobs/{job_id}/artifacts", response_model=list[ArtifactOut])
+def list_artifacts(job_id: UUID, db: Session = Depends(get_db)) -> list[ArtifactOut]:
+    rows = (
+        db.query(Artifact)
+        .filter(Artifact.job_id == job_id)
+        .order_by(Artifact.created_at.asc())
+        .all()
+    )
+    return [
+        ArtifactOut(id=a.id, type=a.type, path=a.path, created_at=a.created_at)
+        for a in rows
+    ]
+
+
+@router.get("/artifacts/{artifact_id}/download")
+def download_artifact(artifact_id: UUID, db: Session = Depends(get_db)) -> FileResponse:
+    """
+    Secure download:
+    - artifact.path is stored as a relative path
+    - we refuse any path that resolves outside settings.data_dir
+    """
+    a = db.get(Artifact, artifact_id)
+    if a is None:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+
+    base = Path(settings.data_dir).resolve()
+    target = (base / a.path).resolve()
+
+    # Prevent path traversal (“../../etc/passwd”)
+    if not target.is_relative_to(base):
+        raise HTTPException(status_code=400, detail="Invalid artifact path")
+
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="Artifact file missing on disk")
+
+    media_type = {
+        "csv": "text/csv",
+        "json": "application/json",
+        "pdf": "application/pdf",
+    }.get(a.type, "application/octet-stream")
+
+    return FileResponse(path=str(target), filename=target.name, media_type=media_type)

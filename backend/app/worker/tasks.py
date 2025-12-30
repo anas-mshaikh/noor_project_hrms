@@ -24,6 +24,7 @@ from app.worker.rollup import (
 )
 from app.worker.pipeline_stub import process_tracks_stub
 from app.worker.zones import ZoneConfig
+from app.worker.artifacts import write_job_artifacts
 
 
 def _utcnow() -> datetime:
@@ -184,6 +185,9 @@ def process_video_job(job_id: str) -> None:
             business_date=business_date,
             job_ids=all_job_ids,
         )
+
+        # Write CSV/JSON exports to disk + insert rows in artifacts table
+        write_job_artifacts(db, job_id=job_uuid)
 
         job = db.get(Job, job_uuid)
         if job is None:
