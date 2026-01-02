@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 zones.py
 
@@ -17,6 +15,8 @@ because that's what actually crosses the door threshold.
 The event engine (event_engine.py) debounces these raw classifications and
 emits ENTRY/EXIT events (observed or inferred).
 """
+
+from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from math import hypot
@@ -24,7 +24,6 @@ from typing import Any
 
 
 # TODO: Research on Frigate's zone implementation
-
 Point = tuple[float, float]
 Polygon = list[Point]
 Polygons = list[Polygon]
@@ -118,33 +117,47 @@ class ZoneConfig:
     masks: Polygons = field(default_factory=list)
 
     @classmethod
-    def from_calibration_json(cls, data: dict[str, Any]) -> "ZoneConfig":
+    def from_calibration_json(
+        cls,
+        data: dict[str, Any],
+        *,
+        target_width: int | None = None,
+        target_height: int | None = None,
+    ) -> "ZoneConfig":
         """
-        Parse cameras.calibration_json.
+        Parse cameras.calibration_json and (optionally) SCALE it to the actual video size.
 
-        We accept a few aliases so your frontend can evolve without breaking the worker.
+        Why scaling matters:
+        - You often draw polygons on a screenshot (e.g. 1280x720)
+        - But the uploaded video might be 1920x1080
+        - If you don't scale, your door line/zones won't match reality.
 
-        Example payload:
-        {
-          "inside_polygon": [[0,0],[200,0],[200,300],[0,300]],
-          "outside_polygon": [[-200,0],[0,0],[0,300],[-200,300]],
-          "entry_line": {"p1":[0,0], "p2":[0,300]},
-          "inside_test_point": [100,150],
-          "neutral_band_px": 12,
-          "gate_polygon": [[-50,0],[50,0],[50,300],[-50,300]],
-          "mask_polygons": [
-            [[500,500],[700,500],[700,700],[500,700]]
-          ]
-        }
+        Supported coordinate styles:
+        1) coord_space="pixel" (default)
+           - points are pixels in the calibration frame
+           - if frame_width/frame_height present AND target_* present, we scale
+
+        2) coord_space="normalized"
+           - points are 0..1 (fractions of width/height)
+           - requires target_width/target_height
         """
-        inside = data.get("inside_polygon", data.get("inside"))
-        outside = data.get("outside_polygon", data.get("outside"))
-        gate = data.get("gate_polygon", data.get("gate"))
-        masks = data.get("mask_polygons", data.get("masks"))
 
+        coord_space = str(data.get("coord_space", "pixel")).lower()
+
+        # Reference frame size (the frame where calibration points were created)
+        ref_w = data.get("frame_width")
+        ref_h = data.get("frame_height")
+
+        # Polygons can be provided with aliases to keep frontend flexible.
+        inside_raw = data.get("inside_polygon", data.get("inside"))
+        outside_raw = data.get("outside_polygon", data.get("outside"))
+        gate_raw = data.get("gate_polygon", data.get("gate"))
+        masks_raw = data.get("mask_polygons", data.get("masks"))
+
+        # Door line can be {"p1": [...], "p2": [...]} OR [[...], [...]]
         entry_line = data.get("entry_line")
         p1 = p2 = None
-        inside_test_point = data.get("inside_test_point")
+        inside_test_point_raw = data.get("inside_test_point")
 
         if entry_line is not None:
             # Accept either {"p1": [...], "p2": [...]} or [[...], [...]]
@@ -157,19 +170,81 @@ class ZoneConfig:
                     raise ValueError("entry_line must have exactly 2 points")
                 p1, p2 = pts[0], pts[1]
 
+        # Neutral band is a pixel distance to the line (UNKNOWN near the line).
         neutral_band_px = float(data.get("neutral_band_px", 10.0))
 
+        # NOTE Optional: if frontend uses normalized coordinates, it can also provide neutral_band_norm.
+        # Example: neutral_band_norm=0.01 => 1% of max(frame_dim)
+        neutral_band_norm = data.get("neutral_band_norm")
+        if neutral_band_norm is not None:
+            if target_width is None or target_height is None:
+                raise ValueError(
+                    "neutral_band_norm requires target_width/target_height"
+                )
+            neutral_band_px = float(neutral_band_norm) * max(
+                float(target_width), float(target_height)
+            )
+
+        # ----------------------------
+        # Decide scaling factors
+        # ----------------------------
+        sx = sy = 1.0
+
+        if coord_space == "normalized":
+            # Points are 0..1 => scale to actual pixels
+            if target_width is None or target_height is None:
+                raise ValueError(
+                    "coord_space=normalized requires target_width/target_height"
+                )
+            sx = float(target_width)
+            sy = float(target_height)
+
+        elif coord_space == "pixel":
+            # Points are pixels in ref frame => scale to actual video size if possible
+            if ref_w and ref_h and target_width and target_height:
+                sx = float(target_width) / float(ref_w)
+                sy = float(target_height) / float(ref_h)
+
+                # Neutral band is also in pixels, so scale it with the frame
+                neutral_band_px *= (sx + sy) / 2.0
+
+        else:
+            raise ValueError("coord_space must be 'pixel' or 'normalized'")
+
+        def scale_point(p: Point | None) -> Point | None:
+            if p is None:
+                return None
+            return (p[0] * sx, p[1] * sy)
+
+        def scale_poly(poly: Polygon | None) -> Polygon | None:
+            if not poly:
+                return None
+            return [(x * sx, y * sy) for (x, y) in poly]
+
+        def scale_polys(polys: Polygons) -> Polygons:
+            out: Polygons = []
+            for poly in polys:
+                if len(poly) < 3:
+                    continue
+                out.append([(x * sx, y * sy) for (x, y) in poly])
+            return out
+
+        inside = scale_poly(_as_polygon(inside_raw) or None)
+        outside = scale_poly(_as_polygon(outside_raw) or None)
+        gate = scale_poly(_as_polygon(gate_raw) or None)
+        masks = scale_polys(_as_polygons(masks_raw))
+
         return cls(
-            inside=_as_polygon(inside) or None,
-            outside=_as_polygon(outside) or None,
-            entry_line_p1=p1,
-            entry_line_p2=p2,
-            inside_test_point=_as_point(inside_test_point)
-            if inside_test_point
+            inside=inside,
+            outside=outside,
+            entry_line_p1=scale_point(p1),
+            entry_line_p2=scale_point(p2),
+            inside_test_point=scale_point(_as_point(inside_test_point_raw))
+            if inside_test_point_raw
             else None,
-            neutral_band_px=neutral_band_px,
-            gate=_as_polygon(gate) or None,
-            masks=_as_polygons(masks),
+            neutral_band_px=float(neutral_band_px),
+            gate=gate,
+            masks=masks,
         )
 
 
@@ -339,3 +414,59 @@ def classify_zone(point: Point, cfg: ZoneConfig) -> Zone:
         return Zone.OUTSIDE
 
     return Zone.UNKNOWN
+
+
+def validate_zone_config(cfg: ZoneConfig) -> tuple[list[str], list[str]]:
+    """
+    Returns (errors, warnings).
+
+    Errors => job should fail (calibration unusable).
+    Warnings => job can run, but results may be unreliable.
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    has_polygons = bool(cfg.inside) or bool(cfg.outside)
+    has_line_any = (cfg.entry_line_p1 is not None) or (cfg.entry_line_p2 is not None)
+    has_line_full = (
+        cfg.entry_line_p1 is not None
+        and cfg.entry_line_p2 is not None
+        and cfg.inside_test_point is not None
+    )
+
+    if not has_polygons and not has_line_full:
+        errors.append(
+            "Calibration must include inside/outside polygons OR entry_line + inside_test_point"
+        )
+
+    # Line validity checks
+    if has_line_any and (cfg.entry_line_p1 is None or cfg.entry_line_p2 is None):
+        errors.append("entry_line must include both p1 and p2")
+
+    if cfg.entry_line_p1 and cfg.entry_line_p2:
+        if cfg.entry_line_p1 == cfg.entry_line_p2:
+            errors.append("entry_line p1 and p2 cannot be identical")
+        if cfg.inside_test_point is None:
+            warnings.append(
+                "inside_test_point missing: door line orientation disabled (line crossing won't work)"
+            )
+        else:
+            d = signed_distance_to_line(
+                cfg.inside_test_point, cfg.entry_line_p1, cfg.entry_line_p2
+            )
+            if abs(d) < 1e-6:
+                errors.append(
+                    "inside_test_point lies on entry_line (cannot orient inside/outside side)"
+                )
+
+    # Helpful warnings (not fatal)
+    if (
+        cfg.inside
+        and cfg.inside_test_point
+        and not point_in_polygon(cfg.inside_test_point, cfg.inside)
+    ):
+        warnings.append(
+            "inside_test_point is NOT inside inside_polygon (check calibration)"
+        )
+
+    return errors, warnings

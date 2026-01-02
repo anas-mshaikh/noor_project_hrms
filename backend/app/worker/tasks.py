@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.models.models import Job, Video, Camera, Employee
+from app.models.models import Camera, Employee, Job, Video
 from app.worker.rollup import (
     get_related_job_ids,
     get_store_day_context,
@@ -23,8 +23,9 @@ from app.worker.rollup import (
     recompute_metrics_hourly_for_job,
 )
 from app.worker.pipeline_stub import process_tracks_stub
-from app.worker.zones import ZoneConfig
+from app.worker.zones import ZoneConfig, validate_zone_config
 from app.worker.artifacts import write_job_artifacts
+from app.worker.identity import assign_identities_for_job
 
 
 def _utcnow() -> datetime:
@@ -112,19 +113,16 @@ def process_video_job(job_id: str) -> None:
         if camera is None:
             raise RuntimeError("Camera not found for video")
 
-        # NOTE: If camera.calibration_json is empty/missing, fall back to a demo calibration.
-        # In production you likely want to *require* calibration and fail loudly.
-        zone_cfg = ZoneConfig.from_calibration_json(camera.calibration_json or {})
-        if not (
-            zone_cfg.inside
-            or zone_cfg.outside
-            or (
-                zone_cfg.entry_line_p1
-                and zone_cfg.entry_line_p2
-                and zone_cfg.inside_test_point
-            )
-        ):
-            zone_cfg = _fallback_demo_zone_cfg()
+        zone_cfg = ZoneConfig.from_calibration_json(
+            camera.calibration_json or {},
+            target_width=video.width,
+            target_height=video.height,
+        )
+
+        errors, warnings = validate_zone_config(zone_cfg)
+        if errors:
+            raise RuntimeError(f"Invalid camera calibration: {errors}")
+        # NOTE: Optional: later you can log warnings to DB/job logs
 
         # ----------------------------
         # Demo identity (so attendance rollup has employee_id)
@@ -136,11 +134,23 @@ def process_video_job(job_id: str) -> None:
             .order_by(Employee.employee_code.asc())
             .first()
         )
-        default_employee_id = default_employee.id if default_employee else None
+        # default_employee_id = default_employee.id if default_employee else None
 
         # Make sure the synthetic movement actually crosses x=0:
         #   outside (x<0) -> neutral -> inside (x>0)
-        t0 = _utcnow()
+        def _video_start_ts(video: Video) -> datetime:
+            # Prefer user-provided timestamp (best for business-day correctness)
+            ts = video.recorded_start_ts
+            if ts is None:
+                # Fallback: business date midnight UTC (simple + deterministic)
+                return datetime.combine(video.business_date, time(0, 0), tzinfo=timezone.utc)
+
+            # Ensure tz-aware
+            if ts.tzinfo is None:
+                return ts.replace(tzinfo=timezone.utc)
+            return ts
+
+        t0 = _video_start_ts(video)
         frames = [
             (t0 + timedelta(seconds=0), [("track-1", (-120, 100, -100, 220))]),
             (t0 + timedelta(seconds=1), [("track-1", (-110, 105, -90, 225))]),
@@ -159,8 +169,11 @@ def process_video_job(job_id: str) -> None:
             job_id=job_uuid,
             frames=frames,
             zone_cfg=zone_cfg,
-            default_employee_id=default_employee_id,
+            default_employee_id=None,
         )
+
+        # Assign employee_id to tracks/events using pgvector (Phase 1 stub embeddings)
+        assign_identities_for_job(db, job_id=job_uuid)
 
         job = db.get(Job, job_uuid)  # Refresh job
         if job is None:

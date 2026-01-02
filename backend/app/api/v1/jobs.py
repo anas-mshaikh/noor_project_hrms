@@ -17,12 +17,36 @@ from app.db.session import get_db
 from app.models.models import Job, Video
 from app.queue.rq import DEFAULT_JOB_TIMEOUT_SEC, get_queue
 from app.worker.tasks import process_video_job
+from app.worker.identity import IdentityConfig, assign_identities_for_job
+from app.worker.rollup import (
+    get_related_job_ids,
+    get_store_day_context,
+    recompute_attendance_for_store_day,
+    recompute_metrics_hourly_for_job,
+)
+from app.worker.artifacts import write_job_artifacts
+
 
 router = APIRouter(tags=["jobs"])
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+# TODO: tune this later
+class JobRecomputeRequest(BaseModel):
+    # Defaults are permissive (good for stub embeddings)
+    max_cosine_distance: float = 1.0
+    require_margin: bool = False
+    min_margin: float = 0.02
+    recompute_rollups: bool = True
+    rewrite_artifacts: bool = True
+
+
+class JobRecomputeResponse(BaseModel):
+    job_id: UUID
+    assigned_tracks: int
 
 
 class JobCreateRequest(BaseModel):
@@ -170,3 +194,47 @@ def retry_job(job_id: UUID, db: Session = Depends(get_db)) -> JobActionResponse:
         return JobActionResponse(
             job_id=job.id, status=job.status, enqueued=False, queue_error=str(e)
         )
+
+
+@router.post("/jobs/{job_id}/recompute", response_model=JobRecomputeResponse)
+def recompute_job(
+    job_id: UUID, body: JobRecomputeRequest, db: Session = Depends(get_db)
+) -> JobRecomputeResponse:
+    job = db.get(Job, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status == "RUNNING":
+        raise HTTPException(status_code=400, detail="Job is RUNNING")
+
+    result = assign_identities_for_job(
+        db,
+        job_id=job_id,
+        cfg=IdentityConfig(
+            max_cosine_distance=body.max_cosine_distance,
+            require_margin=body.require_margin,
+            min_margin=body.min_margin,
+        ),
+    )
+
+    if body.recompute_rollups:
+        store_id, business_date = get_store_day_context(db, job_id=job_id)
+        related = get_related_job_ids(
+            db, store_id=store_id, business_date=business_date
+        )
+        all_job_ids = sorted(set(related + [job_id]))
+
+        recompute_metrics_hourly_for_job(db, job_id=job_id)
+        recompute_attendance_for_store_day(
+            db,
+            store_id=store_id,
+            business_date=business_date,
+            job_ids=all_job_ids,
+        )
+
+    if body.rewrite_artifacts:
+        write_job_artifacts(db, job_id=job_id)
+
+    return JobRecomputeResponse(
+        job_id=job_id, assigned_tracks=int(result.get("assigned_tracks", 0))
+    )
