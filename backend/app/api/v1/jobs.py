@@ -34,12 +34,12 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-# TODO: tune this later
+# NOTE: tune this later
 class JobRecomputeRequest(BaseModel):
-    # Defaults are permissive (good for stub embeddings)
-    max_cosine_distance: float = 1.0
-    require_margin: bool = False
-    min_margin: float = 0.02
+    # Reasonable starting defaults for InsightFace (tune per deployment)
+    max_cosine_distance: float = 0.35
+    require_margin: bool = True
+    min_margin: float = 0.04
     recompute_rollups: bool = True
     rewrite_artifacts: bool = True
 

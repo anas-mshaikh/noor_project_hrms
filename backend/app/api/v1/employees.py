@@ -5,11 +5,6 @@ This gives you:
 - Create/list employees
 - Upload face images => store pgvector embeddings (stub embedding for now)
 - Search employees by face image (pgvector nearest-neighbor)
-
-IMPORTANT:
-Right now we generate a deterministic "fake embedding" from the uploaded image hash.
-This keeps the system ML-free while letting you test pgvector plumbing end-to-end.
-Later you replace `_fake_embedding_from_sha256()` with a real face embedding model.
 """
 
 from __future__ import annotations
@@ -28,10 +23,16 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.models import Employee, EmployeeFace, Store
+from app.worker.face_embedder import (
+    FaceEmbedderError,
+    get_face_embedder,
+    read_image_bgr,
+)
 
 router = APIRouter(tags=["employees"])
 
 # NOTE: must match models.py Vector(512)
+# can later make this dynamic on the admin side
 EMBEDDING_DIM = 512
 ALLOWED_FACE_EXTS = {".jpg", ".jpeg", ".png"}
 
@@ -45,6 +46,10 @@ def _save_upload_and_sha256(upload: UploadFile, dest: Path) -> tuple[int, str]:
     """
     Stream upload to disk AND compute sha256 in one pass.
     Returns (bytes_written, sha256_hex).
+
+    We store images on disk so:
+    - you can audit what was enrolled
+    - you can debug recognition issues later
     """
     h = hashlib.sha256()
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -64,27 +69,12 @@ def _save_upload_and_sha256(upload: UploadFile, dest: Path) -> tuple[int, str]:
         return size, h.hexdigest()
     finally:
         upload.file.close()
-    
-
-
-def _fake_embedding_from_sha256(sha256_hex: str, *, dim: int) -> list[float]:
-    """
-    Deterministic embedding for Phase 1 testing.
-
-    - Same image => same embedding
-    - Different images => (usually) different embeddings
-
-    TODO: Replace this later with a real face model embedding.
-    """
-    # Use 64 bits of the sha as RNG seed
-    seed = int(sha256_hex[:16], 16)
-    rng = random.Random(seed)
-    return [rng.uniform(-1.0, 1.0) for _ in range(dim)]
 
 
 class EmployeeCreateRequest(BaseModel):
     name: str
     employee_code: str
+
 
 class EmployeeOut(BaseModel):
     id: UUID
@@ -93,7 +83,6 @@ class EmployeeOut(BaseModel):
     employee_code: str
     is_active: bool
     created_at: datetime
-
 
 
 @router.post(
@@ -110,12 +99,14 @@ def create_employee(
 
     emp = Employee(store_id=store_id, name=body.name, employee_code=body.employee_code)
     db.add(emp)
-    
+
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="employee_code already exists for this store")
+        raise HTTPException(
+            status_code=409, detail="employee_code already exists for this store"
+        )
 
     db.refresh(emp)
     return EmployeeOut(
@@ -165,43 +156,65 @@ def upload_employee_faces(
     """
     Upload 1..N face images and store embeddings in pgvector.
 
-    For now: embeddings are fake+deterministic (hash -> vector).
+    Enrollment rules:
+    - Each image MUST contain exactly one face (to avoid enrolling the wrong person).
+    - Store multiple templates per employee (5–20 is a good target).
     """
     emp = db.get(Employee, employee_id)
     if emp is None:
         raise HTTPException(status_code=404, detail="Employee not found")
 
+    # Load face model once for this request.
+    try:
+        embedder = get_face_embedder()
+    except FaceEmbedderError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
     created: list[FaceCreatedOut] = []
+
     for f in files:
         face_id = uuid4()
         ext = _safe_ext(f.filename or "face.jpg")
 
+        # Keep faces under data_dir/faces/<employee_id>/<face_id>.jpg
         rel_path = f"faces/{employee_id}/{face_id}{ext}"
         abs_path = Path(settings.data_dir) / rel_path
 
         _bytes, sha = _save_upload_and_sha256(f, abs_path)
-        embedding = _fake_embedding_from_sha256(sha, dim=EMBEDDING_DIM)
+
+        # Read + embed
+        try:
+            img = read_image_bgr(abs_path)
+            face = embedder.embed_single_face(img)
+        except FaceEmbedderError as e:
+            # Client issue (bad image), so 400
+            raise HTTPException(status_code=400, detail=str(e))
+
+        if len(face.embedding) != EMBEDDING_DIM:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Embedding dim mismatch: expected {EMBEDDING_DIM}, got {len(face.embedding)}",
+            )
 
         row = EmployeeFace(
             id=face_id,
             employee_id=employee_id,
-            embedding=embedding,
-            snapshot_path=rel_path,
-            quality_score=None,
-            model_version="stub",
+            embedding=face.embedding,
+            snapshot_path=rel_path,  # store the uploaded image path
+            quality_score=face.quality_score,
+            model_version=face.model_version,
         )
         db.add(row)
         db.commit()
-        
+
         created.append(
             FaceCreatedOut(
                 face_id=face_id,
                 employee_id=employee_id,
                 snapshot_path=rel_path,
-                model_version="stub",
+                model_version=face.model_version,
             )
         )
-
     return created
 
 
@@ -226,10 +239,16 @@ def search_employee_by_face(
     """
     Upload a face image and return nearest employees using pgvector.
 
-    This is a *plumbing test* endpoint for Phase 1.
-    Later: replace fake embedding with your real model embedding.
+    Search rules:
+    - We pick the "best/largest" face if multiple faces are in the query image.
     """
+    limit = max(1, min(int(limit), 20))
     ext = _safe_ext(file.filename or "query.jpg")
+
+    try:
+        embedder = get_face_embedder()
+    except FaceEmbedderError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     # Save the query image too (optional but nice for debugging)
     query_id = uuid4()
@@ -237,10 +256,18 @@ def search_employee_by_face(
     abs_path = Path(settings.data_dir) / rel_path
 
     _bytes, sha = _save_upload_and_sha256(file, abs_path)
-    query_embedding = _fake_embedding_from_sha256(sha, dim=EMBEDDING_DIM)
+
+    try:
+        img = read_image_bgr(abs_path)
+        face = embedder.embed_best_face(img)
+    except FaceEmbedderError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if face is None:
+        raise HTTPException(status_code=400, detail="No face detected in query image")
 
     # Min cosine distance per employee (because each employee has many face templates)
-    dist_expr = EmployeeFace.embedding.cosine_distance(query_embedding)
+    dist_expr = EmployeeFace.embedding.cosine_distance(face.embedding)
 
     subq = (
         db.query(
@@ -252,7 +279,7 @@ def search_employee_by_face(
         .group_by(EmployeeFace.employee_id)
         .subquery()
     )
-    
+
     rows = (
         db.query(Employee, subq.c.distance)
         .join(subq, subq.c.employee_id == Employee.id)
@@ -264,8 +291,10 @@ def search_employee_by_face(
     out: list[FaceSearchMatchOut] = []
     for emp, dist in rows:
         dist_f = float(dist)
-        # Simple “confidence” mapping for UI. Tune later once real embeddings exist.
+
+        # UI-friendly confidence mapping (tune later)
         confidence = max(0.0, 1.0 - dist_f)
+
         out.append(
             FaceSearchMatchOut(
                 employee_id=emp.id,

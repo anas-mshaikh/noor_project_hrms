@@ -8,24 +8,32 @@ source of truth.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.models.models import Camera, Employee, Job, Video
+from app.models.models import (
+    Artifact,
+    Camera,
+    Event,
+    Job,
+    MetricsHourly,
+    Store,
+    Track,
+    Video,
+)
+from app.worker.artifacts import write_job_artifacts
 from app.worker.rollup import (
     get_related_job_ids,
     get_store_day_context,
     recompute_attendance_for_store_day,
     recompute_metrics_hourly_for_job,
 )
-from app.worker.pipeline_stub import process_tracks_stub
 from app.worker.zones import ZoneConfig, validate_zone_config
-from app.worker.artifacts import write_job_artifacts
-from app.worker.identity import assign_identities_for_job
 
 
 def _utcnow() -> datetime:
@@ -41,37 +49,26 @@ def _set_job(db: Session, job: Job, **fields) -> None:
     db.refresh(job)
 
 
-def _fallback_demo_zone_cfg() -> ZoneConfig:
+def _clear_job_outputs(db: Session, *, job_id: UUID) -> None:
     """
-    A "toy" calibration that matches the synthetic bbox coordinates below.
-
-    - Door line is x = 0
-    - x < 0 is OUTSIDE, x > 0 is INSIDE
-    - Neutral band keeps x close to 0 as UNKNOWN so we don't flicker
+    Ensure retries are idempotent: delete old outputs for this job.
     """
-    return ZoneConfig(
-        inside=[(0, 0), (200, 0), (200, 400), (0, 400)],
-        outside=[(-200, 0), (0, 0), (0, 400), (-200, 400)],
-        entry_line_p1=(0, 0),
-        entry_line_p2=(0, 400),
-        inside_test_point=(100, 200),
-        neutral_band_px=10,
-        # Optional: a small gate around the line (makes inferred events stricter)
-        gate=[(-50, 0), (50, 0), (50, 400), (-50, 400)],
-    )
+    db.query(Event).filter(Event.job_id == job_id).delete()
+    db.query(Track).filter(Track.job_id == job_id).delete()
+    db.query(MetricsHourly).filter(MetricsHourly.job_id == job_id).delete()
+    db.query(Artifact).filter(Artifact.job_id == job_id).delete()
+    db.commit()
 
 
 def process_video_job(job_id: str) -> None:
     """
     RQ entrypoint.
 
-    Current behavior:
-    - Reads camera calibration_json (if present)
-    - Runs pipeline_stub (synthetic frames) to generate tracks/events
-    - Runs rollups (metrics + attendance)
-
-    Later you’ll replace the stub section with: decode → detect/track → zone
-    events → face match → rollups.
+    Pipeline:
+    - Load job + video + camera + store timezone
+    - Parse & validate calibration
+    - Run real CV pipeline (motion gate -> YOLO tracking -> events -> face ID)
+    - Postprocess rollups + artifacts
     """
     job_uuid = uuid.UUID(job_id)
     db = SessionLocal()
@@ -96,23 +93,51 @@ def process_video_job(job_id: str) -> None:
             started_at=_utcnow(),
             finished_at=None,
         )
+        _clear_job_outputs(db, job_id=job_uuid)
 
         video = db.get(Video, job.video_id)
         if video is None:
             raise RuntimeError("Video not found for job")
 
-        video_path = Path(settings.data_dir) / video.file_path
-        if not video_path.exists():
-            raise RuntimeError(f"Video file missing: {video.file_path}")
+        store = db.get(Store, video.store_id)
+        if store is None:
+            raise RuntimeError("Store not found for video")
 
-        # TODO: ---- PIPELINE STUB (replace later with real CV) ----
-        # ----------------------------
-        # Load calibration (camera)
-        # ----------------------------
         camera = db.get(Camera, video.camera_id)
         if camera is None:
             raise RuntimeError("Camera not found for video")
 
+        video_path = Path(settings.data_dir) / video.file_path
+        if not video_path.exists():
+            raise RuntimeError(f"Video file missing: {video.file_path}")
+
+        # Ensure width/height/fps exist (needed for coord_space=normalized scaling).
+        if video.width is None or video.height is None or video.fps is None:
+            try:
+                import cv2  # type: ignore
+            except Exception as e:
+                raise RuntimeError(
+                    "opencv-python required to read video metadata"
+                ) from e
+
+            cap = cv2.VideoCapture(str(video_path))
+            if cap.isOpened():
+                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+                fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+                cap.release()
+
+                if video.width is None and w > 0:
+                    video.width = w
+                if video.height is None and h > 0:
+                    video.height = h
+                if video.fps is None and fps > 0:
+                    video.fps = fps
+
+                db.add(video)
+                db.commit()
+
+        # Parse and validate calibration
         zone_cfg = ZoneConfig.from_calibration_json(
             camera.calibration_json or {},
             target_width=video.width,
@@ -122,62 +147,48 @@ def process_video_job(job_id: str) -> None:
         errors, warnings = validate_zone_config(zone_cfg)
         if errors:
             raise RuntimeError(f"Invalid camera calibration: {errors}")
-        # NOTE: Optional: later you can log warnings to DB/job logs
+        # warnings are safe to ignore for MVP; later you can store them in job logs
 
-        # ----------------------------
-        # Demo identity (so attendance rollup has employee_id)
-        # ----------------------------
-        # This is just to make Swagger testing nicer until face recognition is implemented.
-        default_employee = (
-            db.query(Employee)
-            .filter(Employee.store_id == video.store_id, Employee.is_active.is_(True))
-            .order_by(Employee.employee_code.asc())
-            .first()
-        )
-        # default_employee_id = default_employee.id if default_employee else None
+        # Lazy import heavy pipeline code (keeps API startup fast)
+        from app.worker.pipeline import PipelineConfig, process_video_pipeline
 
-        # Make sure the synthetic movement actually crosses x=0:
-        #   outside (x<0) -> neutral -> inside (x>0)
-        def _video_start_ts(video: Video) -> datetime:
-            # Prefer user-provided timestamp (best for business-day correctness)
-            ts = video.recorded_start_ts
-            if ts is None:
-                # Fallback: business date midnight UTC (simple + deterministic)
-                return datetime.combine(video.business_date, time(0, 0), tzinfo=timezone.utc)
+        pipeline_cfg = PipelineConfig.from_job_config(job.config_json)
 
-            # Ensure tz-aware
-            if ts.tzinfo is None:
-                return ts.replace(tzinfo=timezone.utc)
-            return ts
+        # Progress callback (pipeline emits 0..90)
+        last_progress = -1
 
-        t0 = _video_start_ts(video)
-        frames = [
-            (t0 + timedelta(seconds=0), [("track-1", (-120, 100, -100, 220))]),
-            (t0 + timedelta(seconds=1), [("track-1", (-110, 105, -90, 225))]),
-            (
-                t0 + timedelta(seconds=2),
-                [("track-1", (-10, 110, 10, 230))],
-            ),  # neutral band
-            (t0 + timedelta(seconds=3), [("track-1", (90, 120, 110, 240))]),
-            (t0 + timedelta(seconds=4), [("track-1", (100, 125, 120, 245))]),
-            (t0 + timedelta(seconds=5), [("track-1", (110, 130, 130, 250))]),
-            # Track disappears here; pipeline_stub will infer EXIT ("track_ended_inside").
-        ]
+        def on_progress(p: int) -> None:
+            nonlocal last_progress
+            p = max(0, min(int(p), 90))
+            if p == last_progress:
+                return
+            last_progress = p
+            _set_job(db, job, progress=p)
 
-        process_tracks_stub(
+        # Cancellation check (best-effort, throttled)
+        last_cancel_check = _utcnow()
+
+        def should_cancel() -> bool:
+            nonlocal last_cancel_check
+            now = _utcnow()
+            if (now - last_cancel_check).total_seconds() < 2.0:
+                return False
+            last_cancel_check = now
+            db.refresh(job)
+            return job.status == "CANCELED"
+
+        process_video_pipeline(
             db,
             job_id=job_uuid,
-            frames=frames,
+            video=video,
             zone_cfg=zone_cfg,
-            default_employee_id=None,
+            store_timezone=store.timezone,
+            cfg=pipeline_cfg,
+            on_progress=on_progress,
+            should_cancel=should_cancel,
         )
 
-        # Assign employee_id to tracks/events using pgvector (Phase 1 stub embeddings)
-        assign_identities_for_job(db, job_id=job_uuid)
-
-        job = db.get(Job, job_uuid)  # Refresh job
-        if job is None:
-            return
+        db.refresh(job)
         if job.status == "CANCELED":
             _set_job(db, job, finished_at=_utcnow())
             return
@@ -202,9 +213,7 @@ def process_video_job(job_id: str) -> None:
         # Write CSV/JSON exports to disk + insert rows in artifacts table
         write_job_artifacts(db, job_id=job_uuid)
 
-        job = db.get(Job, job_uuid)
-        if job is None:
-            return
+        db.refresh(job)
         if job.status == "CANCELED":
             _set_job(db, job, finished_at=_utcnow())
             return

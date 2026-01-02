@@ -79,41 +79,57 @@ class ZoneConfig:
     """
     Door/zone calibration config.
 
-    Supported approaches:
+    What the worker needs:
+    - INSIDE / OUTSIDE zone classification (for entry/exit)
+    - Optional oriented door line (stronger evidence + direction)
+    - Door ROI polygon (for motion gating + optional detection crop)
+    - Optional masks (ignored zones)
 
-    A) Polygons:
-       - inside polygon
-       - outside polygon
-       classify_zone() uses these directly.
+    Recommended JSON schema (frontend should send these keys):
 
-    B) Line + inside_test_point:
-       - entry_line_p1, entry_line_p2
-       - inside_test_point (a point you KNOW is inside)
-       classify_zone() uses which side of the line you're on.
-       The 'neutral_band_px' produces UNKNOWN near the line to reduce flicker.
+      coord_space: "normalized" | "pixel"        # default "pixel"
+      frame_width, frame_height                  # optional ref size for pixel scaling
 
-    You can provide BOTH polygons and a line. In that case:
-    - polygons decide the zone
-    - line is mainly used by the event engine to validate direction
+      door_roi_polygon: [[x,y], ...]
+      inside_zone_polygon: [[x,y], ...]
+      outside_zone_polygon: [[x,y], ...]
+      ignore_mask_polygons: [ [[x,y],...], ... ]
 
-    gate (optional):
-      A polygon around the actual doorway. If provided, the event engine only
-      trusts line crossings that occur near this region.
+      entry_line: [[x,y],[x,y]] OR {"p1":[x,y],"p2":[x,y]}
+      inside_test_point: [x,y]
+      neutral_band_px: float                     # UNKNOWN band near line
 
-    masks (optional):
-      Any point inside a mask polygon is treated as UNKNOWN.
+    Backwards-compatible aliases (so you don't break older calibration payloads):
+      inside_polygon / inside
+      outside_polygon / outside
+      gate_polygon / gate
+      mask_polygons / masks
     """
 
+    # ----------------------------
+    # Zone polygons (preferred)
+    # ----------------------------
     inside: Polygon | None = None
     outside: Polygon | None = None
 
+    # ----------------------------
+    # Door ROI (used for motion gating)
+    # ----------------------------
+    door_roi: Polygon | None = None
+
+    # ----------------------------
+    # Optional door line
+    # ----------------------------
     entry_line_p1: Point | None = None
     entry_line_p2: Point | None = None
     inside_test_point: Point | None = None
-
     neutral_band_px: float = 10.0
 
+    # Optional: a smaller polygon around the doorway to validate crossings.
+    # If you don't provide gate, we will default gate = door_roi (when door_roi exists).
     gate: Polygon | None = None
+
+    # Any point inside a mask is treated as UNKNOWN.
     masks: Polygons = field(default_factory=list)
 
     @classmethod
@@ -125,42 +141,44 @@ class ZoneConfig:
         target_height: int | None = None,
     ) -> "ZoneConfig":
         """
-        Parse cameras.calibration_json and (optionally) SCALE it to the actual video size.
+        Parse cameras.calibration_json and (optionally) SCALE it to actual video size.
 
-        Why scaling matters:
-        - You often draw polygons on a screenshot (e.g. 1280x720)
-        - But the uploaded video might be 1920x1080
-        - If you don't scale, your door line/zones won't match reality.
-
-        Supported coordinate styles:
-        1) coord_space="pixel" (default)
-           - points are pixels in the calibration frame
-           - if frame_width/frame_height present AND target_* present, we scale
-
-        2) coord_space="normalized"
-           - points are 0..1 (fractions of width/height)
-           - requires target_width/target_height
+        Scaling rules:
+        - coord_space="normalized": points are 0..1 and we scale by target_width/target_height
+        - coord_space="pixel": points are in a reference frame; if frame_width/frame_height are present,
+          we scale to target_width/target_height
         """
-
         coord_space = str(data.get("coord_space", "pixel")).lower()
 
-        # Reference frame size (the frame where calibration points were created)
+        # Reference frame size (only used for coord_space="pixel" scaling)
         ref_w = data.get("frame_width")
         ref_h = data.get("frame_height")
 
-        # Polygons can be provided with aliases to keep frontend flexible.
-        inside_raw = data.get("inside_polygon", data.get("inside"))
-        outside_raw = data.get("outside_polygon", data.get("outside"))
-        gate_raw = data.get("gate_polygon", data.get("gate"))
-        masks_raw = data.get("mask_polygons", data.get("masks"))
+        # New schema keys + backwards-compatible aliases
+        door_roi_raw = data.get(
+            "door_roi_polygon", data.get("door_roi", data.get("roi_polygon"))
+        )
 
-        # Door line can be {"p1": [...], "p2": [...]} OR [[...], [...]]
+        inside_raw = data.get(
+            "inside_zone_polygon",
+            data.get("inside_polygon", data.get("inside")),
+        )
+        outside_raw = data.get(
+            "outside_zone_polygon",
+            data.get("outside_polygon", data.get("outside")),
+        )
+        gate_raw = data.get("gate_polygon", data.get("gate"))
+
+        masks_raw = data.get(
+            "ignore_mask_polygons",
+            data.get("mask_polygons", data.get("masks")),
+        )
+
+        #  Door line can be {"p1": [...], "p2": [...]} OR [[...], [...]]
         entry_line = data.get("entry_line")
         p1 = p2 = None
-        inside_test_point_raw = data.get("inside_test_point")
 
         if entry_line is not None:
-            # Accept either {"p1": [...], "p2": [...]} or [[...], [...]]
             if isinstance(entry_line, dict):
                 p1 = _as_point(entry_line.get("p1"))
                 p2 = _as_point(entry_line.get("p2"))
@@ -169,6 +187,8 @@ class ZoneConfig:
                 if len(pts) != 2:
                     raise ValueError("entry_line must have exactly 2 points")
                 p1, p2 = pts[0], pts[1]
+
+        inside_test_point_raw = data.get("inside_test_point")
 
         # Neutral band is a pixel distance to the line (UNKNOWN near the line).
         neutral_band_px = float(data.get("neutral_band_px", 10.0))
@@ -229,14 +249,20 @@ class ZoneConfig:
                 out.append([(x * sx, y * sy) for (x, y) in poly])
             return out
 
+        door_roi = scale_poly(_as_polygon(door_roi_raw) or None)
         inside = scale_poly(_as_polygon(inside_raw) or None)
         outside = scale_poly(_as_polygon(outside_raw) or None)
         gate = scale_poly(_as_polygon(gate_raw) or None)
         masks = scale_polys(_as_polygons(masks_raw))
 
+        # Practical default: if gate not provided, reuse door ROI as gate.
+        if gate is None and door_roi is not None:
+            gate = door_roi
+
         return cls(
             inside=inside,
             outside=outside,
+            door_roi=door_roi,
             entry_line_p1=scale_point(p1),
             entry_line_p2=scale_point(p2),
             inside_test_point=scale_point(_as_point(inside_test_point_raw))

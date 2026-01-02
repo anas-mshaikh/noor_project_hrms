@@ -1,31 +1,28 @@
 """
 identity.py
 
-Goal:
-- Assign `employee_id` to `tracks` and `events` using pgvector (employee_faces).
+Real identity assignment using pgvector (employee_faces).
 
-Important:
-- In the real system, you’ll compute a face embedding from CCTV frames.
-- For now (Phase 1 backend), we use a deterministic STUB track embedding so the
-  end-to-end plumbing can be tested via Swagger without ML dependencies.
+Two use-cases:
+1) Worker pipeline (online within job):
+   - calls best_employee_candidates() + select_employee() while processing tracks
 
-How the stub works:
-- We compute a centroid embedding per employee (average of all templates).
-- For each track_key, we deterministically pick one employee (hash(track_key) % N).
-- We use that employee’s centroid as the "track embedding".
-- Then we still run the REAL pgvector nearest-neighbor query to validate the DB/query flow.
+2) /jobs/{job_id}/recompute (offline):
+   - re-assign identities from saved track snapshots (tracks.best_snapshot_path)
+   - useful after you enroll more faces or adjust thresholds
 """
+
 from __future__ import annotations
 
-import hashlib
-from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.models import Employee, EmployeeFace, Event, Job, Track, Video
 
 
@@ -33,107 +30,46 @@ from app.models.models import Employee, EmployeeFace, Event, Job, Track, Video
 @dataclass(frozen=True)
 class IdentityConfig:
     """
-    Thresholds are deliberately permissive by default because our stub embeddings
-    are not "real face embeddings".
+    Acceptance rules for cosine distance.
 
-    TODO: When you plug in a real face model later, you should tighten:
-    - max_cosine_distance ~ 0.25-0.40 (model dependent)
-    - require_margin = True
-    - min_margin ~ 0.02-0.08 (model dependent)
+    NOTE: These numbers are model-dependent.
+    For InsightFace ArcFace-style embeddings, a good starting point is:
+      max_cosine_distance ~ 0.30 - 0.45
+      min_margin ~ 0.03 - 0.08
     """
 
-    max_cosine_distance: float = 1.0
-    require_margin: bool = False
-    min_margin: float = 0.02
+    max_cosine_distance: float = 0.35
+    require_margin: bool = True
+    min_margin: float = 0.04
 
 
-def _stable_int(value: str) -> int:
+def store_has_enrolled_faces(db: Session, *, store_id: UUID) -> bool:
     """
-    Deterministic integer from a string (used for stable mapping in the stub).
+    Quick check used to skip face-recognition work when no enrollment exists.
     """
-    d = hashlib.sha256(value.encode("utf-8")).digest()
-    return int.from_bytes(d[:4], "big")
-
-
-def _mean_embedding(vectors: list[list[float]]) -> list[float]:
-    """
-    Compute centroid vector (element-wise mean).
-
-    We do this in Python to avoid relying on pgvector aggregate extensions.
-    """
-    if not vectors:
-        raise ValueError("Cannot compute mean of empty vectors")
-
-    dim = len(vectors[0])
-    acc = [0.0] * dim
-    for v in vectors:
-        if len(v) != dim:
-            raise ValueError("Inconsistent embedding dimensions")
-        for i in range(dim):
-            acc[i] += float(v[i])
-
-    n = float(len(vectors))
-    return [x / n for x in acc]
-
-
-def _load_employee_centroids(
-    db: Session, *, store_id: UUID
-) -> tuple[list[UUID], dict[UUID, list[float]]]:
-    """
-    Returns:
-      employee_ids_sorted: list[UUID] (only employees with at least 1 face)
-      centroids: dict[employee_id] -> embedding(list[float])
-    """
-    rows = (
-        db.query(EmployeeFace.employee_id, EmployeeFace.embedding)
+    row = (
+        db.query(EmployeeFace.id)
         .join(Employee, Employee.id == EmployeeFace.employee_id)
         .filter(Employee.store_id == store_id, Employee.is_active.is_(True))
-        .all()
+        .limit(1)
+        .first()
     )
-    
-    faces_by_emp: dict[UUID, list[list[float]]] = defaultdict(list)
-    for emp_id, emb in rows:
-        faces_by_emp[emp_id].append(emb)
-
-    if not faces_by_emp:
-        return [], {}
-
-    centroids: dict[UUID, list[float]] = {}
-    for emp_id, vecs in faces_by_emp.items():
-        centroids[emp_id] = _mean_embedding(vecs)
-
-    # Sort so mapping hash(track_key) % N stays stable
-    employee_ids_sorted = sorted(centroids.keys(), key=lambda x: str(x))
-    return employee_ids_sorted, centroids
+    return row is not None
 
 
-def _make_track_embedding_stub(
-    track_key: str,
-    *,
-    employee_ids: list[UUID],
-    centroids: dict[UUID, list[float]],
-) -> list[float] | None:
-    """
-    STUB: deterministically maps each track_key to one employee centroid.
-    This gives stable "recognition" results during backend-only development.
-    """
-    if not employee_ids:
-        return None
-
-    idx = _stable_int(track_key) % len(employee_ids)
-    target_emp_id = employee_ids[idx]
-    return centroids[target_emp_id]
-
-
-def _best_employee_match(
+def best_employee_candidates(
     db: Session,
     *,
     store_id: UUID,
     query_embedding: list[float],
+    limit: int = 2,
 ) -> list[tuple[UUID, float]]:
     """
     Uses pgvector cosine distance.
-    Returns up to 2 candidates: [(employee_id, distance), ...] sorted by distance asc.
+    Returns up to N candidates: [(employee_id, distance), ...] sorted by distance asc.
+
+    We store many templates per employee, so we compute:
+      distance(employee) = MIN distance among that employee's templates
     """
     dist_expr = EmployeeFace.embedding.cosine_distance(query_embedding)
 
@@ -148,7 +84,7 @@ def _best_employee_match(
         .group_by(EmployeeFace.employee_id)
         .subquery()
     )
-    
+
     rows = (
         db.query(subq.c.employee_id, subq.c.distance)
         .order_by(subq.c.distance.asc())
@@ -159,6 +95,32 @@ def _best_employee_match(
     return [(row[0], float(row[1])) for row in rows]
 
 
+def select_employee(
+    candidates: list[tuple[UUID, float]],
+    *,
+    cfg: IdentityConfig,
+) -> tuple[UUID, float, float] | None:
+    """
+    Apply threshold + margin rules and return:
+      (employee_id, cosine_distance, confidence)
+    """
+    if not candidates:
+        return None
+
+    best_emp_id, best_dist = candidates[0]
+    second_dist = candidates[1][1] if len(candidates) > 1 else None
+
+    if best_dist > cfg.max_cosine_distance:
+        return None
+
+    if cfg.require_margin and second_dist is not None:
+        if (second_dist - best_dist) < cfg.min_margin:
+            return None
+
+    confidence = max(0.0, 1.0 - best_dist)
+    return best_emp_id, best_dist, confidence
+
+
 def assign_identities_for_job(
     db: Session,
     *,
@@ -166,13 +128,17 @@ def assign_identities_for_job(
     cfg: IdentityConfig | None = None,
 ) -> dict[str, Any]:
     """
-    Main entrypoint used by worker and optional API recompute endpoint.
+    Recompute identities for an existing job by reading saved snapshots:
 
-    Updates:
-    - tracks.employee_id / tracks.assigned_type / tracks.identity_confidence
-    - events.employee_id (only where currently NULL)
+    - For each track:
+        - load tracks.best_snapshot_path
+        - embed face
+        - match via pgvector
+        - update tracks + events (only where employee_id is NULL)
+
+    This keeps /jobs/{job_id}/recompute REAL even after processing is done.
     """
-    cfg = cfg or IdentityConfig()
+    ccfg = cfg or IdentityConfig()
 
     job = db.get(Job, job_id)
     if job is None:
@@ -183,50 +149,56 @@ def assign_identities_for_job(
         raise RuntimeError("Video not found for job")
 
     store_id = video.store_id
-
-    employee_ids, centroids = _load_employee_centroids(db, store_id=store_id)
-    if not employee_ids:
+    if not store_has_enrolled_faces(db, store_id=store_id):
         return {"assigned_tracks": 0, "skipped_no_faces": True}
 
+    # Import heavy deps lazily (API server won't pay the cost unless endpoint is used).
+    from app.worker.face_embedder import (  # local import on purpose
+        FaceEmbedderError,
+        get_face_embedder,
+        read_image_bgr,
+    )
+
+    embedder = get_face_embedder()
+
     tracks = db.query(Track).filter(Track.job_id == job_id).all()
-    
+
     assigned = 0
     for t in tracks:
-        # Don’t overwrite if already assigned (use recompute endpoint to clear/rebuild if you want).
-        if t.employee_id is not None:
+        # We only assign if:
+        # - we have a snapshot
+        # - employee_id not already set
+        if t.best_snapshot_path is None or t.employee_id is not None:
             continue
 
-        query_embedding = _make_track_embedding_stub(
-            t.track_key, employee_ids=employee_ids, centroids=centroids
+        img_path = (Path(settings.data_dir) / t.best_snapshot_path).resolve()
+        if not img_path.exists():
+            continue
+
+        try:
+            img = read_image_bgr(img_path)
+            face = embedder.embed_best_face(img)
+        except FaceEmbedderError:
+            continue
+
+        if face is None:
+            continue
+
+        candidates = best_employee_candidates(
+            db, store_id=store_id, query_embedding=face.embedding, limit=2
         )
-        if query_embedding is None:
+        chosen = select_employee(candidates, cfg=cfg)
+        if chosen is None:
             continue
 
-        candidates = _best_employee_match(
-            db, store_id=store_id, query_embedding=query_embedding
-        )
-        if not candidates:
-            continue
+        emp_id, dist, confidence = chosen
 
-        best_emp_id, best_dist = candidates[0]
-        second_dist = candidates[1][1] if len(candidates) > 1 else None
-        
-        # Acceptance rules (default permissive for stub; tighten later for real embeddings)
-        if best_dist > cfg.max_cosine_distance:
-            continue
-        if cfg.require_margin and second_dist is not None:
-            if (second_dist - best_dist) < cfg.min_margin:
-                continue
-
-        # Confidence mapping (simple UI-friendly score; tune later)
-        identity_conf = max(0.0, 1.0 - best_dist)
-
-        t.employee_id = best_emp_id
+        t.employee_id = emp_id
         t.assigned_type = "employee"
-        t.identity_confidence = identity_conf
+        t.identity_confidence = confidence
         db.add(t)
 
-        # Update events for this track (don’t overwrite non-null employee_id)
+        # Update events for that track (do not overwrite non-null employee_id)
         (
             db.query(Event)
             .filter(
@@ -234,9 +206,9 @@ def assign_identities_for_job(
                 Event.track_key == t.track_key,
                 Event.employee_id.is_(None),
             )
-            .update({Event.employee_id: best_emp_id}, synchronize_session=False)
+            .update({Event.employee_id: emp_id}, synchronize_session=False)
         )
-        
+
         assigned += 1
 
     db.commit()
