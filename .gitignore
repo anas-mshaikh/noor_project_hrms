@@ -5,3 +5,7 @@ __pycache__/
 .vscode/
 .DS_Store
 *.mp4
+*.onnx
+*.png
+*.jpg
+*.pt

@@ -173,7 +173,8 @@ def _footpoint(bbox: tuple[float, float, float, float]) -> tuple[float, float]:
 
 
 def _snapshots_dir(job_id: UUID) -> Path:
-    return Path(settings.data_dir) / "jobs" / str(job_id) / "snapshots"
+    base = Path(settings.data_dir).resolve()
+    return base / "jobs" / str(job_id) / "snapshots"
 
 
 def _safe_name(value: str) -> str:
@@ -213,7 +214,8 @@ def _save_event_snapshot(
     except Exception as e:
         raise RuntimeError("opencv-python required for snapshot writing") from e
 
-    out_dir = _snapshots_dir(job_id)
+    base = Path(settings.data_dir).resolve()
+    out_dir = base / "jobs" / str(job_id) / "snapshots"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     safe_track = _safe_name(track_key)
@@ -258,7 +260,8 @@ def _save_best_face_snapshot(
     except Exception as e:
         raise RuntimeError("opencv-python required for snapshot writing") from e
 
-    out_dir = _snapshots_dir(job_id)
+    base = Path(settings.data_dir).resolve()
+    out_dir = base / "jobs" / str(job_id) / "snapshots"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     safe_track = _safe_name(track_key)
@@ -431,6 +434,8 @@ def process_video_pipeline(
                 offset_x, offset_y = x1, y1
 
             detections = detector.track(det_frame)
+            # Tracks seen in this detector frame (used  for TTL cleanup)
+            seen: set[str] = set()
 
             for d in detections:
                 # Offset bbox back to full-frame coords
