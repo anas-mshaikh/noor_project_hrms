@@ -26,9 +26,9 @@ async function readErrorBody(res: Response): Promise<string> {
   // FastAPI errors often look like: {"detail":"..."} or {"detail":[...]}
   const text = await res.text();
   try {
-    const json = JSON.parse(text);
+    const json = JSON.parse(text) as Record<string, unknown>;
     if (json && typeof json === "object" && "detail" in json) {
-      const detail = (json as any).detail;
+      const detail = (json as Record<string, unknown>).detail;
       return typeof detail === "string" ? detail : JSON.stringify(detail);
     }
   } catch {

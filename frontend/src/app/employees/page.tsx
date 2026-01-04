@@ -47,7 +47,7 @@ export default function EmployeesPage() {
       apiJson<EmployeeOut[]>(`/api/v1/stores/${storeId}/employees`),
   });
 
-  const employees = employeesQ.data ?? [];
+  const employees = useMemo(() => employeesQ.data ?? [], [employeesQ.data]);
 
   // ----------------------------
   // 2) Create employee (name + employee_code)

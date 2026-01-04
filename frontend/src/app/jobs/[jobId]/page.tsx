@@ -30,14 +30,14 @@ type JobActionResponse = {
 
 const TERMINAL = new Set(["DONE", "FAILED", "CANCELED"]);
 
-function paramToString(v: string | string[] | undefined): string | undefined {
-  if (!v) return undefined;
-  return Array.isArray(v) ? v[0] : v;
-}
+// function paramToString(v: string | string[] | undefined): string | undefined {
+//   if (!v) return undefined;
+//   return Array.isArray(v) ? v[0] : v;
+// }
 
 export default function JobPage() {
-  const p = useParams();
-  const jobId = paramToString((p as any).jobId);
+  const params = useParams<{ jobId: string }>();
+  const jobId = Array.isArray(params?.jobId) ? params.jobId[0] : params?.jobId;
 
   const jobQ = useQuery({
     queryKey: ["job", jobId],

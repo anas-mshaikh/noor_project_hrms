@@ -33,14 +33,14 @@ import { AttendanceTable } from "@/components/AttendanceTable";
 import { EventsTable } from "@/components/EventsTable";
 import { MetricsChart } from "@/components/MetricsChart";
 
-function paramToString(v: string | string[] | undefined): string | undefined {
-  if (!v) return undefined;
-  return Array.isArray(v) ? v[0] : v;
-}
+// function paramToString(v: string | string[] | undefined): string | undefined {
+//   if (!v) return undefined;
+//   return Array.isArray(v) ? v[0] : v;
+// }
 
 export default function ReportPage() {
-  const p = useParams();
-  const jobId = paramToString((p as any).jobId);
+  const params = useParams<{ jobId: string }>();
+  const jobId = Array.isArray(params?.jobId) ? params.jobId[0] : params?.jobId;
 
   const attendanceQ = useQuery({
     queryKey: ["attendance", jobId],

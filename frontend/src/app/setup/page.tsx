@@ -17,6 +17,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiJson } from "@/lib/api";
 import { useSelection } from "@/lib/selection";
 import type { CameraListOut, OrganizationOut, StoreOut } from "@/lib/types";
+import Link from "next/link";
 
 export default function SetupPage() {
   const orgId = useSelection((s) => s.orgId);
@@ -54,7 +55,7 @@ export default function SetupPage() {
   const [cameraPlacement, setCameraPlacement] = useState("");
 
   // Optional: paste calibration JSON to create camera with calibration immediately
-  const [calibrationJsonText, setCalibrationJsonText] = useState("");
+  // const [calibrationJsonText, setCalibrationJsonText] = useState("");
 
   const selectionSummary = useMemo(
     () => ({
@@ -105,23 +106,23 @@ export default function SetupPage() {
       if (!storeId) throw new Error("Select a store first");
       if (!cameraName.trim()) throw new Error("Camera name required");
 
-      // calibration_json is optional, but must be valid JSON if provided.
-      let calibration_json: Record<string, unknown> | null = null;
-      const trimmed = calibrationJsonText.trim();
-      if (trimmed.length > 0) {
-        try {
-          calibration_json = JSON.parse(trimmed);
-        } catch {
-          throw new Error("Calibration JSON is not valid JSON");
-        }
-      }
+      // // calibration_json is optional, but must be valid JSON if provided.
+      // let calibration_json: Record<string, unknown> | null = null;
+      // const trimmed = calibrationJsonText.trim();
+      // if (trimmed.length > 0) {
+      //   try {
+      //     calibration_json = JSON.parse(trimmed);
+      //   } catch {
+      //     throw new Error("Calibration JSON is not valid JSON");
+      //   }
+      // }
 
       return apiJson<CameraListOut>(`/api/v1/stores/${storeId}/cameras`, {
         method: "POST",
         body: JSON.stringify({
           name: cameraName,
           placement: cameraPlacement || null,
-          calibration_json,
+          calibration_json: null,
         }),
       });
     },
@@ -292,7 +293,7 @@ export default function SetupPage() {
             )}
           </div>
 
-          <div className="flex flex-col gap-1">
+          {/* <div className="flex flex-col gap-1">
             <label className="text-xs text-gray-500">
               Calibration JSON (optional; paste raw JSON)
             </label>
@@ -303,7 +304,22 @@ export default function SetupPage() {
               placeholder='{"coord_space":"normalized","door_roi_polygon":[...], ... }'
               disabled={!storeId}
             />
-          </div>
+          </div> */}
+
+          {cameraId && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-xs text-gray-600">
+                Calibration is required before running jobs.
+              </div>
+
+              <Link
+                className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
+                href={`/cameras/${cameraId}/calibration`}
+              >
+                Calibrate this camera
+              </Link>
+            </div>
+          )}
 
           <div className="flex flex-col gap-2">
             <label className="text-xs text-gray-500">Select camera</label>
