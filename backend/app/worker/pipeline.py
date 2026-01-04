@@ -363,6 +363,12 @@ def process_video_pipeline(
             crop_bbox = _polygon_bbox(door_roi, w, h)
 
         runtimes: dict[str, TrackRuntime] = {}
+        # Tracker IDs can be reused; we must keep track_key unique per job.
+        used_track_keys: set[str] = set()  # already written to DB (tracks)
+        reuse_count: dict[tuple[int, int], int] = {}  # (segment_id, raw_track_id) -> n
+        active_key_by_raw: dict[
+            tuple[int, int], str
+        ] = {}  # current mapping while track is alive
 
         # For uniqueness and safety, prefix track keys by "segment id":
         # each time motion goes IDLE->ACTIVE we increment segment_id.
@@ -373,7 +379,6 @@ def process_video_pipeline(
         last_progress_emit: int = -1
 
         inserts_since_commit = 0
-
         frame_idx = 0
         while True:
             # Cancellation (best-effort)
@@ -442,9 +447,29 @@ def process_video_pipeline(
                 x1, y1, x2, y2 = d.bbox_xyxy
                 bbox = (x1 + offset_x, y1 + offset_y, x2 + offset_x, y2 + offset_y)
 
-                track_key = f"s{segment_id}-t{d.track_id}"
-                seen.add(track_key)
+                raw = (int(segment_id), int(d.track_id))
 
+                # Reuse the same key while the track is alive.
+                track_key = active_key_by_raw.get(raw)
+
+                # If this is a "new" track lifecycle, allocate a unique key.
+                if track_key is None:
+                    base = f"s{segment_id}-t{d.track_id}"
+                    n = reuse_count.get(raw, 0) + 1
+
+                    while True:
+                        candidate = base if n == 1 else f"{base}-r{n}"
+                        if (
+                            candidate not in used_track_keys
+                            and candidate not in runtimes
+                        ):
+                            track_key = candidate
+                            reuse_count[raw] = n
+                            active_key_by_raw[raw] = track_key
+                            break
+                        n += 1
+
+                seen.add(track_key)
                 rt = runtimes.setdefault(track_key, TrackRuntime())
                 rt.last_bbox = bbox
 
@@ -670,7 +695,7 @@ def process_video_pipeline(
                     )
                     inserts_since_commit += 1
 
-                    # Persist track summary
+                # Persist track summary
                 db.add(
                     Track(
                         id=uuid4(),
@@ -689,6 +714,13 @@ def process_video_pipeline(
                 )
                 inserts_since_commit += 1
                 del runtimes[tk]
+                used_track_keys.add(tk)
+
+                # Remove raw->key mapping for this finalized track key
+                for k, v in list(active_key_by_raw.items()):
+                    if v == tk:
+                        del active_key_by_raw[k]
+                        break
 
             # Commit periodically so long jobs don't hold huge transactions
             if inserts_since_commit >= 200:
@@ -741,6 +773,11 @@ def process_video_pipeline(
                     last_seen_zone=rt.last_zone.value if rt.last_zone else None,
                 )
             )
+            used_track_keys.add(tk)
+            for k, v in list(active_key_by_raw.items()):
+                if v == tk:
+                    del active_key_by_raw[k]
+                    break
             del runtimes[tk]
 
         db.commit()

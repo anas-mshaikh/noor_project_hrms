@@ -221,6 +221,7 @@ def process_video_job(job_id: str) -> None:
         _set_job(db, job, status="DONE", progress=100, finished_at=_utcnow())
 
     except Exception as e:
+        db.rollback()  # IMPORTANT: recover session after IntegrityError/etc.
         job = db.get(Job, job_uuid)
         if job is not None:
             _set_job(db, job, status="FAILED", error=str(e), finished_at=_utcnow())
