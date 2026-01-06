@@ -12,10 +12,10 @@ rq>=1.16
 
 # --- ML ---
 numpy>=1.26
-opencv-python>=4.10
+# opencv-contrib is required for cv2.face (FacemarkLBF landmark alignment).
+opencv-contrib-python>=4.10
 ultralytics>=8.3
 # Tracking helper used by Ultralytics ByteTrack (recommended)
 lapx>=0.5.10
-# Face recognition (InsightFace ONNX)
+# Face recognition (ONNXRuntime + InsightFace/ArcFace ONNX models)
 onnxruntime>=1.17
-insightface>=0.7.3

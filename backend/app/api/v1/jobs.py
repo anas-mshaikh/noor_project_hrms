@@ -14,10 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.models import Job, Video
+from app.face_system.runtime_processor import get_runtime_processor
+from app.models.models import Event, Job, Track, Video
 from app.queue.rq import DEFAULT_JOB_TIMEOUT_SEC, get_queue
 from app.worker.tasks import process_video_job
-from app.worker.identity import IdentityConfig, assign_identities_for_job
 from app.worker.rollup import (
     get_related_job_ids,
     get_store_day_context,
@@ -36,10 +36,9 @@ def _utcnow() -> datetime:
 
 # NOTE: tune this later
 class JobRecomputeRequest(BaseModel):
-    # Reasonable starting defaults for InsightFace (tune per deployment)
-    max_cosine_distance: float = 0.35
-    require_margin: bool = True
-    min_margin: float = 0.04
+    # Minimum confidence to attach an employee to an existing track snapshot.
+    # This uses the face_system (prototype cosine similarity -> sigmoid confidence).
+    min_confidence: float = 0.70
     recompute_rollups: bool = True
     rewrite_artifacts: bool = True
 
@@ -47,6 +46,91 @@ class JobRecomputeRequest(BaseModel):
 class JobRecomputeResponse(BaseModel):
     job_id: UUID
     assigned_tracks: int
+
+
+def _assign_identities_for_job(
+    db: Session, *, job_id: UUID, min_confidence: float
+) -> int:
+    """
+    Re-assign identities for an existing job using the Frigate-style face system.
+
+    This is useful when you:
+    - enroll more training faces, then
+    - want to attach employee_id to previously-unknown tracks/events.
+
+    Implementation notes:
+    - We rely on Track.best_snapshot_path (best face crop) produced by the pipeline.
+    - We do not modify door logic; we only fill in employee_id where it was NULL.
+    """
+    try:
+        import cv2  # type: ignore
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail="opencv-python is required to decode snapshots for recompute",
+        ) from e
+
+    job = db.get(Job, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    video = db.get(Video, job.video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="Video not found for job")
+
+    # Load store prototypes (blocking build once).
+    try:
+        proc = get_runtime_processor(store_id=video.store_id, camera_id=None)
+        proc.recognizer.ensure_built(block=True, timeout_sec=60.0)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    assigned = 0
+    tracks = db.query(Track).filter(Track.job_id == job_id).all()
+
+    for t in tracks:
+        if t.best_snapshot_path is None or t.employee_id is not None:
+            continue
+
+        img_path = (Path(settings.data_dir) / t.best_snapshot_path).resolve()
+        if not img_path.exists():
+            continue
+
+        img = cv2.imread(str(img_path))
+        if img is None:
+            continue
+
+        try:
+            result = proc.recognizer.recognize_image(img, top_k=5)
+        except Exception:
+            continue
+
+        if result.employee_id is None:
+            continue
+        if float(result.confidence) < float(min_confidence):
+            continue
+
+        emp_id = result.employee_id
+
+        t.employee_id = emp_id
+        t.assigned_type = "employee"
+        t.identity_confidence = float(result.confidence)
+        db.add(t)
+
+        # Update events for that track (do not overwrite non-null employee_id).
+        (
+            db.query(Event)
+            .filter(
+                Event.job_id == job_id,
+                Event.track_key == t.track_key,
+                Event.employee_id.is_(None),
+            )
+            .update({Event.employee_id: emp_id}, synchronize_session=False)
+        )
+        assigned += 1
+
+    db.commit()
+    return int(assigned)
 
 
 class JobCreateRequest(BaseModel):
@@ -207,14 +291,8 @@ def recompute_job(
     if job.status == "RUNNING":
         raise HTTPException(status_code=400, detail="Job is RUNNING")
 
-    result = assign_identities_for_job(
-        db,
-        job_id=job_id,
-        cfg=IdentityConfig(
-            max_cosine_distance=body.max_cosine_distance,
-            require_margin=body.require_margin,
-            min_margin=body.min_margin,
-        ),
+    assigned_tracks = _assign_identities_for_job(
+        db, job_id=job_id, min_confidence=float(body.min_confidence)
     )
 
     if body.recompute_rollups:
@@ -236,5 +314,5 @@ def recompute_job(
         write_job_artifacts(db, job_id=job_id)
 
     return JobRecomputeResponse(
-        job_id=job_id, assigned_tracks=int(result.get("assigned_tracks", 0))
+        job_id=job_id, assigned_tracks=int(assigned_tracks)
     )

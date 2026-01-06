@@ -89,6 +89,7 @@ class ZoneConfig:
 
       coord_space: "normalized" | "pixel"        # default "pixel"
       frame_width, frame_height                  # optional ref size for pixel scaling
+      frame_size: {"w": number, "h": number}     # alias for frame_width/frame_height
 
       door_roi_polygon: [[x,y], ...]
       inside_zone_polygon: [[x,y], ...]
@@ -153,6 +154,14 @@ class ZoneConfig:
         # Reference frame size (only used for coord_space="pixel" scaling)
         ref_w = data.get("frame_width")
         ref_h = data.get("frame_height")
+
+        # Backwards-compatible alias used by the frontend calibration tool.
+        # Example: {"frame_size": {"w": 1920, "h": 1080}}
+        # We keep this here so old saved calibrations keep working.
+        if (ref_w is None or ref_h is None) and isinstance(data.get("frame_size"), dict):
+            fs = data["frame_size"]
+            ref_w = ref_w or fs.get("w") or fs.get("width")
+            ref_h = ref_h or fs.get("h") or fs.get("height")
 
         # New schema keys + backwards-compatible aliases
         door_roi_raw = data.get(

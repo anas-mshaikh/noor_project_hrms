@@ -3,13 +3,12 @@ employees.py
 
 This gives you:
 - Create/list employees
-- Upload face images => store pgvector embeddings (stub embedding for now)
+- Upload face images => store pgvector embeddings (ArcFace ONNX)
 - Search employees by face image (pgvector nearest-neighbor)
 """
 
 from __future__ import annotations
 import hashlib
-import random
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -22,12 +21,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
+from app.face_system.detector.opencv_yn import FaceSystemModelError
+from app.face_system.runtime_processor import get_runtime_processor
 from app.models.models import Employee, EmployeeFace, Store
-from app.worker.face_embedder import (
-    FaceEmbedderError,
-    get_face_embedder,
-    read_image_bgr,
-)
 
 router = APIRouter(tags=["employees"])
 
@@ -40,6 +36,24 @@ ALLOWED_FACE_EXTS = {".jpg", ".jpeg", ".png"}
 def _safe_ext(filename: str) -> str:
     ext = Path(filename).suffix.lower()
     return ext if ext in ALLOWED_FACE_EXTS else ".jpg"
+
+
+def _read_image_bgr(path: Path):
+    """
+    Read an image from disk into a BGR numpy array (OpenCV convention).
+    """
+    try:
+        import cv2  # type: ignore
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail="opencv-python is required to decode images",
+        ) from e
+
+    img = cv2.imread(str(path))
+    if img is None:
+        raise HTTPException(status_code=400, detail=f"could not read image: {path.name}")
+    return img
 
 
 def _save_upload_and_sha256(upload: UploadFile, dest: Path) -> tuple[int, str]:
@@ -164,10 +178,10 @@ def upload_employee_faces(
     if emp is None:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    # Load face model once for this request.
+    # Reuse one cached processor per store (loads models once).
     try:
-        embedder = get_face_embedder()
-    except FaceEmbedderError as e:
+        proc = get_runtime_processor(store_id=emp.store_id, camera_id=None)
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     created: list[FaceCreatedOut] = []
@@ -176,33 +190,80 @@ def upload_employee_faces(
         face_id = uuid4()
         ext = _safe_ext(f.filename or "face.jpg")
 
-        # Keep faces under data_dir/faces/<employee_id>/<face_id>.jpg
-        rel_path = f"faces/{employee_id}/{face_id}{ext}"
+        # File-based training library path (Frigate-style):
+        #   data/faces/<store_id>/<employee_id>/<face_id>.<ext>
+        #
+        # We store the FACE CROP (not the full original upload) so the prototype
+        # builder can embed quickly without re-running face detection.
+        rel_path = f"faces/{emp.store_id}/{employee_id}/{face_id}{ext}"
         abs_path = Path(settings.data_dir) / rel_path
 
-        _bytes, sha = _save_upload_and_sha256(f, abs_path)
+        _bytes, _sha = _save_upload_and_sha256(f, abs_path)
 
-        # Read + embed
+        # Detect + crop face (strict: exactly one face to avoid wrong enrollment).
+        img = _read_image_bgr(abs_path)
         try:
-            img = read_image_bgr(abs_path)
-            face = embedder.embed_single_face(img)
-        except FaceEmbedderError as e:
-            # Client issue (bad image), so 400
-            raise HTTPException(status_code=400, detail=str(e))
+            dets = proc.detector.detect(img)
+        except FaceSystemModelError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        if not dets:
+            raise HTTPException(status_code=400, detail="No face detected in image")
+        if len(dets) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Multiple faces detected ({len(dets)}). Upload a single-person face image.",
+            )
+        det = dets[0]
 
-        if len(face.embedding) != EMBEDDING_DIM:
+        x1, y1, x2, y2 = det.bbox_xyxy
+        face_crop = img[y1:y2, x1:x2].copy()
+        if face_crop.size == 0:
+            raise HTTPException(status_code=400, detail="Invalid face crop")
+
+        # Align (Frigate-style) if available; fall back to raw crop if model isn't present.
+        aligned = proc.aligner.align(face_crop) or face_crop
+
+        # Embed (ArcFace-style ONNX).
+        try:
+            emb = proc.embedder.embed(aligned).astype(float).tolist()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        if len(emb) != EMBEDDING_DIM:
             raise HTTPException(
                 status_code=500,
-                detail=f"Embedding dim mismatch: expected {EMBEDDING_DIM}, got {len(face.embedding)}",
+                detail=f"Embedding dim mismatch: expected {EMBEDDING_DIM}, got {len(emb)}",
             )
+
+        # Overwrite the stored file with the extracted face crop.
+        # This keeps the on-disk training library consistent and fast to load.
+        try:
+            import cv2  # type: ignore
+
+            cv2.imwrite(str(abs_path), face_crop)
+        except Exception:
+            pass
+
+        # Simple quality score (0..1): size + blur (used only for UI/debug).
+        try:
+            import cv2  # type: ignore
+
+            gray = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
+            blur = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+            fh, fw = face_crop.shape[:2]
+            area = float(fh * fw)
+            size_score = min(1.0, area / float(80.0 * 80.0))
+            blur_score = min(1.0, blur / 150.0)
+            quality_score = float(size_score * blur_score)
+        except Exception:
+            quality_score = 0.0
 
         row = EmployeeFace(
             id=face_id,
             employee_id=employee_id,
-            embedding=face.embedding,
+            embedding=emb,
             snapshot_path=rel_path,  # store the uploaded image path
-            quality_score=face.quality_score,
-            model_version=face.model_version,
+            quality_score=quality_score,
+            model_version=f"onnx:{Path(proc.cfg.embedder.model_path).name}",
         )
         db.add(row)
         db.commit()
@@ -212,9 +273,13 @@ def upload_employee_faces(
                 face_id=face_id,
                 employee_id=employee_id,
                 snapshot_path=rel_path,
-                model_version=face.model_version,
+                model_version=f"onnx:{Path(proc.cfg.embedder.model_path).name}",
             )
         )
+
+    # Clear prototypes so they rebuild with the newly enrolled faces.
+    proc.recognizer.clear()
+
     return created
 
 
@@ -246,8 +311,8 @@ def search_employee_by_face(
     ext = _safe_ext(file.filename or "query.jpg")
 
     try:
-        embedder = get_face_embedder()
-    except FaceEmbedderError as e:
+        proc = get_runtime_processor(store_id=store_id, camera_id=None)
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     # Save the query image too (optional but nice for debugging)
@@ -257,17 +322,27 @@ def search_employee_by_face(
 
     _bytes, sha = _save_upload_and_sha256(file, abs_path)
 
+    img = _read_image_bgr(abs_path)
     try:
-        img = read_image_bgr(abs_path)
-        face = embedder.embed_best_face(img)
-    except FaceEmbedderError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    if face is None:
+        det = proc.detector.detect_best(img)
+    except FaceSystemModelError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if det is None:
         raise HTTPException(status_code=400, detail="No face detected in query image")
 
+    x1, y1, x2, y2 = det.bbox_xyxy
+    face_crop = img[y1:y2, x1:x2].copy()
+    if face_crop.size == 0:
+        raise HTTPException(status_code=400, detail="Invalid face crop")
+
+    aligned = proc.aligner.align(face_crop) or face_crop
+    try:
+        emb = proc.embedder.embed(aligned).astype(float).tolist()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
     # Min cosine distance per employee (because each employee has many face templates)
-    dist_expr = EmployeeFace.embedding.cosine_distance(face.embedding)
+    dist_expr = EmployeeFace.embedding.cosine_distance(emb)
 
     subq = (
         db.query(

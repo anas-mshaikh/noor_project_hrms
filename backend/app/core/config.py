@@ -62,6 +62,33 @@ class Settings(BaseSettings):
     face_model_name: str = "buffalo_l"
     face_det_size: int = 640  # detector input size (square)
 
+    # -------------------------
+    # Face system (Frigate-style)
+    # -------------------------
+    # Enable/disable the new face system (keeps old pgvector search endpoints working).
+    face_system_enabled: bool = True
+
+    # Training image library directory.
+    # Default: <DATA_DIR>/faces
+    face_dir: str = "./data/faces"
+
+    # Face detector + landmark models (local files; no runtime downloads).
+    # YuNet FaceDetectorYN model (OpenCV expects this format)
+    facedet_model_path: str = "./models/face_det/face_detection_yunet_2023mar.onnx"
+    landmark_model_path: str = "./data/models/facedet/landmarkdet.yaml"
+
+    # ArcFace embedding ONNX model (defaults to InsightFace buffalo_l pack if present).
+    arcface_model_path: str = "./models/insightface/models/buffalo_l/w600k_r50.onnx"
+
+    # Runtime gating and thresholds
+    face_min_area: int = 900
+    unknown_score: float = 0.55
+    recognition_threshold: float = 0.70
+    min_faces: int = 3
+    save_attempts: bool = False
+    allow_unaligned_fallback: bool = True
+    expand_upward_frac: float = 0.35
+
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.local"),
         env_file_encoding="utf-8",

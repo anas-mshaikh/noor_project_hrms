@@ -12,3 +12,5 @@ __pycache__/
 *.csv
 *.json
 *.jpeg
+*.cache-9
+backend/.cache/fontconfig/CACHEDIR.TAG

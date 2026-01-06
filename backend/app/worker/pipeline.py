@@ -8,7 +8,7 @@ REAL Phase 1 offline video pipeline (no stubs):
 - If ACTIVE (or heartbeat interval):
     - YOLO person detection + tracking
     - Line/zone door logic -> entry/exit events (event_engine.py)
-    - Face recognition (gated): near door + good quality -> pgvector match
+    - Face recognition (gated): near door -> Frigate-style vote + lock (face_system)
 - Persist:
     - events rows (+ snapshots at event frames)
     - tracks rows (+ best face snapshot path)
@@ -27,16 +27,13 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.face_system.config import FaceSystemConfig
+from app.face_system.recognizer import FaceSystemError
+from app.face_system.runtime_processor import FaceRuntimeProcessor
+from app.face_system.storage import FaceLibraryStorage
 from app.models.models import Event, Track, Video
 from app.worker.detector_tracker import DetectorTracker
 from app.worker.event_engine import TrackDoorState, finalize_track, observe_track_point
-from app.worker.face_embedder import FaceEmbedderError, get_face_embedder
-from app.worker.identity import (
-    IdentityConfig,
-    best_employee_candidates,
-    select_employee,
-    store_has_enrolled_faces,
-)
 from app.worker.motion import MotionGate, MotionGateConfig, MotionState
 from app.worker.zones import Zone, ZoneConfig, is_in_gate, point_in_polygon
 
@@ -70,21 +67,21 @@ class PipelineConfig:
     # Face recognition gating
     face_probe_cooldown_sec: float = 0.8
     face_max_probes: int = 8
-    face_min_quality: float = 0.35
-    face_min_blur_score: float = 60.0
-
-    # Voting (multi-frame identity stability)
-    votes_required: int = 3
-    votes_total_max: int = 5
-
-    # pgvector match acceptance rules
-    identity: IdentityConfig = field(default_factory=IdentityConfig)
 
     # Speed optimization: crop detection to door ROI bbox (if configured)
     use_door_roi_crop: bool = True
 
-    # Padding when cropping person bbox for face recognition
-    crop_pad_px: int = 40
+    # -------------------------
+    # Guardrails against false positives
+    # -------------------------
+    # Door cameras often have lots of clutter; YOLO can occasionally produce a tiny "person"
+    # box on shoes/feet. Those boxes will never contain a face, but they CAN trigger
+    # inferred entry/exit events via the door logic.
+    #
+    # We drop detections that are too small / too "square" to be a full person.
+    min_person_bbox_height_px: int = 60          # absolute floor (px)
+    min_person_bbox_height_frac: float = 0.10    # relative to frame height (0..1)
+    min_person_bbox_aspect_ratio: float = 1.2    # height/width should look like a person
 
     @classmethod
     def from_job_config(cls, job_config: dict[str, Any] | None) -> "PipelineConfig":
@@ -96,13 +93,6 @@ class PipelineConfig:
         data = dict(job_config or {})
         allowed = set(cls.__dataclass_fields__.keys())  # type: ignore[attr-defined]
         filtered: dict[str, Any] = {k: v for k, v in data.items() if k in allowed}
-
-        # identity can be nested dict
-        if isinstance(filtered.get("identity"), dict):
-            ident = filtered["identity"]
-            allowed_i = set(IdentityConfig.__dataclass_fields__.keys())  # type: ignore[attr-defined]
-            ident_filtered = {k: v for k, v in ident.items() if k in allowed_i}
-            filtered["identity"] = IdentityConfig(**ident_filtered)
 
         return cls(**filtered)
 
@@ -126,11 +116,9 @@ class TrackRuntime:
     employee_id: UUID | None = None
     identity_confidence: float | None = None
 
-    # Voting
+    # Face probing (to limit compute; face_system has its own attempt caps too)
     probes: int = 0
     last_probe_ts: datetime | None = None
-    votes: dict[UUID, int] = field(default_factory=dict)
-    best_dist: dict[UUID, float] = field(default_factory=dict)
 
     # Last bbox (used for face crop)
     last_bbox: tuple[float, float, float, float] | None = None
@@ -336,12 +324,16 @@ def process_video_pipeline(
         target_fps = float(cfg.decode_fps)
         step = int(max(1, round(fps / target_fps))) if target_fps > 0 else 1
 
-        # Motion gate uses door ROI if present, else gate, else full frame
-        door_roi = zone_cfg.door_roi or zone_cfg.gate
+        # Motion gate uses door ROI if present, else gate, else full frame.
+        # IMPORTANT: gate_polygon is often drawn tightly around the *floor/threshold*,
+        # while door_roi_polygon should cover the full person area near the door.
+        # We can safely use gate for motion (cheap), but we should NOT use it to crop
+        # the YOLO detector input, otherwise YOLO will only "see" feet/legs.
+        motion_roi = zone_cfg.door_roi or zone_cfg.gate
         motion_gate = MotionGate(
             frame_width=w,
             frame_height=h,
-            door_roi=door_roi,
+            door_roi=motion_roi,
             ignore_masks=zone_cfg.masks,
             cfg=MotionGateConfig(
                 threshold_fraction=cfg.motion_thresh_fraction,
@@ -353,14 +345,42 @@ def process_video_pipeline(
 
         detector = DetectorTracker()
 
-        # Face embedder is only needed if store has enrolled faces
-        do_face = store_has_enrolled_faces(db, store_id=video.store_id)
-        embedder = get_face_embedder() if do_face else None
+        # -------------------------
+        # Face system (Frigate-style)
+        # -------------------------
+        # We create a job-scoped FaceRuntimeProcessor to avoid leaking track state across jobs.
+        face_proc: FaceRuntimeProcessor | None = None
+        face_cfg = FaceSystemConfig.from_settings()
+        if face_cfg.enabled:
+            storage = FaceLibraryStorage(face_cfg.storage)
+            if storage.store_has_any_images(store_id=video.store_id):
+                # Fail fast if required model files are missing (better than silently producing
+                # "all absent" attendance).
+                if not face_cfg.detector.model_path.exists():
+                    raise RuntimeError(
+                        f"face detector model missing: {face_cfg.detector.model_path}"
+                    )
+                if not face_cfg.embedder.model_path.exists():
+                    raise RuntimeError(
+                        f"face embedding model missing: {face_cfg.embedder.model_path}"
+                    )
+
+                face_proc = FaceRuntimeProcessor(
+                    store_id=video.store_id,
+                    camera_id=video.camera_id,
+                )
+
+                # Build prototypes once per job so runtime recognition doesn't race the async builder.
+                face_proc.recognizer.ensure_built(block=True, timeout_sec=60.0)
 
         # Optional detection crop bbox (speed)
         crop_bbox: tuple[int, int, int, int] | None = None
-        if cfg.use_door_roi_crop and door_roi and len(door_roi) >= 3:
-            crop_bbox = _polygon_bbox(door_roi, w, h)
+        if (
+            cfg.use_door_roi_crop
+            and zone_cfg.door_roi
+            and len(zone_cfg.door_roi) >= 3
+        ):
+            crop_bbox = _polygon_bbox(zone_cfg.door_roi, w, h)
 
         runtimes: dict[str, TrackRuntime] = {}
         # Tracker IDs can be reused; we must keep track_key unique per job.
@@ -446,6 +466,32 @@ def process_video_pipeline(
                 # Offset bbox back to full-frame coords
                 x1, y1, x2, y2 = d.bbox_xyxy
                 bbox = (x1 + offset_x, y1 + offset_y, x2 + offset_x, y2 + offset_y)
+
+                # ---------------------------------------
+                # Filter out tiny/invalid detections.
+                #
+                # If YOLO only sees a partial body (e.g. feet inside a cropped ROI),
+                # it may output a small near-square box. Those boxes:
+                # - produce "footpoints" that can trip door logic
+                # - will never contain a face for recognition
+                #
+                # So we drop them early.
+                # ---------------------------------------
+                bw = float(bbox[2] - bbox[0])
+                bh = float(bbox[3] - bbox[1])
+                if bw <= 1.0 or bh <= 1.0:
+                    continue
+
+                min_h = max(
+                    int(cfg.min_person_bbox_height_px),
+                    int(float(cfg.min_person_bbox_height_frac) * float(h)),
+                )
+                if bh < float(min_h):
+                    continue
+
+                aspect = bh / max(bw, 1e-6)
+                if aspect < float(cfg.min_person_bbox_aspect_ratio):
+                    continue
 
                 raw = (int(segment_id), int(d.track_id))
 
@@ -539,11 +585,11 @@ def process_video_pipeline(
                     )
                     inserts_since_commit += 1
 
-                    # -------------------------
+                # -------------------------
                 # Face recognition (gated)
                 # -------------------------
-                if embedder is None:
-                    continue  # no enrolled faces => skip all identity work
+                if face_proc is None:
+                    continue  # no training faces => skip all identity work
 
                 if rt.employee_id is not None:
                     continue  # already locked identity
@@ -570,79 +616,55 @@ def process_video_pipeline(
                     ).total_seconds() < cfg.face_probe_cooldown_sec:
                         continue
 
-                # Crop person bbox for face analysis
-                pad = int(cfg.crop_pad_px)
-                bx1, by1, bx2, by2 = [int(v) for v in bbox]
-                bx1 = max(0, bx1 - pad)
-                by1 = max(0, by1 - pad)
-                bx2 = min(w, bx2 + pad)
-                by2 = min(h, by2 + pad)
-
-                if bx2 <= bx1 or by2 <= by1:
-                    continue
-
-                person_crop = frame[by1:by2, bx1:bx2]
-
                 rt.probes += 1
                 rt.last_probe_ts = ts
 
                 try:
-                    face = embedder.embed_best_face(person_crop)
-                except FaceEmbedderError:
-                    continue
-
-                if face is None:
-                    continue
-
-                # Quality gates
-                if face.blur_score < cfg.face_min_blur_score:
-                    continue
-                if face.quality_score < cfg.face_min_quality:
-                    continue
-
-                # Save best snapshot if this is the best quality so far
-                if face.quality_score > rt.best_snapshot_quality:
-                    rt.best_snapshot_quality = face.quality_score
-                    rt.best_snapshot_path = _save_best_face_snapshot(
-                        job_id=job_id,
-                        track_key=track_key,
-                        face_crop_bgr=face.face_crop_bgr,
+                    face_res = face_proc.process(
+                        track_id=track_key,
+                        frame_bgr=frame,
+                        person_bbox_xyxy=bbox,
+                        ts=ts,
                     )
-
-                # Match embedding -> employee (pgvector)
-                candidates = best_employee_candidates(
-                    db, store_id=video.store_id, query_embedding=face.embedding, limit=2
-                )
-                chosen = select_employee(candidates, cfg=cfg.identity)
-                if chosen is None:
+                except FaceSystemError:
+                    # Most likely: no prototypes built yet (e.g. missing training images).
+                    # We skip this probe and continue processing events/tracks.
                     continue
+                except Exception as e:
+                    # Model/runtime errors should surface clearly for debugging.
+                    raise RuntimeError(f"face recognition failed: {e}") from e
 
-                emp_id, dist, confidence = chosen
-
-                rt.votes[emp_id] = rt.votes.get(emp_id, 0) + 1
-                rt.best_dist[emp_id] = min(
-                    rt.best_dist.get(emp_id, 9999.0), float(dist)
-                )
-
-                # Lock identity when enough votes are accumulated
-                total_votes = sum(rt.votes.values())
-                best_emp = max(rt.votes.keys(), key=lambda k: rt.votes[k])
-                best_votes = rt.votes[best_emp]
-
-                if total_votes >= cfg.votes_total_max:
-                    # Stop probing further once we hit the max budget
-                    rt.probes = cfg.face_max_probes
-
-                # Require a strict majority + minimum votes
-                if best_votes >= cfg.votes_required and best_votes > (
-                    total_votes - best_votes
+                # Save best face crop snapshot for audits (optional but very useful).
+                # We compute a small "quality" metric similar to the legacy code:
+                # - size (area) + blur (sharpness)
+                face_crop = face_res.face_crop_bgr
+                if (
+                    face_crop is not None
+                    and face_res.face_area is not None
+                    and face_res.blur_score is not None
                 ):
-                    rt.employee_id = best_emp
-                    rt.identity_confidence = max(
-                        0.0, 1.0 - float(rt.best_dist[best_emp])
+                    area = float(face_res.face_area)
+                    blur = float(face_res.blur_score)
+                    size_score = min(1.0, area / float(80.0 * 80.0))
+                    blur_score = min(1.0, blur / 150.0)
+                    quality = float(size_score * blur_score)
+
+                    if quality > rt.best_snapshot_quality:
+                        rt.best_snapshot_quality = quality
+                        rt.best_snapshot_path = _save_best_face_snapshot(
+                            job_id=job_id,
+                            track_key=track_key,
+                            face_crop_bgr=face_crop,
+                        )
+
+                # If face_system locked identity for this track, attach it.
+                if face_res.locked and face_res.employee_id is not None:
+                    rt.employee_id = face_res.employee_id
+                    rt.identity_confidence = (
+                        float(face_res.confidence) if face_res.confidence is not None else None
                     )
 
-                    # Update previous events for this track (best-effort)
+                    # Update previous events for this track (best-effort).
                     (
                         db.query(Event)
                         .filter(
@@ -651,7 +673,7 @@ def process_video_pipeline(
                             Event.employee_id.is_(None),
                         )
                         .update(
-                            {Event.employee_id: best_emp}, synchronize_session=False
+                            {Event.employee_id: rt.employee_id}, synchronize_session=False
                         )
                     )
 
@@ -713,6 +735,8 @@ def process_video_pipeline(
                     )
                 )
                 inserts_since_commit += 1
+                if face_proc is not None:
+                    face_proc.end_track(tk)
                 del runtimes[tk]
                 used_track_keys.add(tk)
 
@@ -773,6 +797,8 @@ def process_video_pipeline(
                     last_seen_zone=rt.last_zone.value if rt.last_zone else None,
                 )
             )
+            if face_proc is not None:
+                face_proc.end_track(tk)
             used_track_keys.add(tk)
             for k, v in list(active_key_by_raw.items()):
                 if v == tk:
@@ -785,7 +811,7 @@ def process_video_pipeline(
         return {
             "frames_seen": int(frame_idx),
             "video_path": str(video_path),
-            "used_face_recognition": bool(embedder is not None),
+            "used_face_recognition": bool(face_proc is not None),
         }
 
     finally:
