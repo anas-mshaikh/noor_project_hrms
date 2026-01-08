@@ -1,4 +1,5 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import Any
 from uuid import UUID
 
@@ -17,6 +18,7 @@ from app.models.models import (
     Job,
     MetricsHourly,
     Video,
+    Store,
 )
 from app.core.config import settings
 from app.models.models import Artifact
@@ -61,6 +63,16 @@ class MetricsHourlyOut(BaseModel):
     exits: int
     unique_visitors: int
     avg_dwell_sec: float | None
+
+
+class AttendanceDailySummaryOut(BaseModel):
+    business_date: date
+    total_employees: int
+    present_count: int
+    absent_count: int
+    late_count: int
+    avg_worked_minutes: float | None
+    avg_punch_in_minutes: float | None
 
 
 @router.get("/jobs/{job_id}/events", response_model=list[EventOut])
@@ -162,6 +174,137 @@ def list_attendance(job_id: UUID, db: Session = Depends(get_db)) -> list[Attenda
                     anomalies_json=att.anomalies_json,
                 )
             )
+
+    return out
+
+
+def _parse_hhmm_to_minutes(value: str | None) -> int | None:
+    """
+    Convert "HH:MM" -> minutes since midnight.
+    Returns None if empty; raises 400 if malformed.
+    """
+    if value is None or value == "":
+        return None
+
+    parts = value.split(":")
+    if len(parts) != 2:
+        raise HTTPException(status_code=400, detail="late_after must be HH:MM")
+
+    try:
+        h = int(parts[0])
+        m = int(parts[1])
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="late_after must be HH:MM") from e
+
+    if h < 0 or h > 23 or m < 0 or m > 59:
+        raise HTTPException(status_code=400, detail="late_after must be HH:MM")
+
+    return h * 60 + m
+
+
+@router.get(
+    "/stores/{store_id}/attendance/daily",
+    response_model=list[AttendanceDailySummaryOut],
+)
+def list_attendance_daily(
+    store_id: UUID,
+    start: date = Query(...),
+    end: date = Query(...),
+    late_after: str | None = Query(default=None),
+    include_inactive: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> list[AttendanceDailySummaryOut]:
+    # Store timezone drives "late" classification.
+    store = db.get(Store, store_id)
+    if store is None:
+        raise HTTPException(status_code=404, detail="Store not found")
+
+    if end < start:
+        raise HTTPException(status_code=400, detail="end must be >= start")
+
+    try:
+        tz = ZoneInfo(store.timezone or "UTC")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Invalid store timezone") from e
+
+    late_after_minutes = _parse_hhmm_to_minutes(late_after)
+
+    emp_q = db.query(Employee).filter(Employee.store_id == store_id)
+    if not include_inactive:
+        emp_q = emp_q.filter(Employee.is_active.is_(True))
+    total_employees = int(emp_q.count())
+
+    att_q = (
+        db.query(AttendanceDaily)
+        .join(Employee, AttendanceDaily.employee_id == Employee.id)
+        .filter(
+            Employee.store_id == store_id,
+            AttendanceDaily.business_date >= start,
+            AttendanceDaily.business_date <= end,
+        )
+    )
+    if not include_inactive:
+        att_q = att_q.filter(Employee.is_active.is_(True))
+    rows = att_q.all()
+
+    # Pre-fill all dates so missing days still return zeros.
+    per_day: dict[date, dict[str, float]] = {}
+    d = start
+    while d <= end:
+        per_day[d] = {
+            "present": 0,
+            "late": 0,
+            "worked_sum": 0.0,
+            "worked_count": 0,
+            "punch_in_sum": 0.0,
+            "punch_in_count": 0,
+        }
+        d += timedelta(days=1)
+
+    for r in rows:
+        bucket = per_day.get(r.business_date)
+        if bucket is None:
+            continue
+
+        bucket["present"] += 1
+
+        if r.total_minutes is not None:
+            bucket["worked_sum"] += float(r.total_minutes)
+            bucket["worked_count"] += 1
+
+        if r.punch_in is not None:
+            local = r.punch_in.astimezone(tz)
+            minutes = local.hour * 60 + local.minute
+            bucket["punch_in_sum"] += float(minutes)
+            bucket["punch_in_count"] += 1
+
+            if late_after_minutes is not None and minutes > late_after_minutes:
+                bucket["late"] += 1
+
+    out: list[AttendanceDailySummaryOut] = []
+    for business_date in sorted(per_day.keys()):
+        b = per_day[business_date]
+        present = int(b["present"])
+        absent = max(0, total_employees - present)
+
+        avg_worked = (
+            b["worked_sum"] / b["worked_count"] if b["worked_count"] > 0 else None
+        )
+        avg_punch_in = (
+            b["punch_in_sum"] / b["punch_in_count"] if b["punch_in_count"] > 0 else None
+        )
+
+        out.append(
+            AttendanceDailySummaryOut(
+                business_date=business_date,
+                total_employees=total_employees,
+                present_count=present,
+                absent_count=absent,
+                late_count=int(b["late"]),
+                avg_worked_minutes=avg_worked,
+                avg_punch_in_minutes=avg_punch_in,
+            )
+        )
 
     return out
 

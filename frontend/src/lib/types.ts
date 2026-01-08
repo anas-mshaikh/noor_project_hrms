@@ -106,6 +106,16 @@ export type MetricsHourlyOut = {
   avg_dwell_sec: number | null;
 };
 
+export type AttendanceDailySummaryOut = {
+  business_date: string;
+  total_employees: number;
+  present_count: number;
+  absent_count: number;
+  late_count: number;
+  avg_worked_minutes: number | null;
+  avg_punch_in_minutes: number | null;
+};
+
 export type ArtifactOut = {
   id: UUID;
   type: "csv" | "json" | "pdf";

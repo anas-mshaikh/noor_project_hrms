@@ -22,11 +22,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const storeId = useSelection((s) => s.storeId);
   const cameraId = useSelection((s) => s.cameraId);
 
-  const nav = [
-    { href: "/setup", label: "Setup" },
-    { href: "/employees", label: "Employees" },
-    { href: "/videos", label: "Videos" },
-  ];
+    const nav = [
+      { href: "/dashboard", label: "Dashboard" },
+      { href: "/setup", label: "Setup" },
+      { href: "/employees", label: "Employees" },
+      { href: "/videos", label: "Videos" },
+    ];
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
