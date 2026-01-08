@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
@@ -160,12 +160,14 @@ export default function CalibrationPage() {
     queryKey: ["camera", cameraId],
     enabled: Boolean(cameraId),
     queryFn: () => apiJson<CameraOut>(`/api/v1/cameras/${cameraId}`),
-    onSuccess: (cam) => {
-      if (cam.calibration_json) {
-        setState(normalizeState(cam.calibration_json));
-      }
-    },
   });
+
+  // apply loaded calibration when data arrives
+  useEffect(() => {
+    if (cameraQ.data?.calibration_json) {
+      setState(normalizeState(cameraQ.data.calibration_json));
+    }
+  }, [cameraQ.data]);
 
   const loadImage = (file: File) => {
     const img = new Image();

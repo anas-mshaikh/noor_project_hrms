@@ -38,10 +38,9 @@ export function EventsTable({ rows }: { rows: EventOut[] }) {
         </thead>
         <tbody>
           {rows.map((e) => {
+            const meta = (e.meta as Record<string, unknown> | null) ?? {};
             const reason =
-              (e.meta as Record<string, unknown>)?.reason ??
-              (e.meta as Record<string, unknown>)?.meta?.reason ??
-              null;
+              (meta as any).reason ?? (meta as any).meta?.reason ?? null;
 
             return (
               <tr

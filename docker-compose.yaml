@@ -1,0 +1,96 @@
+version: "3.9"
+
+services:
+  db:
+    # Postgres 17 + pgvector extension preinstalled
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: attendance
+      POSTGRES_USER: attendance
+      POSTGRES_PASSWORD: attendance
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # optional: expose for local psql access
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U attendance -d attendance"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      # optional: expose for local debugging
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    # Runs Alembic migrations once on startup, then exits.
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env.docker
+    volumes:
+      # Persist uploaded videos + outputs to host
+      - ./backend/data:/app/data
+      # Mount models so the container can use local ONNX / YOLO weights
+      - ./backend/models:/app/models
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env.docker
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/models:/app/models
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env.docker
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/models:/app/models
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "app.worker.worker"]
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # IMPORTANT: NEXT_PUBLIC_* is inlined at build time for client-side calls
+        NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  pgdata:
