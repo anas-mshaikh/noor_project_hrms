@@ -32,6 +32,7 @@ import type {
 import { AttendanceTable } from "@/components/AttendanceTable";
 import { EventsTable } from "@/components/EventsTable";
 import { MetricsChart } from "@/components/MetricsChart";
+import { DailyInsights } from "@/components/DailyInsights";
 
 // function paramToString(v: string | string[] | undefined): string | undefined {
 //   if (!v) return undefined;
@@ -107,6 +108,23 @@ export default function ReportPage() {
       <div className="text-sm text-gray-600">
         job_id: <code className="text-xs">{jobId}</code>
       </div>
+
+      {/* Daily Insights */}
+      <section className="rounded border bg-white p-4">
+        <h2 className="text-lg font-medium">Daily Insights</h2>
+
+        {attendanceQ.isLoading ? (
+          <div className="mt-2 text-sm text-gray-600">Loading…</div>
+        ) : attendanceQ.isError ? (
+          <div className="mt-2 text-sm text-red-600">
+            {String(attendanceQ.error)}
+          </div>
+        ) : (
+          <div className="mt-3">
+            <DailyInsights rows={attendanceQ.data ?? []} />
+          </div>
+        )}
+      </section>
 
       {/* Attendance */}
       <section className="rounded border bg-white p-4">
