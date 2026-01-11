@@ -110,6 +110,21 @@ class Settings(BaseSettings):
     stitch_min_lock_score: float = 0.75
     stitch_require_unique_candidate: bool = True
 
+    # -------------------------
+    # Snapshot quality-of-life (debugging / auditing)
+    # -------------------------
+    # Save one "last seen" full-frame snapshot per track (overwritten as the track moves).
+    # This is used as a fallback snapshot for inferred exits (track_ended_inside),
+    # which otherwise have no frame to capture at finalization time.
+    #
+    # Env vars:
+    #   SAVE_LAST_SEEN_SNAPSHOTS=true|false
+    #   LAST_SEEN_SNAPSHOT_INTERVAL_SEC=2.0
+    #   ATTACH_LAST_SEEN_SNAPSHOT_TO_INFERRED_EXIT=true|false
+    save_last_seen_snapshots: bool = True
+    last_seen_snapshot_interval_sec: float = 2.0
+    attach_last_seen_snapshot_to_inferred_exit: bool = True
+
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.local"),
         env_file_encoding="utf-8",

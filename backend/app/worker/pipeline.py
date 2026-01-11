@@ -81,6 +81,19 @@ class PipelineConfig:
     # Speed optimization: crop detection to door ROI bbox (if configured)
     use_door_roi_crop: bool = True
 
+    # Snapshot debugging/auditing:
+    # - Save a rolling "last seen" snapshot per track (overwritten file).
+    # - Attach it to inferred exits (track_ended_inside) so the UI can show an image.
+    save_last_seen_snapshots: bool = field(
+        default_factory=lambda: bool(settings.save_last_seen_snapshots)
+    )
+    last_seen_snapshot_interval_sec: float = field(
+        default_factory=lambda: float(settings.last_seen_snapshot_interval_sec)
+    )
+    attach_last_seen_snapshot_to_inferred_exit: bool = field(
+        default_factory=lambda: bool(settings.attach_last_seen_snapshot_to_inferred_exit)
+    )
+
     # -------------------------
     # Guardrails against false positives
     # -------------------------
@@ -154,6 +167,11 @@ class TrackRuntime:
     # Best face snapshot (for audits + recompute)
     best_snapshot_path: str | None = None
     best_snapshot_quality: float = 0.0
+
+    # Track-level debug snapshot (full-frame with bbox) updated periodically.
+    # This lets us attach an image to inferred exits (track_ended_inside).
+    last_seen_snapshot_path: str | None = None
+    last_seen_snapshot_ts: datetime | None = None
 
     # Identity
     employee_id: UUID | None = None
@@ -314,6 +332,54 @@ def _save_best_face_snapshot(
     abs_path = out_dir / f"bestface_{safe_track}.jpg"
 
     cv2.imwrite(str(abs_path), face_crop_bgr)
+
+    return str(abs_path.relative_to(Path(settings.data_dir).resolve()))
+
+
+def _save_last_seen_snapshot(
+    *,
+    job_id: UUID,
+    track_key: str,
+    frame_bgr: np.ndarray,
+    bbox: tuple[float, float, float, float] | None,
+) -> str:
+    """
+    Save (overwrite) a "last seen" full-frame snapshot for a track.
+
+    Why overwrite?
+    - We want at most ONE file per track (avoid producing thousands of images).
+    - Inferred exits happen after a grace window, when we no longer have a frame.
+      This gives the UI something useful to inspect.
+    """
+    try:
+        import cv2  # type: ignore
+    except Exception as e:
+        raise RuntimeError("opencv-python required for snapshot writing") from e
+
+    base = Path(settings.data_dir).resolve()
+    out_dir = base / "jobs" / str(job_id) / "snapshots"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_track = _safe_name(track_key)
+    abs_path = out_dir / f"lastseen_{safe_track}.jpg"
+
+    img = frame_bgr.copy()
+    if bbox is not None:
+        x1, y1, x2, y2 = bbox
+        cv2.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (255, 255, 0), 2)
+
+    cv2.putText(
+        img,
+        f"last_seen {safe_track}",
+        (20, 40),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1.0,
+        (255, 255, 0),
+        2,
+        cv2.LINE_AA,
+    )
+
+    cv2.imwrite(str(abs_path), img)
 
     return str(abs_path.relative_to(Path(settings.data_dir).resolve()))
 
@@ -708,6 +774,25 @@ def process_video_pipeline(
                 rt = runtimes.setdefault(track_key, TrackRuntime())
                 rt.last_bbox = bbox
 
+                # Periodically update "last seen" snapshot for this track (overwrites).
+                # This is intentionally independent of door events so we can attach a snapshot
+                # to inferred exits later.
+                if cfg.save_last_seen_snapshots:
+                    interval = float(cfg.last_seen_snapshot_interval_sec)
+                    should_write = (
+                        rt.last_seen_snapshot_ts is None
+                        or interval <= 0.0
+                        or (ts - rt.last_seen_snapshot_ts).total_seconds() >= interval
+                    )
+                    if should_write:
+                        rt.last_seen_snapshot_ts = ts
+                        rt.last_seen_snapshot_path = _save_last_seen_snapshot(
+                            job_id=job_id,
+                            track_key=track_key,
+                            frame_bgr=frame,
+                            bbox=bbox,
+                        )
+
                 # If this track was in "exit pending" state and reappeared, cancel the pending exit.
                 if cfg.enable_exit_pending and rt.exit_pending:
                     rt.exit_pending = False
@@ -1048,7 +1133,11 @@ def process_video_pipeline(
                                 track_key=tk,
                                 employee_id=rt.employee_id,
                                 confidence=rt.exit_pending_confidence,
-                                snapshot_path=None,
+                                snapshot_path=(
+                                    rt.last_seen_snapshot_path
+                                    if cfg.attach_last_seen_snapshot_to_inferred_exit
+                                    else None
+                                ),
                                 is_inferred=True,
                                 meta={
                                     **(rt.exit_pending_meta or {"reason": "track_ended_inside"}),
@@ -1133,6 +1222,14 @@ def process_video_pipeline(
 
                 # No exit grace needed: commit inferred exit immediately (legacy behavior).
                 if end_event is not None:
+                    snapshot_path: str | None = None
+                    if (
+                        cfg.attach_last_seen_snapshot_to_inferred_exit
+                        and end_event.event_type.value == "exit"
+                        and bool(end_event.is_inferred)
+                    ):
+                        snapshot_path = rt.last_seen_snapshot_path
+
                     db.add(
                         Event(
                             id=uuid4(),
@@ -1143,7 +1240,7 @@ def process_video_pipeline(
                             track_key=tk,
                             employee_id=rt.employee_id,
                             confidence=end_event.confidence,
-                            snapshot_path=None,
+                            snapshot_path=snapshot_path,
                             is_inferred=end_event.is_inferred,
                             meta=end_event.meta,
                         )
@@ -1203,10 +1300,51 @@ def process_video_pipeline(
                             )
                     rt.pending_events.clear()
 
+            # If the track is currently in exit_pending, we must force-commit the inferred EXIT
+            # at end-of-video (there is no future frame where it can reappear).
+            if cfg.enable_exit_pending and rt.exit_pending:
+                exit_ts = rt.exit_pending_exit_ts or rt.last_ts or now_ts
+                db.add(
+                    Event(
+                        id=uuid4(),
+                        job_id=job_id,
+                        ts=exit_ts,
+                        event_type="exit",
+                        entrance_id=None,
+                        track_key=tk,
+                        employee_id=rt.employee_id,
+                        confidence=rt.exit_pending_confidence,
+                        snapshot_path=(
+                            rt.last_seen_snapshot_path
+                            if cfg.attach_last_seen_snapshot_to_inferred_exit
+                            else None
+                        ),
+                        is_inferred=True,
+                        meta={
+                            **(rt.exit_pending_meta or {"reason": "track_ended_inside"}),
+                            "grace_sec": float(cfg.exit_grace_sec),
+                            "committed_at_end_of_video": True,
+                        },
+                    )
+                )
+                inserts_since_commit += 1
+                reliability["exit_pending"]["expired_committed"] += 1
+
+                _finalize_track_runtime(track_key=tk, rt=rt, now_ts=now_ts)
+                continue
+
             end_event = finalize_track(
                 rt.door_state, infer_exit_on_track_end=cfg.infer_exit_on_track_end
             )
             if end_event is not None:
+                snapshot_path: str | None = None
+                if (
+                    cfg.attach_last_seen_snapshot_to_inferred_exit
+                    and end_event.event_type.value == "exit"
+                    and bool(end_event.is_inferred)
+                ):
+                    snapshot_path = rt.last_seen_snapshot_path
+
                 db.add(
                     Event(
                         id=uuid4(),
@@ -1217,36 +1355,14 @@ def process_video_pipeline(
                         track_key=tk,
                         employee_id=rt.employee_id,
                         confidence=end_event.confidence,
-                        snapshot_path=None,
+                        snapshot_path=snapshot_path,
                         is_inferred=end_event.is_inferred,
                         meta=end_event.meta,
                     )
                 )
+                inserts_since_commit += 1
 
-            db.add(
-                Track(
-                    id=uuid4(),
-                    job_id=job_id,
-                    track_key=tk,
-                    entrance_id=None,
-                    first_ts=rt.first_ts or rt.last_ts or now_ts,
-                    last_ts=rt.last_ts or now_ts,
-                    best_snapshot_path=rt.best_snapshot_path,
-                    assigned_type="employee" if rt.employee_id else "visitor",
-                    employee_id=rt.employee_id,
-                    identity_confidence=rt.identity_confidence,
-                    first_seen_zone=rt.first_zone.value if rt.first_zone else None,
-                    last_seen_zone=rt.last_zone.value if rt.last_zone else None,
-                )
-            )
-            if face_proc is not None:
-                face_proc.end_track(tk)
-            used_track_keys.add(tk)
-            for k, v in list(active_key_by_raw.items()):
-                if v == tk:
-                    del active_key_by_raw[k]
-                    break
-            del runtimes[tk]
+            _finalize_track_runtime(track_key=tk, rt=rt, now_ts=now_ts)
 
         db.commit()
 
