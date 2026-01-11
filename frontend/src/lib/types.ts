@@ -93,6 +93,7 @@ export type EventOut = {
   entrance_id: string | null;
   track_key: string;
   employee_id: UUID | null;
+  snapshot_path: string | null;
   confidence: number | null;
   is_inferred: boolean;
   meta: Record<string, unknown>;

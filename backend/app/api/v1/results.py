@@ -41,6 +41,7 @@ class EventOut(BaseModel):
     entrance_id: str | None
     track_key: str
     employee_id: UUID | None
+    snapshot_path: str | None
     confidence: float | None
     is_inferred: bool
     meta: dict[str, Any]
@@ -109,12 +110,57 @@ def list_events(
             entrance_id=e.entrance_id,
             track_key=e.track_key,
             employee_id=e.employee_id,
+            snapshot_path=e.snapshot_path,
             confidence=e.confidence,
             is_inferred=e.is_inferred,
             meta=e.meta,
         )
         for e in rows
     ]
+
+
+@router.get("/events/{event_id}/snapshot")
+def download_event_snapshot(
+    event_id: UUID,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """
+    Secure view/download endpoint for per-event snapshots (entry/exit frames).
+
+    This is useful for the UI to show a thumbnail/preview while keeping disk paths opaque.
+    """
+    e = db.get(Event, event_id)
+    if e is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    if e.snapshot_path is None or e.snapshot_path == "":
+        raise HTTPException(status_code=404, detail="Event snapshot not available")
+
+    base = Path(settings.data_dir).resolve()
+    target = (base / e.snapshot_path).resolve()
+
+    # Prevent path traversal (“../../etc/passwd”)
+    if not target.is_relative_to(base):
+        raise HTTPException(status_code=400, detail="Invalid snapshot path")
+
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="Snapshot file missing on disk")
+
+    media_type = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(target.suffix.lower(), "application/octet-stream")
+
+    # IMPORTANT: `inline` lets the browser open the image in a new tab
+    # (instead of forcing a download via `attachment`).
+    return FileResponse(
+        path=str(target),
+        filename=target.name,
+        media_type=media_type,
+        content_disposition_type="inline",
+    )
 
 
 @router.get("/jobs/{job_id}/attendance", response_model=list[AttendanceOut])

@@ -25,7 +25,8 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.models import Artifact, AttendanceDaily, Employee, Event, Job, Video
+from app.models.models import Artifact, AttendanceDaily, Employee, Event, Job, Track, Video
+from app.worker.reliability import Tracklet, group_stitched_tracklets, iter_session_groups
 
 
 def _utcnow_iso() -> str:
@@ -63,7 +64,12 @@ def _exports_dir(job_id: UUID) -> Path:
     return _data_dir() / "jobs" / str(job_id) / "exports"
 
 
-def write_job_artifacts(db: Session, *, job_id: UUID) -> list[Artifact]:
+def write_job_artifacts(
+    db: Session,
+    *,
+    job_id: UUID,
+    pipeline_report: dict[str, object] | None = None,
+) -> list[Artifact]:
     """
     Create export files for a job and store them in the artifacts table.
 
@@ -190,6 +196,109 @@ def write_job_artifacts(db: Session, *, job_id: UUID) -> list[Artifact]:
     # 3) Export report.json
     # -------------------------
     report_path = exports_dir / "report.json"
+
+    # Derived metrics (DB-backed, recomputable).
+    total_events = len(events)
+    events_with_employee = sum(1 for e in events if e.employee_id is not None)
+    inferred_events = sum(1 for e in events if e.is_inferred)
+
+    employee_id_coverage = (
+        (events_with_employee / total_events) if total_events > 0 else None
+    )
+    inferred_ratio = (inferred_events / total_events) if total_events > 0 else None
+
+    tracks = (
+        db.query(Track)
+        .filter(Track.job_id == job_id, Track.employee_id.isnot(None))
+        .all()
+    )
+    tracks_with_employee = len(tracks)
+    unique_employees_locked = len({t.employee_id for t in tracks if t.employee_id is not None})
+    track_fragmentation = (
+        (tracks_with_employee / unique_employees_locked)
+        if unique_employees_locked > 0
+        else None
+    )
+
+    # Conservative stitch stats (best-effort, for reporting only).
+    stitched_groups_total = 0
+    stitched_track_keys_total = 0
+    if bool(settings.enable_recognized_stitching) and tracks:
+        by_emp: dict[UUID, list[Tracklet]] = {}
+        for t in tracks:
+            if t.employee_id is None or t.identity_confidence is None:
+                continue
+            by_emp.setdefault(t.employee_id, []).append(
+                Tracklet(
+                    track_key=t.track_key,
+                    employee_id=t.employee_id,
+                    lock_confidence=float(t.identity_confidence),
+                    start_ts=t.first_ts,
+                    end_ts=t.last_ts,
+                    first_zone=t.first_seen_zone,
+                    last_zone=t.last_seen_zone,
+                )
+            )
+        for tls in by_emp.values():
+            tls = sorted(tls, key=lambda x: x.start_ts)
+            mapping = group_stitched_tracklets(
+                tracklets=tls,
+                gap_sec=float(settings.stitch_gap_sec),
+                min_lock_score=float(settings.stitch_min_lock_score),
+                require_unique_candidate=bool(settings.stitch_require_unique_candidate),
+                require_inside_continuity=True,
+            )
+            groups = [g for g in iter_session_groups(mapping) if len(g) > 1]
+            stitched_groups_total += len(groups)
+            stitched_track_keys_total += sum(len(g) for g in groups)
+
+    # Pipeline-provided runtime counters (best-effort).
+    # Note: pipeline_report is optional (e.g. recompute endpoints may call artifacts directly).
+    reliability: dict[str, object] = {}
+    if isinstance(pipeline_report, dict):
+        rel = pipeline_report.get("reliability")
+        if isinstance(rel, dict):
+            reliability = rel
+
+    # Extract/sanitize pending stats (avoid writing huge arrays into report.json).
+    pending_stats_raw = reliability.get("pending_events") if isinstance(reliability, dict) else None
+    if not isinstance(pending_stats_raw, dict):
+        pending_stats_raw = {}
+
+    pending_enqueued = int(pending_stats_raw.get("enqueued", 0) or 0)
+    pending_flushed = int(pending_stats_raw.get("flushed", 0) or 0)
+    pending_dropped = int(pending_stats_raw.get("dropped", 0) or 0)
+
+    exit_pending_raw = reliability.get("exit_pending") if isinstance(reliability, dict) else None
+    if not isinstance(exit_pending_raw, dict):
+        exit_pending_raw = {}
+
+    # Summarize flush latency into small buckets (avoid huge report.json).
+    latency_buckets: dict[str, int] = {}
+    try:
+        latencies = []
+        raw_lat = pending_stats_raw.get("flush_latency_ms")
+        if isinstance(raw_lat, list):
+            latencies = [float(x) for x in raw_lat if isinstance(x, (int, float))]
+        # Buckets in milliseconds.
+        edges = [0.0, 250.0, 1000.0, 5000.0]
+        labels = ["<=0ms", "<=250ms", "<=1s", "<=5s", ">5s"]
+        counts = [0, 0, 0, 0, 0]
+        for ms in latencies:
+            if ms <= edges[0]:
+                counts[0] += 1
+            elif ms <= edges[1]:
+                counts[1] += 1
+            elif ms <= edges[2]:
+                counts[2] += 1
+            elif ms <= edges[3]:
+                counts[3] += 1
+            else:
+                counts[4] += 1
+        latency_buckets = {labels[i]: int(counts[i]) for i in range(len(labels))}
+    except Exception:
+        latency_buckets = {}
+
     report = {
         "job_id": str(job.id),
         "video_id": str(video.id),
@@ -198,10 +307,33 @@ def write_job_artifacts(db: Session, *, job_id: UUID) -> list[Artifact]:
         "business_date": video.business_date.isoformat(),
         "generated_at": _utcnow_iso(),
         "counts": {
-            "events": len(events),
+            "events": total_events,
             "entries": sum(1 for e in events if e.event_type == "entry"),
             "exits": sum(1 for e in events if e.event_type == "exit"),
-            "inferred": sum(1 for e in events if e.is_inferred),
+            "inferred": inferred_events,
+        },
+        "metrics": {
+            "employee_id_coverage": employee_id_coverage,
+            "inferred_ratio": inferred_ratio,
+            "track_fragmentation": track_fragmentation,
+            "tracks_with_employee": tracks_with_employee,
+            "unique_employees_locked": unique_employees_locked,
+            "stitched_groups_total": stitched_groups_total,
+            "stitched_track_keys_total": stitched_track_keys_total,
+        },
+        "reliability": {
+            "pending_events": {
+                "enqueued": pending_enqueued,
+                "flushed": pending_flushed,
+                "dropped": pending_dropped,
+            },
+            "pending_event_flush_latency_buckets_ms": latency_buckets,
+            "exit_pending": exit_pending_raw,
+        },
+        "discrepancy_check": {
+            "detection_continuity_when_tracks_exist": True,
+            "track_key_job_global": True,
+            "notes": "These checks reflect configured code paths, not runtime verification.",
         },
     }
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")

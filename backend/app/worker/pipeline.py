@@ -35,6 +35,16 @@ from app.models.models import Event, Track, Video
 from app.worker.detector_tracker import DetectorTracker
 from app.worker.event_engine import TrackDoorState, finalize_track, observe_track_point
 from app.worker.motion import MotionGate, MotionGateConfig, MotionState
+from app.worker.reliability import (
+    DoorEventStrength,
+    PendingDoorEvent,
+    classify_event_strength,
+    exit_grace_expired,
+    is_track_stable,
+    should_cancel_exit_pending,
+    should_commit_event,
+    should_drop_pending_entry_on_end,
+)
 from app.worker.zones import Zone, ZoneConfig, is_in_gate, point_in_polygon
 
 
@@ -79,9 +89,41 @@ class PipelineConfig:
     # inferred entry/exit events via the door logic.
     #
     # We drop detections that are too small / too "square" to be a full person.
-    min_person_bbox_height_px: int = 60          # absolute floor (px)
-    min_person_bbox_height_frac: float = 0.10    # relative to frame height (0..1)
-    min_person_bbox_aspect_ratio: float = 1.2    # height/width should look like a person
+    min_person_bbox_height_px: int = 60  # absolute floor (px)
+    min_person_bbox_height_frac: float = 0.10  # relative to frame height (0..1)
+    min_person_bbox_aspect_ratio: float = 1.2  # height/width should look like a person
+
+    # -------------------------
+    # Attendance-first reliability upgrades (feature-flagged)
+    # -------------------------
+    # Two-phase commit for door events (PendingDoorEvent).
+    enable_pending_events: bool = field(
+        default_factory=lambda: bool(settings.enable_pending_events)
+    )
+    min_event_track_age_sec: float = field(
+        default_factory=lambda: float(settings.min_event_track_age_sec)
+    )
+    min_event_track_hits: int = field(
+        default_factory=lambda: int(settings.min_event_track_hits)
+    )
+
+    # Exit grace window (avoid false "track_ended_inside" exits).
+    enable_exit_pending: bool = field(
+        default_factory=lambda: bool(settings.enable_exit_pending)
+    )
+    exit_grace_sec: float = field(default_factory=lambda: float(settings.exit_grace_sec))
+
+    # Recognized-only stitching (conservative).
+    enable_recognized_stitching: bool = field(
+        default_factory=lambda: bool(settings.enable_recognized_stitching)
+    )
+    stitch_gap_sec: float = field(default_factory=lambda: float(settings.stitch_gap_sec))
+    stitch_min_lock_score: float = field(
+        default_factory=lambda: float(settings.stitch_min_lock_score)
+    )
+    stitch_require_unique_candidate: bool = field(
+        default_factory=lambda: bool(settings.stitch_require_unique_candidate)
+    )
 
     @classmethod
     def from_job_config(cls, job_config: dict[str, Any] | None) -> "PipelineConfig":
@@ -107,6 +149,7 @@ class TrackRuntime:
     last_ts: datetime | None = None
     first_zone: Zone = Zone.UNKNOWN
     last_zone: Zone = Zone.UNKNOWN
+    hits: int = 0  # number of detector updates for this track (stability proxy)
 
     # Best face snapshot (for audits + recompute)
     best_snapshot_path: str | None = None
@@ -122,6 +165,21 @@ class TrackRuntime:
 
     # Last bbox (used for face crop)
     last_bbox: tuple[float, float, float, float] | None = None
+
+    # -------------------------
+    # Attendance-first reliability state
+    # -------------------------
+    # Door events are observed immediately but may be committed later (two-phase commit).
+    pending_events: list[PendingDoorEvent] = field(default_factory=list)
+
+    # Exit grace window:
+    # when a track ends "inside", we delay inferred EXIT to avoid false punch-outs due to
+    # short tracker dropouts/occlusions.
+    exit_pending: bool = False
+    exit_pending_started_ts: datetime | None = None
+    exit_pending_exit_ts: datetime | None = None
+    exit_pending_confidence: float | None = None
+    exit_pending_meta: dict[str, Any] | None = None
 
 
 def _safe_tz(tz_name: str) -> ZoneInfo:
@@ -375,20 +433,15 @@ def process_video_pipeline(
 
         # Optional detection crop bbox (speed)
         crop_bbox: tuple[int, int, int, int] | None = None
-        if (
-            cfg.use_door_roi_crop
-            and zone_cfg.door_roi
-            and len(zone_cfg.door_roi) >= 3
-        ):
+        if cfg.use_door_roi_crop and zone_cfg.door_roi and len(zone_cfg.door_roi) >= 3:
             crop_bbox = _polygon_bbox(zone_cfg.door_roi, w, h)
 
         runtimes: dict[str, TrackRuntime] = {}
         # Tracker IDs can be reused; we must keep track_key unique per job.
         used_track_keys: set[str] = set()  # already written to DB (tracks)
-        reuse_count: dict[tuple[int, int], int] = {}  # (segment_id, raw_track_id) -> n
-        active_key_by_raw: dict[
-            tuple[int, int], str
-        ] = {}  # current mapping while track is alive
+        # Key by raw tracker id only so keys survive motion segment changes.
+        reuse_count: dict[int, int] = {}  # raw_track_id -> n (reuse counter per job)
+        active_key_by_raw: dict[int, str] = {}  # raw_track_id -> track_key while alive
 
         # For uniqueness and safety, prefix track keys by "segment id":
         # each time motion goes IDLE->ACTIVE we increment segment_id.
@@ -399,6 +452,132 @@ def process_video_pipeline(
         last_progress_emit: int = -1
 
         inserts_since_commit = 0
+
+        # Lightweight runtime metrics used for report.json (no DB schema changes).
+        # Keep this JSON-serializable.
+        reliability: dict[str, Any] = {
+            "pending_events": {
+                "enqueued": 0,
+                "flushed": 0,
+                "dropped": 0,
+                "flush_latency_ms": [],  # list[float]; artifacts can bucketize
+            },
+            "exit_pending": {
+                "started": 0,
+                "canceled": 0,
+                "expired_committed": 0,
+            },
+        }
+
+        def _commit_event(
+            *,
+            track_key: str,
+            rt: TrackRuntime,
+            pe: PendingDoorEvent,
+            committed_from_pending: bool,
+            commit_ts: datetime,
+        ) -> None:
+            """
+            Insert one Event row into the DB.
+
+            IMPORTANT: We preserve the original observed timestamp (pe.ts) even if we commit later.
+            """
+            nonlocal inserts_since_commit
+
+            db.add(
+                Event(
+                    id=uuid4(),
+                    job_id=job_id,
+                    ts=pe.ts,
+                    event_type=pe.event_type,
+                    entrance_id=None,
+                    track_key=track_key,
+                    employee_id=rt.employee_id,  # may still be None until locked
+                    confidence=pe.confidence,
+                    snapshot_path=pe.snapshot_path,
+                    is_inferred=pe.is_inferred,
+                    meta=pe.meta,
+                )
+            )
+            inserts_since_commit += 1
+
+            if committed_from_pending:
+                reliability["pending_events"]["flushed"] += 1
+                reliability["pending_events"]["flush_latency_ms"].append(
+                    float((commit_ts - pe.ts).total_seconds() * 1000.0)
+                )
+
+        def _flush_pending_events_if_ready(*, track_key: str, rt: TrackRuntime, now_ts: datetime) -> None:
+            """
+            Flush pending events once a track becomes stable.
+
+            We commit in timestamp order to preserve a sane event stream.
+            """
+            if not cfg.enable_pending_events:
+                return
+            if not rt.pending_events:
+                return
+
+            stable_now = is_track_stable(
+                first_ts=rt.first_ts,
+                now_ts=now_ts,
+                hits=rt.hits,
+                min_age_sec=float(cfg.min_event_track_age_sec),
+                min_hits=int(cfg.min_event_track_hits),
+            )
+            if not stable_now:
+                return
+
+            for pe in sorted(rt.pending_events, key=lambda e: e.ts):
+                _commit_event(
+                    track_key=track_key,
+                    rt=rt,
+                    pe=pe,
+                    committed_from_pending=True,
+                    commit_ts=now_ts,
+                )
+
+            rt.pending_events.clear()
+
+        def _finalize_track_runtime(*, track_key: str, rt: TrackRuntime, now_ts: datetime) -> None:
+            """
+            Persist Track summary and clean up in-memory state for this track_key.
+
+            IMPORTANT: This does NOT emit any door events. Callers must insert any
+            end-of-track events (observed/inferred) before finalizing if needed.
+            """
+            nonlocal inserts_since_commit
+
+            db.add(
+                Track(
+                    id=uuid4(),
+                    job_id=job_id,
+                    track_key=track_key,
+                    entrance_id=None,
+                    first_ts=rt.first_ts or rt.last_ts or now_ts,
+                    last_ts=rt.last_ts or now_ts,
+                    best_snapshot_path=rt.best_snapshot_path,
+                    assigned_type="employee" if rt.employee_id else "visitor",
+                    employee_id=rt.employee_id,
+                    identity_confidence=rt.identity_confidence,
+                    first_seen_zone=rt.first_zone.value if rt.first_zone else None,
+                    last_seen_zone=rt.last_zone.value if rt.last_zone else None,
+                )
+            )
+            inserts_since_commit += 1
+
+            if face_proc is not None:
+                face_proc.end_track(track_key)
+
+            del runtimes[track_key]
+            used_track_keys.add(track_key)
+
+            # Remove raw->key mapping for this finalized track key.
+            for raw_id, key in list(active_key_by_raw.items()):
+                if key == track_key:
+                    del active_key_by_raw[raw_id]
+                    break
+
         frame_idx = 0
         while True:
             # Cancellation (best-effort)
@@ -437,7 +616,17 @@ def process_video_pipeline(
                 or (ts - last_detector_ts).total_seconds() >= cfg.heartbeat_interval_sec
             )
 
-            should_detect = (motion_state == MotionState.ACTIVE) or heartbeat_due
+            has_active_tracks = any(
+                rt.last_ts is not None
+                and (ts - rt.last_ts).total_seconds() <= cfg.track_ttl_sec
+                for rt in runtimes.values()
+            )
+
+            should_detect = (
+                (motion_state == MotionState.ACTIVE)
+                or heartbeat_due
+                or has_active_tracks
+            )
             if not should_detect:
                 # Still emit progress occasionally
                 if on_progress and total_frames > 0:
@@ -493,14 +682,14 @@ def process_video_pipeline(
                 if aspect < float(cfg.min_person_bbox_aspect_ratio):
                     continue
 
-                raw = (int(segment_id), int(d.track_id))
+                raw = int(d.track_id)
 
                 # Reuse the same key while the track is alive.
                 track_key = active_key_by_raw.get(raw)
 
                 # If this is a "new" track lifecycle, allocate a unique key.
                 if track_key is None:
-                    base = f"s{segment_id}-t{d.track_id}"
+                    base = f"t{d.track_id}"
                     n = reuse_count.get(raw, 0) + 1
 
                     while True:
@@ -519,12 +708,33 @@ def process_video_pipeline(
                 rt = runtimes.setdefault(track_key, TrackRuntime())
                 rt.last_bbox = bbox
 
+                # If this track was in "exit pending" state and reappeared, cancel the pending exit.
+                if cfg.enable_exit_pending and rt.exit_pending:
+                    rt.exit_pending = False
+                    rt.exit_pending_started_ts = None
+                    rt.exit_pending_exit_ts = None
+                    rt.exit_pending_confidence = None
+                    rt.exit_pending_meta = None
+                    reliability["exit_pending"]["canceled"] += 1
+
                 if rt.first_ts is None:
                     rt.first_ts = ts
                 rt.last_ts = ts
+                rt.hits += 1
 
                 # Door logic uses foot point
                 pt = _footpoint(bbox)
+
+                # Track stability gate (attendance-first):
+                # we allow "late commit" of door events, but we want to avoid committing
+                # weak/inferred entries for 1-2 frame ghost tracks.
+                stable_now = is_track_stable(
+                    first_ts=rt.first_ts,
+                    now_ts=ts,
+                    hits=rt.hits,
+                    min_age_sec=float(cfg.min_event_track_age_sec),
+                    min_hits=int(cfg.min_event_track_hits),
+                )
 
                 observed_zone, door_event = observe_track_point(
                     rt.door_state,
@@ -557,33 +767,57 @@ def process_video_pipeline(
                         label=door_event.event_type.value,
                     )
 
-                    db.add(
-                        Event(
-                            id=uuid4(),
-                            job_id=job_id,
-                            ts=door_event.ts,
-                            event_type=door_event.event_type.value,
-                            entrance_id=None,
-                            track_key=track_key,
-                            employee_id=rt.employee_id,  # might be None until recognized
-                            confidence=door_event.confidence,
-                            snapshot_path=snap,
-                            is_inferred=door_event.is_inferred,
-                            meta={
-                                **(door_event.meta or {}),
-                                "track_id": int(d.track_id),
-                                "segment_id": int(segment_id),
-                                "zone": observed_zone.value,
-                                "bbox": [
-                                    float(bbox[0]),
-                                    float(bbox[1]),
-                                    float(bbox[2]),
-                                    float(bbox[3]),
-                                ],
-                            },
-                        )
+                    meta = {
+                        **(door_event.meta or {}),
+                        "track_id": int(d.track_id),
+                        "segment_id": int(segment_id),
+                        "zone": observed_zone.value,
+                        "bbox": [
+                            float(bbox[0]),
+                            float(bbox[1]),
+                            float(bbox[2]),
+                            float(bbox[3]),
+                        ],
+                    }
+                    reason = str((door_event.meta or {}).get("reason", "") or "")
+                    strength = classify_event_strength(reason)
+
+                    pe = PendingDoorEvent(
+                        event_type=door_event.event_type.value,
+                        ts=door_event.ts,
+                        is_inferred=bool(door_event.is_inferred),
+                        confidence=door_event.confidence,
+                        strength=strength,
+                        snapshot_path=snap,
+                        meta=meta,
                     )
-                    inserts_since_commit += 1
+
+                    if not cfg.enable_pending_events:
+                        _commit_event(
+                            track_key=track_key,
+                            rt=rt,
+                            pe=pe,
+                            committed_from_pending=False,
+                            commit_ts=ts,
+                        )
+                    else:
+                        # Two-phase commit:
+                        # - STRONG evidence (line crossing) commits immediately.
+                        # - MEDIUM/WEAK commit only after track stabilization.
+                        if should_commit_event(strength=strength, stable=stable_now):
+                            _commit_event(
+                                track_key=track_key,
+                                rt=rt,
+                                pe=pe,
+                                committed_from_pending=False,
+                                commit_ts=ts,
+                            )
+                        else:
+                            rt.pending_events.append(pe)
+                            reliability["pending_events"]["enqueued"] += 1
+
+                # Flush any previously pending events once the track is stable.
+                _flush_pending_events_if_ready(track_key=track_key, rt=rt, now_ts=ts)
 
                 # -------------------------
                 # Face recognition (gated)
@@ -661,8 +895,18 @@ def process_video_pipeline(
                 if face_res.locked and face_res.employee_id is not None:
                     rt.employee_id = face_res.employee_id
                     rt.identity_confidence = (
-                        float(face_res.confidence) if face_res.confidence is not None else None
+                        float(face_res.confidence)
+                        if face_res.confidence is not None
+                        else None
                     )
+
+                    # IMPORTANT: our SessionLocal uses autoflush=False, so any Events inserted earlier
+                    # in this loop (same frame) are not visible to the UPDATE below unless we flush.
+                    # Without this, you can end up with:
+                    # - entry event gets employee_id (updated later)
+                    # - exit event inserted in the same frame stays NULL forever
+                    #   because we only run this UPDATE once (when the track locks).
+                    db.flush()
 
                     # Update previous events for this track (best-effort).
                     (
@@ -673,9 +917,56 @@ def process_video_pipeline(
                             Event.employee_id.is_(None),
                         )
                         .update(
-                            {Event.employee_id: rt.employee_id}, synchronize_session=False
+                            {Event.employee_id: rt.employee_id},
+                            synchronize_session=False,
                         )
                     )
+
+                    # -------------------------
+                    # Exit-pending identity-aware cancel
+                    # -------------------------
+                    # If another track "ended inside" recently (exit_pending) but this new track
+                    # locks to the SAME employee near the door, treat it as continuity and
+                    # finalize the old track WITHOUT emitting an inferred exit.
+                    if (
+                        cfg.enable_exit_pending
+                        and observed_zone == Zone.INSIDE
+                        and in_roi
+                        and rt.identity_confidence is not None
+                    ):
+                        candidates: list[tuple[str, datetime]] = []
+                        for other_tk, other_rt in runtimes.items():
+                            if other_tk == track_key:
+                                continue
+                            if not other_rt.exit_pending:
+                                continue
+                            if other_rt.exit_pending_started_ts is None:
+                                continue
+                            if should_cancel_exit_pending(
+                                pending_employee_id=other_rt.employee_id,
+                                started_ts=other_rt.exit_pending_started_ts,
+                                now_ts=ts,
+                                grace_sec=float(cfg.exit_grace_sec),
+                                new_employee_id=rt.employee_id,
+                                new_lock_confidence=rt.identity_confidence,
+                                min_lock_score=float(cfg.stitch_min_lock_score),
+                                new_in_door_roi=True,
+                            ):
+                                candidates.append((other_tk, other_rt.exit_pending_started_ts))
+
+                        if candidates:
+                            # Ambiguity guard: require a unique candidate if enabled.
+                            if cfg.stitch_require_unique_candidate and len(candidates) != 1:
+                                candidates = []
+
+                        if candidates:
+                            chosen_tk, _started = max(candidates, key=lambda x: x[1])
+                            old_rt = runtimes.get(chosen_tk)
+                            if old_rt is not None:
+                                reliability["exit_pending"]["canceled"] += 1
+                                _finalize_track_runtime(
+                                    track_key=chosen_tk, rt=old_rt, now_ts=ts
+                                )
 
             # -------------------------
             # TTL finalization (tracks that disappeared)
@@ -695,10 +986,152 @@ def process_video_pipeline(
             for tk in to_finalize:
                 rt = runtimes[tk]
 
-                # Inferred EXIT if ended INSIDE
+                # -------------------------
+                # Exit pending grace handling
+                # -------------------------
+                if cfg.enable_exit_pending and rt.exit_pending:
+                    # Waiting for grace window to expire (or cancel by reappearance/identity).
+                    started_ts = rt.exit_pending_started_ts or now_ts
+                    rt.exit_pending_started_ts = started_ts
+
+                    if exit_grace_expired(
+                        started_ts=started_ts,
+                        now_ts=now_ts,
+                        grace_sec=float(cfg.exit_grace_sec),
+                    ):
+                        # Finalize any still-pending door events.
+                        # IMPORTANT: do NOT treat "time spent in grace" as extra track age.
+                        # Use the last-seen timestamp for stability decisions.
+                        if cfg.enable_pending_events and rt.pending_events:
+                            stable_ref_ts = rt.last_ts or now_ts
+                            stable_end = is_track_stable(
+                                first_ts=rt.first_ts,
+                                now_ts=stable_ref_ts,
+                                hits=rt.hits,
+                                min_age_sec=float(cfg.min_event_track_age_sec),
+                                min_hits=int(cfg.min_event_track_hits),
+                            )
+                            if stable_end:
+                                for pe in sorted(rt.pending_events, key=lambda e: e.ts):
+                                    _commit_event(
+                                        track_key=tk,
+                                        rt=rt,
+                                        pe=pe,
+                                        committed_from_pending=True,
+                                        commit_ts=now_ts,
+                                    )
+                            else:
+                                for pe in rt.pending_events:
+                                    if should_drop_pending_entry_on_end(pe):
+                                        reliability["pending_events"]["dropped"] += 1
+                                        continue
+                                    if pe.strength == DoorEventStrength.STRONG:
+                                        _commit_event(
+                                            track_key=tk,
+                                            rt=rt,
+                                            pe=pe,
+                                            committed_from_pending=True,
+                                            commit_ts=now_ts,
+                                        )
+                            rt.pending_events.clear()
+
+                        # Grace expired: commit inferred EXIT using the last-known inside timestamp.
+                        exit_ts = rt.exit_pending_exit_ts or rt.last_ts or now_ts
+
+                        db.add(
+                            Event(
+                                id=uuid4(),
+                                job_id=job_id,
+                                ts=exit_ts,
+                                event_type="exit",
+                                entrance_id=None,
+                                track_key=tk,
+                                employee_id=rt.employee_id,
+                                confidence=rt.exit_pending_confidence,
+                                snapshot_path=None,
+                                is_inferred=True,
+                                meta={
+                                    **(rt.exit_pending_meta or {"reason": "track_ended_inside"}),
+                                    "grace_sec": float(cfg.exit_grace_sec),
+                                    "committed_after_grace": True,
+                                },
+                            )
+                        )
+                        inserts_since_commit += 1
+                        reliability["exit_pending"]["expired_committed"] += 1
+
+                        _finalize_track_runtime(track_key=tk, rt=rt, now_ts=now_ts)
+
+                    # Not expired yet => keep runtime around.
+                    continue
+
+                # Decide whether this track end should enter exit_pending (ended inside).
                 end_event = finalize_track(
                     rt.door_state, infer_exit_on_track_end=cfg.infer_exit_on_track_end
                 )
+                wants_exit_pending = (
+                    cfg.enable_exit_pending
+                    and end_event is not None
+                    and bool(end_event.is_inferred)
+                    and str((end_event.meta or {}).get("reason", "")) == "track_ended_inside"
+                )
+
+                # -------------------------
+                # Two-phase commit: flush/drop pending events at track end.
+                # -------------------------
+                if cfg.enable_pending_events and rt.pending_events:
+                    # IMPORTANT: use last-seen timestamp so "time spent missing" doesn't
+                    # artificially make an unstable track look stable.
+                    stable_ref_ts = rt.last_ts or now_ts
+                    stable_end = is_track_stable(
+                        first_ts=rt.first_ts,
+                        now_ts=stable_ref_ts,
+                        hits=rt.hits,
+                        min_age_sec=float(cfg.min_event_track_age_sec),
+                        min_hits=int(cfg.min_event_track_hits),
+                    )
+
+                    if stable_end:
+                        for pe in sorted(rt.pending_events, key=lambda e: e.ts):
+                            _commit_event(
+                                track_key=tk,
+                                rt=rt,
+                                pe=pe,
+                                committed_from_pending=True,
+                                commit_ts=now_ts,
+                            )
+                        rt.pending_events.clear()
+                    else:
+                        # If we're going to hold the track in exit_pending, do NOT drop pending
+                        # entries yet (the track may reappear/continue).
+                        if not wants_exit_pending:
+                            for pe in rt.pending_events:
+                                if should_drop_pending_entry_on_end(pe):
+                                    reliability["pending_events"]["dropped"] += 1
+                                    continue
+                                if pe.strength == DoorEventStrength.STRONG:
+                                    _commit_event(
+                                        track_key=tk,
+                                        rt=rt,
+                                        pe=pe,
+                                        committed_from_pending=True,
+                                        commit_ts=now_ts,
+                                    )
+                            rt.pending_events.clear()
+
+                if wants_exit_pending:
+                    # Start grace window: do NOT commit inferred exit yet.
+                    rt.exit_pending = True
+                    rt.exit_pending_started_ts = now_ts
+                    rt.exit_pending_exit_ts = end_event.ts if end_event is not None else None
+                    rt.exit_pending_confidence = (
+                        float(end_event.confidence) if end_event and end_event.confidence is not None else None
+                    )
+                    rt.exit_pending_meta = dict(end_event.meta or {}) if end_event is not None else None
+                    reliability["exit_pending"]["started"] += 1
+                    continue
+
+                # No exit grace needed: commit inferred exit immediately (legacy behavior).
                 if end_event is not None:
                     db.add(
                         Event(
@@ -717,34 +1150,7 @@ def process_video_pipeline(
                     )
                     inserts_since_commit += 1
 
-                # Persist track summary
-                db.add(
-                    Track(
-                        id=uuid4(),
-                        job_id=job_id,
-                        track_key=tk,
-                        entrance_id=None,
-                        first_ts=rt.first_ts or rt.last_ts or now_ts,
-                        last_ts=rt.last_ts or now_ts,
-                        best_snapshot_path=rt.best_snapshot_path,
-                        assigned_type="employee" if rt.employee_id else "visitor",
-                        employee_id=rt.employee_id,
-                        identity_confidence=rt.identity_confidence,
-                        first_seen_zone=rt.first_zone.value if rt.first_zone else None,
-                        last_seen_zone=rt.last_zone.value if rt.last_zone else None,
-                    )
-                )
-                inserts_since_commit += 1
-                if face_proc is not None:
-                    face_proc.end_track(tk)
-                del runtimes[tk]
-                used_track_keys.add(tk)
-
-                # Remove raw->key mapping for this finalized track key
-                for k, v in list(active_key_by_raw.items()):
-                    if v == tk:
-                        del active_key_by_raw[k]
-                        break
+                _finalize_track_runtime(track_key=tk, rt=rt, now_ts=now_ts)
 
             # Commit periodically so long jobs don't hold huge transactions
             if inserts_since_commit >= 200:
@@ -761,6 +1167,42 @@ def process_video_pipeline(
         # End of video: finalize all remaining tracks
         now_ts = start_ts + timedelta(seconds=float(frame_idx) / fps)
         for tk, rt in list(runtimes.items()):
+            # Flush/drop pending door events at end-of-video (same logic as TTL finalization).
+            if cfg.enable_pending_events and rt.pending_events:
+                stable_ref_ts = rt.last_ts or now_ts
+                stable_end = is_track_stable(
+                    first_ts=rt.first_ts,
+                    now_ts=stable_ref_ts,
+                    hits=rt.hits,
+                    min_age_sec=float(cfg.min_event_track_age_sec),
+                    min_hits=int(cfg.min_event_track_hits),
+                )
+
+                if stable_end:
+                    for pe in sorted(rt.pending_events, key=lambda e: e.ts):
+                        _commit_event(
+                            track_key=tk,
+                            rt=rt,
+                            pe=pe,
+                            committed_from_pending=True,
+                            commit_ts=now_ts,
+                        )
+                    rt.pending_events.clear()
+                else:
+                    for pe in rt.pending_events:
+                        if should_drop_pending_entry_on_end(pe):
+                            reliability["pending_events"]["dropped"] += 1
+                            continue
+                        if pe.strength == DoorEventStrength.STRONG:
+                            _commit_event(
+                                track_key=tk,
+                                rt=rt,
+                                pe=pe,
+                                committed_from_pending=True,
+                                commit_ts=now_ts,
+                            )
+                    rt.pending_events.clear()
+
             end_event = finalize_track(
                 rt.door_state, infer_exit_on_track_end=cfg.infer_exit_on_track_end
             )
@@ -812,6 +1254,7 @@ def process_video_pipeline(
             "frames_seen": int(frame_idx),
             "video_path": str(video_path),
             "used_face_recognition": bool(face_proc is not None),
+            "reliability": reliability,
         }
 
     finally:

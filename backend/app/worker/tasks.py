@@ -177,7 +177,7 @@ def process_video_job(job_id: str) -> None:
             db.refresh(job)
             return job.status == "CANCELED"
 
-        process_video_pipeline(
+        pipeline_report = process_video_pipeline(
             db,
             job_id=job_uuid,
             video=video,
@@ -211,7 +211,7 @@ def process_video_job(job_id: str) -> None:
         )
 
         # Write CSV/JSON exports to disk + insert rows in artifacts table
-        write_job_artifacts(db, job_id=job_uuid)
+        write_job_artifacts(db, job_id=job_uuid, pipeline_report=pipeline_report)
 
         db.refresh(job)
         if job.status == "CANCELED":

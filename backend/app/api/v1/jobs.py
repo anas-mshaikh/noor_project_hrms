@@ -89,7 +89,25 @@ def _assign_identities_for_job(
     tracks = db.query(Track).filter(Track.job_id == job_id).all()
 
     for t in tracks:
-        if t.best_snapshot_path is None or t.employee_id is not None:
+        # If the track already has an employee_id, ensure *all* events for that track
+        # carry the same employee_id where they are still NULL.
+        #
+        # This repairs an edge-case where the pipeline inserts an Event before the
+        # face system locks identity in the same frame (autoflush=False), so the
+        # backfill UPDATE misses that just-inserted row.
+        if t.employee_id is not None:
+            (
+                db.query(Event)
+                .filter(
+                    Event.job_id == job_id,
+                    Event.track_key == t.track_key,
+                    Event.employee_id.is_(None),
+                )
+                .update({Event.employee_id: t.employee_id}, synchronize_session=False)
+            )
+            continue
+
+        if t.best_snapshot_path is None:
             continue
 
         img_path = (Path(settings.data_dir) / t.best_snapshot_path).resolve()

@@ -1,19 +1,8 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import { Providers } from "./providers";
 import { Shell } from "@/components/Shell";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Attendance Admin",
@@ -31,9 +20,8 @@ export default function RootLayout({
    */
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      {/* Use system fonts to avoid build-time network fetches (Google Fonts). */}
+      <body className="antialiased">
         <Providers>
           <Shell>{children}</Shell>
         </Providers>

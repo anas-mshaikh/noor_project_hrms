@@ -89,6 +89,27 @@ class Settings(BaseSettings):
     allow_unaligned_fallback: bool = True
     expand_upward_frac: float = 0.35
 
+    # -------------------------
+    # Attendance-first reliability (door events + tracking)
+    # -------------------------
+    # These are conservative guardrails to reduce false punch-ins / false exits.
+    # All logic is feature-flagged so we can roll back quickly.
+    enable_pending_events: bool = True
+    enable_exit_pending: bool = True
+    enable_recognized_stitching: bool = True
+
+    # Two-phase door event commit: only flush weak/medium events after a track is stable.
+    min_event_track_age_sec: float = 0.6
+    min_event_track_hits: int = 3
+
+    # Exit grace: when a track ends "inside", wait before emitting inferred exit.
+    exit_grace_sec: float = 30.0
+
+    # Recognized-only stitching (extremely conservative).
+    stitch_gap_sec: float = 8.0
+    stitch_min_lock_score: float = 0.75
+    stitch_require_unique_candidate: bool = True
+
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.local"),
         env_file_encoding="utf-8",
