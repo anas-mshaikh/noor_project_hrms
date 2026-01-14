@@ -18,6 +18,16 @@ import { apiJson } from "@/lib/api";
 import { useSelection } from "@/lib/selection";
 import type { CameraListOut, OrganizationOut, StoreOut } from "@/lib/types";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function SetupPage() {
   const orgId = useSelection((s) => s.orgId);
@@ -136,141 +146,165 @@ export default function SetupPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Setup</h1>
-
-      <div className="rounded border bg-white p-4 text-sm">
-        <div className="mb-2 font-medium">Current selection</div>
-        <pre className="overflow-auto">
-          {JSON.stringify(selectionSummary, null, 2)}
-        </pre>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Setup</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Create an org → store → camera, then calibrate the door zones/line.
+        </p>
       </div>
 
-      {/* Organizations */}
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Organizations</h2>
+      <Card>
+        <CardHeader>
+          <CardTitle>Current Selection</CardTitle>
+          <CardDescription>Debug view (safe to remove later).</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <pre className="overflow-auto rounded-lg bg-muted/30 p-3 text-xs">
+            {JSON.stringify(selectionSummary, null, 2)}
+          </pre>
+        </CardContent>
+      </Card>
 
-        <div className="mt-3 flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Create org</label>
-            <input
-              className="w-72 rounded border px-2 py-1"
-              value={orgName}
-              onChange={(e) => setOrgName(e.target.value)}
-              placeholder="e.g. Sakarwala Retail"
-            />
+      {/* Organizations */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Organizations</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Create org</Label>
+              <Input
+                value={orgName}
+                onChange={(e) => setOrgName(e.target.value)}
+                placeholder="e.g. Sakarwala Retail"
+              />
+            </div>
+
+            <div className="flex items-end gap-2">
+              <Button
+                type="button"
+                disabled={!orgName.trim() || createOrg.isPending}
+                onClick={() => createOrg.mutate()}
+              >
+                {createOrg.isPending ? "Creating…" : "Create"}
+              </Button>
+
+              {createOrg.isError && (
+                <div className="text-sm text-destructive">
+                  {String(createOrg.error)}
+                </div>
+              )}
+            </div>
           </div>
 
-          <button
-            className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
-            disabled={!orgName.trim() || createOrg.isPending}
-            onClick={() => createOrg.mutate()}
-          >
-            {createOrg.isPending ? "Creating…" : "Create"}
-          </button>
-
-          {createOrg.isError && (
-            <div className="text-red-600">{String(createOrg.error)}</div>
-          )}
-        </div>
-
-        <div className="mt-4 flex flex-col gap-2">
-          <label className="text-xs text-gray-500">Select org</label>
-          <select
-            className="w-96 rounded border px-2 py-1"
-            value={orgId ?? ""}
-            onChange={(e) => setOrgId(e.target.value || undefined)}
-          >
-            <option value="">Select org…</option>
-            {(orgsQ.data ?? []).map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </section>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Select org</Label>
+            <select
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={orgId ?? ""}
+              onChange={(e) => setOrgId(e.target.value || undefined)}
+            >
+              <option value="">Select org…</option>
+              {(orgsQ.data ?? []).map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Stores */}
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Stores</h2>
+      <Card>
+        <CardHeader>
+          <CardTitle>Stores</CardTitle>
+          <CardDescription>Stores belong to an organization.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1 sm:col-span-1">
+              <Label className="text-xs text-muted-foreground">Create store</Label>
+              <Input
+                value={storeName}
+                onChange={(e) => setStoreName(e.target.value)}
+                placeholder="e.g. Dariyapur"
+                disabled={!orgId}
+              />
+            </div>
 
-        <div className="mt-3 flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Create store</label>
-            <input
-              className="w-72 rounded border px-2 py-1"
-              value={storeName}
-              onChange={(e) => setStoreName(e.target.value)}
-              placeholder="e.g. Store 1 - Pune"
-              disabled={!orgId}
-            />
+            <div className="space-y-1 sm:col-span-1">
+              <Label className="text-xs text-muted-foreground">Timezone</Label>
+              <Input
+                value={storeTz}
+                onChange={(e) => setStoreTz(e.target.value)}
+                placeholder="Asia/Kolkata"
+                disabled={!orgId}
+              />
+            </div>
+
+            <div className="flex items-end gap-2 sm:col-span-1">
+              <Button
+                type="button"
+                disabled={!orgId || !storeName.trim() || createStore.isPending}
+                onClick={() => createStore.mutate()}
+              >
+                {createStore.isPending ? "Creating…" : "Create"}
+              </Button>
+
+              {createStore.isError && (
+                <div className="text-sm text-destructive">
+                  {String(createStore.error)}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Timezone</label>
-            <input
-              className="w-56 rounded border px-2 py-1"
-              value={storeTz}
-              onChange={(e) => setStoreTz(e.target.value)}
-              placeholder="Asia/Kolkata"
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Select store</Label>
+            <select
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              value={storeId ?? ""}
               disabled={!orgId}
-            />
+              onChange={(e) => setStoreId(e.target.value || undefined)}
+            >
+              <option value="">Select store…</option>
+              {(storesQ.data ?? []).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.timezone})
+                </option>
+              ))}
+            </select>
           </div>
-
-          <button
-            className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
-            disabled={!orgId || !storeName.trim() || createStore.isPending}
-            onClick={() => createStore.mutate()}
-          >
-            {createStore.isPending ? "Creating…" : "Create"}
-          </button>
-
-          {createStore.isError && (
-            <div className="text-red-600">{String(createStore.error)}</div>
-          )}
-        </div>
-
-        <div className="mt-4 flex flex-col gap-2">
-          <label className="text-xs text-gray-500">Select store</label>
-          <select
-            className="w-96 rounded border px-2 py-1"
-            value={storeId ?? ""}
-            disabled={!orgId}
-            onChange={(e) => setStoreId(e.target.value || undefined)}
-          >
-            <option value="">Select store…</option>
-            {(storesQ.data ?? []).map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({s.timezone})
-              </option>
-            ))}
-          </select>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
 
       {/* Cameras */}
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Cameras</h2>
-
-        <div className="mt-3 grid gap-3">
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-500">Camera name</label>
-              <input
-                className="w-72 rounded border px-2 py-1"
+      <Card>
+        <CardHeader>
+          <CardTitle>Cameras</CardTitle>
+          <CardDescription>
+            Create a camera for the selected store, then calibrate it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1 sm:col-span-1">
+              <Label className="text-xs text-muted-foreground">Camera name</Label>
+              <Input
                 value={cameraName}
                 onChange={(e) => setCameraName(e.target.value)}
-                placeholder="e.g. Entrance CCTV"
+                placeholder="e.g. Entrance"
                 disabled={!storeId}
               />
             </div>
 
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-500">
+            <div className="space-y-1 sm:col-span-1">
+              <Label className="text-xs text-muted-foreground">
                 Placement (optional)
-              </label>
-              <input
-                className="w-72 rounded border px-2 py-1"
+              </Label>
+              <Input
                 value={cameraPlacement}
                 onChange={(e) => setCameraPlacement(e.target.value)}
                 placeholder="e.g. Door top-left"
@@ -278,19 +312,21 @@ export default function SetupPage() {
               />
             </div>
 
-            <button
-              className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
-              disabled={
-                !storeId || !cameraName.trim() || createCamera.isPending
-              }
-              onClick={() => createCamera.mutate()}
-            >
-              {createCamera.isPending ? "Creating…" : "Create"}
-            </button>
+            <div className="flex items-end gap-2 sm:col-span-1">
+              <Button
+                type="button"
+                disabled={!storeId || !cameraName.trim() || createCamera.isPending}
+                onClick={() => createCamera.mutate()}
+              >
+                {createCamera.isPending ? "Creating…" : "Create"}
+              </Button>
 
-            {createCamera.isError && (
-              <div className="text-red-600">{String(createCamera.error)}</div>
-            )}
+              {createCamera.isError && (
+                <div className="text-sm text-destructive">
+                  {String(createCamera.error)}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* <div className="flex flex-col gap-1">
@@ -308,23 +344,22 @@ export default function SetupPage() {
 
           {cameraId && (
             <div className="flex flex-wrap items-center gap-2">
-              <div className="text-xs text-gray-600">
+              <div className="text-xs text-muted-foreground">
                 Calibration is required before running jobs.
               </div>
 
-              <Link
-                className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
-                href={`/cameras/${cameraId}/calibration`}
-              >
-                Calibrate this camera
-              </Link>
+              <Button asChild variant="outline">
+                <Link href={`/cameras/${cameraId}/calibration`}>
+                  Calibrate this camera
+                </Link>
+              </Button>
             </div>
           )}
 
-          <div className="flex flex-col gap-2">
-            <label className="text-xs text-gray-500">Select camera</label>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Select camera</Label>
             <select
-              className="w-96 rounded border px-2 py-1"
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               value={cameraId ?? ""}
               disabled={!storeId}
               onChange={(e) => setCameraId(e.target.value || undefined)}
@@ -337,8 +372,8 @@ export default function SetupPage() {
               ))}
             </select>
           </div>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
     </div>
   );
 }

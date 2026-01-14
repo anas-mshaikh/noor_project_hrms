@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
@@ -40,7 +40,7 @@ type CalibrationState = {
 type CameraOut = {
   id: UUID;
   name: string;
-  calibration_json: any | null;
+  calibration_json: RawCalibJson | null;
 };
 
 const emptyPoly: Poly = { points: [], closed: false };
@@ -141,16 +141,6 @@ export default function CalibrationPage() {
     : (params?.cameraId as string | undefined);
 
   const [imageObj, setImageObj] = useState<HTMLImageElement | null>(null);
-  const [state, setState] = useState<CalibrationState>({
-    frameSize: undefined,
-    inside: { ...emptyPoly },
-    outside: { ...emptyPoly },
-    gate: { ...emptyPoly },
-    masks: [],
-    entryLine: {},
-    insideTestPoint: undefined,
-    neutralBandPx: 12,
-  });
   const [mode, setMode] = useState<DrawMode>("select");
   const [activeMaskIndex, setActiveMaskIndex] = useState<number>(0);
   const [showJson, setShowJson] = useState(false);
@@ -162,24 +152,29 @@ export default function CalibrationPage() {
     queryFn: () => apiJson<CameraOut>(`/api/v1/cameras/${cameraId}`),
   });
 
-  // apply loaded calibration when data arrives
-  useEffect(() => {
-    if (cameraQ.data?.calibration_json) {
-      setState(normalizeState(cameraQ.data.calibration_json));
-    }
-  }, [cameraQ.data]);
+  // Keep server state derived from query data.
+  // A separate "draft" state is used for edits, so we don't need a useEffect to copy data.
+  const serverState = useMemo(
+    () => normalizeState(cameraQ.data?.calibration_json),
+    [cameraQ.data?.calibration_json]
+  );
+  const [draftState, setDraftState] = useState<CalibrationState | null>(null);
+  const state = draftState ?? serverState;
 
   const loadImage = (file: File) => {
     const img = new Image();
     img.onload = () => {
       setImageObj(img);
-      setState((s) => ({
-        ...s,
-        frameSize: s.frameSize ?? {
-          w: img.naturalWidth,
-          h: img.naturalHeight,
-        },
-      }));
+      setDraftState((prev) => {
+        const base = prev ?? serverState;
+        return {
+          ...base,
+          frameSize: base.frameSize ?? {
+            w: img.naturalWidth,
+            h: img.naturalHeight,
+          },
+        };
+      });
     };
     img.src = URL.createObjectURL(file);
   };
@@ -201,14 +196,18 @@ export default function CalibrationPage() {
   });
 
   const clearPoly = (key: "inside" | "outside" | "gate") => {
-    setState((s) => ({ ...s, [key]: { ...emptyPoly } }));
+    setDraftState((s) => ({ ...(s ?? serverState), [key]: { ...emptyPoly } }));
   };
-  const clearMasks = () => setState((s) => ({ ...s, masks: [] }));
+  const clearMasks = () => setDraftState((s) => ({ ...(s ?? serverState), masks: [] }));
   const clearLine = () =>
-    setState((s) => ({ ...s, entryLine: {}, insideTestPoint: undefined }));
+    setDraftState((s) => ({
+      ...(s ?? serverState),
+      entryLine: {},
+      insideTestPoint: undefined,
+    }));
   const clearAll = () =>
-    setState((s) => ({
-      ...s,
+    setDraftState((s) => ({
+      ...(s ?? serverState),
       inside: { ...emptyPoly },
       outside: { ...emptyPoly },
       gate: { ...emptyPoly },
@@ -289,8 +288,8 @@ export default function CalibrationPage() {
               className="w-full rounded border px-2 py-1"
               value={state.neutralBandPx}
               onChange={(e) =>
-                setState((s) => ({
-                  ...s,
+                setDraftState((s) => ({
+                  ...(s ?? serverState),
                   neutralBandPx: Math.max(0, Number(e.target.value) || 0),
                 }))
               }
@@ -386,7 +385,7 @@ export default function CalibrationPage() {
           <CalibrationCanvas
             image={imageObj}
             state={state}
-            onChange={(next) => setState(next)}
+            onChange={(next) => setDraftState(next)}
             mode={mode}
             activeMaskIndex={activeMaskIndex}
             setActiveMaskIndex={setActiveMaskIndex}

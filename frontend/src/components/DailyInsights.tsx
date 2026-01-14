@@ -87,13 +87,13 @@ function PunchInTrend({ minutes }: { minutes: number[] }) {
 
   return (
     <div>
-      <div className="mb-2 text-xs text-gray-500">
+      <div className="mb-2 text-xs text-muted-foreground">
         Earliest: {formatMinutes(min)} • Latest: {formatMinutes(max)}
       </div>
       <svg
         width={width}
         height={height}
-        className="w-full rounded border bg-white"
+        className="w-full rounded-lg border bg-background"
         role="img"
         aria-label="Punch-in time trend"
       >
@@ -168,58 +168,58 @@ export function DailyInsights({ rows }: { rows: AttendanceOut[] }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded border p-3">
-          <div className="text-xs uppercase text-gray-500">Present</div>
+        <div className="rounded-lg border bg-muted/30 p-3">
+          <div className="text-xs uppercase text-muted-foreground">Present</div>
           <div className="text-2xl font-semibold">{summary.present}</div>
-          <div className="mt-2 h-2 w-full rounded bg-gray-200">
+          <div className="mt-2 h-2 w-full rounded bg-muted">
             <div
               className="h-2 rounded bg-green-600"
               style={{ width: `${presentPct}%` }}
             />
           </div>
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="mt-1 text-xs text-muted-foreground">
             {presentPct}% of {summary.totalEmployees}
           </div>
         </div>
 
-        <div className="rounded border p-3">
-          <div className="text-xs uppercase text-gray-500">Absent</div>
+        <div className="rounded-lg border bg-muted/30 p-3">
+          <div className="text-xs uppercase text-muted-foreground">Absent</div>
           <div className="text-2xl font-semibold">{summary.absent}</div>
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="mt-1 text-xs text-muted-foreground">
             Based on anomalies_json.absent
           </div>
         </div>
 
-        <div className="rounded border p-3">
-          <div className="text-xs uppercase text-gray-500">Avg Worked</div>
+        <div className="rounded-lg border bg-muted/30 p-3">
+          <div className="text-xs uppercase text-muted-foreground">Avg Worked</div>
           <div className="text-2xl font-semibold">
             {summary.avgWorkedMinutes ?? "—"}
           </div>
-          <div className="mt-1 text-xs text-gray-500">minutes</div>
+          <div className="mt-1 text-xs text-muted-foreground">minutes</div>
         </div>
 
-        <div className="rounded border p-3">
-          <div className="text-xs uppercase text-gray-500">Late Arrivals</div>
+        <div className="rounded-lg border bg-muted/30 p-3">
+          <div className="text-xs uppercase text-muted-foreground">Late Arrivals</div>
           <div className="text-2xl font-semibold">{summary.late}</div>
-          <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
             <span>Late after</span>
             <input
-              className="rounded border px-2 py-1 text-xs"
+              className="rounded-md border border-input bg-background px-2 py-1 text-xs"
               type="time"
               value={lateAfter}
               onChange={(e) => setLateAfter(e.target.value)}
             />
           </div>
           {lateAfterMinutes === null && (
-            <div className="mt-1 text-xs text-red-600">Invalid time value</div>
+            <div className="mt-1 text-xs text-destructive">Invalid time value</div>
           )}
         </div>
       </div>
 
-      <div className="rounded border p-3">
+      <div className="rounded-lg border bg-muted/30 p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="text-sm font-medium">Punch‑in Time Trend</div>
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-muted-foreground">
             Avg: {formatMinutes(summary.avgPunchInMinutes)}
           </div>
         </div>

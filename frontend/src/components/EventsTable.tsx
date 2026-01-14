@@ -15,6 +15,7 @@ import { useState } from "react";
 
 import type { EventOut } from "@/lib/types";
 import { apiUrl } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +24,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function fmtDateTime(dt: string): string {
   return new Date(dt).toLocaleString();
@@ -47,11 +56,11 @@ export function EventsTable({ rows }: { rows: EventOut[] }) {
   const [preview, setPreview] = useState<EventOut | null>(null);
 
   if (rows.length === 0) {
-    return <div className="text-sm text-gray-600">No events.</div>;
+    return <div className="text-sm text-muted-foreground">No events.</div>;
   }
 
   return (
-    <div className="overflow-auto">
+    <div>
       <Dialog
         open={Boolean(preview)}
         onOpenChange={(open) => {
@@ -92,87 +101,106 @@ export function EventsTable({ rows }: { rows: EventOut[] }) {
         )}
       </Dialog>
 
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b">
-            <th className="py-2 text-left">Time</th>
-            <th className="py-2 text-left">Type</th>
-            <th className="py-2 text-left">Snapshot</th>
-            <th className="py-2 text-left">Employee</th>
-            <th className="py-2 text-left">Track</th>
-            <th className="py-2 text-left">Inferred</th>
-            <th className="py-2 text-left">Confidence</th>
-            <th className="py-2 text-left">Reason</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Time</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Snapshot</TableHead>
+            <TableHead>Employee</TableHead>
+            <TableHead>Track</TableHead>
+            <TableHead>Inferred</TableHead>
+            <TableHead>Confidence</TableHead>
+            <TableHead>Reason</TableHead>
+          </TableRow>
+        </TableHeader>
+
+        <TableBody>
           {rows.map((e) => {
             const meta = (e.meta as Record<string, unknown> | null) ?? {};
             const reason = getReason(meta);
 
             return (
-              <tr
+              <TableRow
                 key={e.id}
-                className={`border-b ${e.is_inferred ? "bg-yellow-50" : ""}`}
+                className={e.is_inferred ? "bg-muted/30" : ""}
               >
-                <td className="py-2">{fmtDateTime(e.ts)}</td>
-                <td className="py-2">
-                  <span
-                    className={`rounded px-2 py-0.5 text-xs ${
-                      e.event_type === "entry" ? "bg-green-100" : "bg-blue-100"
-                    }`}
+                <TableCell className="whitespace-nowrap">
+                  {fmtDateTime(e.ts)}
+                </TableCell>
+
+                <TableCell>
+                  <Badge
+                    variant="secondary"
+                    className={
+                      e.event_type === "entry"
+                        ? "bg-emerald-500/15 text-emerald-700"
+                        : "bg-blue-500/15 text-blue-700"
+                    }
                   >
                     {e.event_type}
-                  </span>
-                </td>
-                <td className="py-2">
+                  </Badge>
+                </TableCell>
+
+                <TableCell>
                   {e.snapshot_path ? (
-                    <button
+                    <Button
                       type="button"
-                      className="inline-flex items-center gap-2"
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto justify-start gap-2 px-0"
                       title="Preview snapshot"
                       onClick={() => setPreview(e)}
                     >
                       <img
                         src={apiUrl(`/api/v1/events/${e.id}/snapshot`)}
                         alt={`${e.event_type} snapshot`}
-                        className="h-10 w-10 rounded border object-cover"
+                        className="h-10 w-10 rounded-md border object-cover"
                         loading="lazy"
                       />
-                      <span className="text-xs text-blue-600 underline">
-                        view
-                      </span>
-                    </button>
+                      <span className="text-xs underline">view</span>
+                    </Button>
                   ) : (
-                    <span className="text-gray-500">—</span>
+                    <span className="text-muted-foreground">—</span>
                   )}
-                </td>
-                <td className="py-2">
+                </TableCell>
+
+                <TableCell>
                   {e.employee_id ? (
                     <code className="text-xs">{e.employee_id}</code>
                   ) : (
-                    <span className="text-gray-500">unknown/visitor</span>
+                    <span className="text-muted-foreground">unknown/visitor</span>
                   )}
-                </td>
-                <td className="py-2">
+                </TableCell>
+
+                <TableCell>
                   <code className="text-xs">{e.track_key}</code>
-                </td>
-                <td className="py-2">{e.is_inferred ? "Yes" : "No"}</td>
-                <td className="py-2">
+                </TableCell>
+
+                <TableCell>
+                  {e.is_inferred ? (
+                    <Badge variant="outline">Yes</Badge>
+                  ) : (
+                    <span className="text-muted-foreground">No</span>
+                  )}
+                </TableCell>
+
+                <TableCell className="tabular-nums">
                   {e.confidence === null ? "—" : e.confidence.toFixed(3)}
-                </td>
-                <td className="py-2">
+                </TableCell>
+
+                <TableCell>
                   {reason ? (
                     <code className="text-xs">{String(reason)}</code>
                   ) : (
-                    <span className="text-gray-500">—</span>
+                    <span className="text-muted-foreground">—</span>
                   )}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

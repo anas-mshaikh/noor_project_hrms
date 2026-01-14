@@ -14,3 +14,4 @@ __pycache__/
 *.jpeg
 *.cache-9
 backend/.cache/fontconfig/CACHEDIR.TAG
+docs/Attendance_video_demo.mov

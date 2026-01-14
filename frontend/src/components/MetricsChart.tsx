@@ -11,6 +11,14 @@
  */
 
 import type { MetricsHourlyOut } from "@/lib/types";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function fmtHour(dt: string): string {
   // Shows local time hour label.
@@ -25,70 +33,66 @@ function fmtHour(dt: string): string {
 
 export function MetricsChart({ rows }: { rows: MetricsHourlyOut[] }) {
   if (rows.length === 0) {
-    return <div className="text-sm text-gray-600">No hourly metrics.</div>;
+    return <div className="text-sm text-muted-foreground">No hourly metrics.</div>;
   }
 
   const maxEntries = Math.max(...rows.map((r) => r.entries), 1);
   const maxExits = Math.max(...rows.map((r) => r.exits), 1);
 
   return (
-    <div className="overflow-auto">
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b">
-            <th className="py-2 text-left">Hour</th>
-            <th className="py-2 text-left">Entries</th>
-            <th className="py-2 text-left">Exits</th>
-            <th className="py-2 text-left">Visitors</th>
-            <th className="py-2 text-left">Avg dwell (sec)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const entryPct = Math.round((r.entries / maxEntries) * 100);
-            const exitPct = Math.round((r.exits / maxExits) * 100);
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Hour</TableHead>
+          <TableHead>Entries</TableHead>
+          <TableHead>Exits</TableHead>
+          <TableHead>Visitors</TableHead>
+          <TableHead>Avg dwell (sec)</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((r) => {
+          const entryPct = Math.round((r.entries / maxEntries) * 100);
+          const exitPct = Math.round((r.exits / maxExits) * 100);
 
-            return (
-              <tr key={r.hour_start_ts} className="border-b">
-                <td className="py-2">{fmtHour(r.hour_start_ts)}</td>
+          return (
+            <TableRow key={r.hour_start_ts}>
+              <TableCell className="whitespace-nowrap">
+                {fmtHour(r.hour_start_ts)}
+              </TableCell>
 
-                <td className="py-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-12 text-right tabular-nums">
-                      {r.entries}
-                    </div>
-                    <div className="h-2 w-32 rounded bg-gray-200">
-                      <div
-                        className="h-2 rounded bg-green-600"
-                        style={{ width: `${entryPct}%` }}
-                      />
-                    </div>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <div className="w-12 text-right tabular-nums">{r.entries}</div>
+                  <div className="h-2 w-32 rounded bg-muted">
+                    <div
+                      className="h-2 rounded bg-green-600"
+                      style={{ width: `${entryPct}%` }}
+                    />
                   </div>
-                </td>
+                </div>
+              </TableCell>
 
-                <td className="py-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-12 text-right tabular-nums">
-                      {r.exits}
-                    </div>
-                    <div className="h-2 w-32 rounded bg-gray-200">
-                      <div
-                        className="h-2 rounded bg-blue-600"
-                        style={{ width: `${exitPct}%` }}
-                      />
-                    </div>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <div className="w-12 text-right tabular-nums">{r.exits}</div>
+                  <div className="h-2 w-32 rounded bg-muted">
+                    <div
+                      className="h-2 rounded bg-blue-600"
+                      style={{ width: `${exitPct}%` }}
+                    />
                   </div>
-                </td>
+                </div>
+              </TableCell>
 
-                <td className="py-2 tabular-nums">{r.unique_visitors}</td>
-                <td className="py-2 tabular-nums">
-                  {r.avg_dwell_sec === null ? "—" : r.avg_dwell_sec.toFixed(1)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+              <TableCell className="tabular-nums">{r.unique_visitors}</TableCell>
+              <TableCell className="tabular-nums">
+                {r.avg_dwell_sec === null ? "—" : r.avg_dwell_sec.toFixed(1)}
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }

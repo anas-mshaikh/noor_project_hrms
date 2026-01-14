@@ -12,6 +12,15 @@
  */
 
 import type { AttendanceOut } from "@/lib/types";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function fmtDateTime(dt: string | null): string {
   if (!dt) return "—";
@@ -32,61 +41,57 @@ function summarizeAnomalies(a: Record<string, unknown>): string[] {
 
 export function AttendanceTable({ rows }: { rows: AttendanceOut[] }) {
   if (rows.length === 0) {
-    return <div className="text-sm text-gray-600">No attendance rows.</div>;
+    return <div className="text-sm text-muted-foreground">No attendance rows.</div>;
   }
 
   return (
-    <div className="overflow-auto">
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b">
-            <th className="py-2 text-left">Code</th>
-            <th className="py-2 text-left">Name</th>
-            <th className="py-2 text-left">Punch in</th>
-            <th className="py-2 text-left">Punch out</th>
-            <th className="py-2 text-left">Total (min)</th>
-            <th className="py-2 text-left">Anomalies</th>
-          </tr>
-        </thead>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Code</TableHead>
+          <TableHead>Name</TableHead>
+          <TableHead>Punch in</TableHead>
+          <TableHead>Punch out</TableHead>
+          <TableHead>Total (min)</TableHead>
+          <TableHead>Anomalies</TableHead>
+        </TableRow>
+      </TableHeader>
 
-        <tbody>
-          {rows.map((r) => {
-            const anomalies = summarizeAnomalies(r.anomalies_json ?? {});
-            const absent = Boolean((r.anomalies_json as any)?.absent);
+      <TableBody>
+        {rows.map((r) => {
+          const anomalies = summarizeAnomalies(r.anomalies_json ?? {});
+          const absent = Boolean(
+            (r.anomalies_json as { absent?: boolean } | null)?.absent
+          );
 
-            return (
-              <tr
-                key={r.employee_id}
-                className={`border-b ${absent ? "bg-yellow-50" : ""}`}
-              >
-                <td className="py-2">{r.employee_code}</td>
-                <td className="py-2">{r.employee_name}</td>
-                <td className="py-2">{fmtDateTime(r.punch_in)}</td>
-                <td className="py-2">{fmtDateTime(r.punch_out)}</td>
-                <td className="py-2">
-                  {r.total_minutes === null ? "—" : r.total_minutes}
-                </td>
-                <td className="py-2">
-                  {anomalies.length === 0 ? (
-                    <span className="text-gray-500">—</span>
-                  ) : (
-                    <div className="flex flex-wrap gap-1">
-                      {anomalies.map((k) => (
-                        <span
-                          key={k}
-                          className="rounded bg-gray-100 px-2 py-0.5 text-xs"
-                        >
-                          {k}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+          return (
+            <TableRow key={r.employee_id} className={absent ? "bg-muted/30" : ""}>
+              <TableCell className="font-mono text-xs">
+                {r.employee_code}
+              </TableCell>
+              <TableCell className="font-medium">{r.employee_name}</TableCell>
+              <TableCell>{fmtDateTime(r.punch_in)}</TableCell>
+              <TableCell>{fmtDateTime(r.punch_out)}</TableCell>
+              <TableCell className="tabular-nums">
+                {r.total_minutes === null ? "—" : r.total_minutes}
+              </TableCell>
+              <TableCell>
+                {anomalies.length === 0 ? (
+                  <span className="text-muted-foreground">—</span>
+                ) : (
+                  <div className="flex flex-wrap gap-1">
+                    {anomalies.map((k) => (
+                      <Badge key={k} variant="secondary">
+                        {k}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }

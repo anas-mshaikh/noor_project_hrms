@@ -19,6 +19,8 @@ import { useQuery } from "@tanstack/react-query";
 import { apiJson } from "@/lib/api";
 import { useSelection } from "@/lib/selection";
 import type { CameraListOut, OrganizationOut, StoreOut } from "@/lib/types";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 export function StorePicker() {
   const orgId = useSelection((s) => s.orgId);
@@ -47,16 +49,23 @@ export function StorePicker() {
       apiJson<CameraListOut[]>(`/api/v1/stores/${storeId}/cameras`),
   });
 
+  const selectClassName = cn(
+    "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm",
+    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+    "disabled:cursor-not-allowed disabled:opacity-50"
+  );
+
   return (
-    <div className="flex flex-wrap items-end gap-2 text-sm">
+    <div className="grid gap-2 text-sm sm:grid-cols-3">
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-gray-500">Org</label>
+        <Label className="text-xs text-muted-foreground">Org</Label>
         <select
-          className="w-56 rounded border px-2 py-1"
+          className={selectClassName}
           value={orgId ?? ""}
           onChange={(e) => setOrgId(e.target.value || undefined)}
         >
           <option value="">Select org…</option>
+          {orgsQ.isPending && <option>Loading…</option>}
           {(orgsQ.data ?? []).map((o) => (
             <option key={o.id} value={o.id}>
               {o.name}
@@ -64,21 +73,22 @@ export function StorePicker() {
           ))}
         </select>
         {orgsQ.isError && (
-          <div className="text-xs text-red-600">Failed to load orgs</div>
+          <div className="text-xs text-destructive">Failed to load orgs</div>
         )}
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-gray-500">Store</label>
+        <Label className="text-xs text-muted-foreground">Store</Label>
         <select
-          className="w-56 rounded border px-2 py-1"
+          className={selectClassName}
           value={storeId ?? ""}
-          disabled={!orgId}
+          disabled={!orgId || storesQ.isPending}
           onChange={(e) => setStoreId(e.target.value || undefined)}
         >
           <option value="">
             {orgId ? "Select store…" : "Select org first"}
           </option>
+          {storesQ.isPending && <option>Loading…</option>}
           {(storesQ.data ?? []).map((s) => (
             <option key={s.id} value={s.id}>
               {s.name} ({s.timezone})
@@ -86,21 +96,22 @@ export function StorePicker() {
           ))}
         </select>
         {storesQ.isError && (
-          <div className="text-xs text-red-600">Failed to load stores</div>
+          <div className="text-xs text-destructive">Failed to load stores</div>
         )}
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-gray-500">Camera</label>
+        <Label className="text-xs text-muted-foreground">Camera</Label>
         <select
-          className="w-56 rounded border px-2 py-1"
+          className={selectClassName}
           value={cameraId ?? ""}
-          disabled={!storeId}
+          disabled={!storeId || camerasQ.isPending}
           onChange={(e) => setCameraId(e.target.value || undefined)}
         >
           <option value="">
             {storeId ? "Select camera…" : "Select store first"}
           </option>
+          {camerasQ.isPending && <option>Loading…</option>}
           {(camerasQ.data ?? []).map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -108,7 +119,7 @@ export function StorePicker() {
           ))}
         </select>
         {camerasQ.isError && (
-          <div className="text-xs text-red-600">Failed to load cameras</div>
+          <div className="text-xs text-destructive">Failed to load cameras</div>
         )}
       </div>
     </div>

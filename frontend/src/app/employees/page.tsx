@@ -21,6 +21,25 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiForm, apiJson } from "@/lib/api";
 import { useSelection } from "@/lib/selection";
 import type { EmployeeOut, FaceCreatedOut } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 // Local type (so you don't have to edit lib/types.ts right now)
 type FaceSearchMatchOut = {
@@ -153,244 +172,276 @@ export default function EmployeesPage() {
   // If store isn't selected, we can't do anything meaningful here.
   if (!storeId) {
     return (
-      <div className="rounded border bg-white p-4">
-        <h1 className="text-xl font-semibold">Employees</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Select an organization + store in the header first.
-        </p>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Employees</CardTitle>
+          <CardDescription>
+            Select an organization + store in the header first.
+          </CardDescription>
+        </CardHeader>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Employees</h1>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Employees</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Create employees and enroll face templates.
+        </p>
+      </div>
 
       {/* Create employee */}
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Create Employee</h2>
-
-        <div className="mt-3 flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Employee code</label>
-            <input
-              className="w-56 rounded border px-2 py-1"
-              value={newCode}
-              onChange={(e) => setNewCode(e.target.value)}
-              placeholder="e.g. E001"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Employee name</label>
-            <input
-              className="w-72 rounded border px-2 py-1"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="e.g. Rahul Sharma"
-            />
-          </div>
-
-          <button
-            className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
-            disabled={createEmployeeM.isPending}
-            onClick={() => createEmployeeM.mutate()}
-          >
-            {createEmployeeM.isPending ? "Creating…" : "Create"}
-          </button>
-
-          {createEmployeeM.isError && (
-            <div className="text-sm text-red-600">
-              {String(createEmployeeM.error)}
+      <Card>
+        <CardHeader>
+          <CardTitle>Create Employee</CardTitle>
+          <CardDescription>
+            Employee code must be unique per store.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                Employee code
+              </Label>
+              <Input
+                value={newCode}
+                onChange={(e) => setNewCode(e.target.value)}
+                placeholder="e.g. E001"
+              />
             </div>
-          )}
-        </div>
-      </section>
+
+            <div className="space-y-1 sm:col-span-2">
+              <Label className="text-xs text-muted-foreground">
+                Employee name
+              </Label>
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="e.g. Rahul Sharma"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              disabled={createEmployeeM.isPending}
+              onClick={() => createEmployeeM.mutate()}
+            >
+              {createEmployeeM.isPending ? "Creating…" : "Create"}
+            </Button>
+
+            {createEmployeeM.isError && (
+              <div className="text-sm text-destructive">
+                {String(createEmployeeM.error)}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* List employees */}
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Employee List</h2>
-
-        {employeesQ.isLoading ? (
-          <div className="mt-3 text-sm text-gray-600">Loading…</div>
-        ) : employeesQ.isError ? (
-          <div className="mt-3 text-sm text-red-600">
-            {String(employeesQ.error)}
-          </div>
-        ) : employees.length === 0 ? (
-          <div className="mt-3 text-sm text-gray-600">No employees yet.</div>
-        ) : (
-          <div className="mt-3 overflow-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="py-2 text-left">Code</th>
-                  <th className="py-2 text-left">Name</th>
-                  <th className="py-2 text-left">Active</th>
-                  <th className="py-2 text-left">Actions</th>
-                </tr>
-              </thead>
-
-              <tbody>
+      <Card>
+        <CardHeader>
+          <CardTitle>Employee List</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {employeesQ.isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : employeesQ.isError ? (
+            <div className="text-sm text-destructive">
+              {String(employeesQ.error)}
+            </div>
+          ) : employees.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              No employees yet.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Active</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {employees.map((e) => (
-                  <tr key={e.id} className="border-b">
-                    <td className="py-2">{e.employee_code}</td>
-                    <td className="py-2">{e.name}</td>
-                    <td className="py-2">{e.is_active ? "Yes" : "No"}</td>
-                    <td className="py-2">
-                      <button
-                        className="rounded border px-2 py-1 hover:bg-gray-50"
+                  <TableRow key={e.id}>
+                    <TableCell className="font-mono text-xs">
+                      {e.employee_code}
+                    </TableCell>
+                    <TableCell className="font-medium">{e.name}</TableCell>
+                    <TableCell>
+                      {e.is_active ? (
+                        <Badge variant="secondary">Yes</Badge>
+                      ) : (
+                        <Badge variant="outline">No</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={() => setTargetEmployeeId(e.id)}
                       >
                         Enroll faces
-                      </button>
-                    </td>
-                  </tr>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Face enrollment */}
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Enroll Face Templates</h2>
+      <Card>
+        <CardHeader>
+          <CardTitle>Enroll Face Templates</CardTitle>
+          <CardDescription>
+            Upload 5–20 clear face images per employee (front-facing, good
+            light).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Employee</Label>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={targetEmployeeId}
+                onChange={(e) => setTargetEmployeeId(e.target.value)}
+              >
+                <option value="">Select employee…</option>
+                {employeeOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <p className="mt-2 text-sm text-gray-600">
-          Upload 5–20 clear face images per employee (front-facing, good light).
-          This is required for the video pipeline to assign attendance.
-        </p>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Face images</Label>
+              <Input
+                key={fileInputKey}
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={(e) => setFaceFiles(Array.from(e.target.files ?? []))}
+              />
+              <div className="text-xs text-muted-foreground">
+                Selected: {faceFiles.length}
+              </div>
+            </div>
+          </div>
 
-        <div className="mt-3 flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Employee</label>
-            <select
-              className="w-96 rounded border px-2 py-1"
-              value={targetEmployeeId}
-              onChange={(e) => setTargetEmployeeId(e.target.value)}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              disabled={uploadFacesM.isPending}
+              onClick={() => uploadFacesM.mutate()}
             >
-              <option value="">Select employee…</option>
-              {employeeOptions.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              {uploadFacesM.isPending ? "Uploading…" : "Upload faces"}
+            </Button>
+
+            {uploadFacesM.isError && (
+              <div className="text-sm text-destructive">
+                {String(uploadFacesM.error)}
+              </div>
+            )}
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Face images</label>
-            <input
-              key={fileInputKey}
-              type="file"
-              multiple
-              accept="image/*"
-              onChange={(e) => setFaceFiles(Array.from(e.target.files ?? []))}
-            />
-            <div className="text-xs text-gray-500">
-              Selected: {faceFiles.length}
-            </div>
-          </div>
-
-          <button
-            className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
-            disabled={uploadFacesM.isPending}
-            onClick={() => uploadFacesM.mutate()}
-          >
-            {uploadFacesM.isPending ? "Uploading…" : "Upload faces"}
-          </button>
-
-          {uploadFacesM.isError && (
-            <div className="text-sm text-red-600">
-              {String(uploadFacesM.error)}
-            </div>
-          )}
-        </div>
-
-        {lastFaceUpload && (
-          <div className="mt-4 rounded border bg-gray-50 p-3 text-xs">
-            <div className="font-medium mb-2">Last upload result</div>
-            <pre className="overflow-auto">
+          {lastFaceUpload && (
+            <pre className="overflow-auto rounded-lg bg-muted/30 p-3 text-xs">
               {JSON.stringify(lastFaceUpload, null, 2)}
             </pre>
-          </div>
-        )}
-      </section>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Search by face (optional) */}
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Search By Face (optional)</h2>
-
-        <p className="mt-2 text-sm text-gray-600">
-          Debug tool: upload a face image and see the closest employees
-          (pgvector).
-        </p>
-
-        <div className="mt-3 flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Query face</label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) =>
-                setQueryFace((e.target.files?.[0] ?? null) as File | null)
-              }
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Limit</label>
-            <input
-              className="w-24 rounded border px-2 py-1"
-              type="number"
-              value={searchLimit}
-              min={1}
-              max={20}
-              onChange={(e) => setSearchLimit(Number(e.target.value))}
-            />
-          </div>
-
-          <button
-            className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
-            disabled={searchByFaceM.isPending}
-            onClick={() => searchByFaceM.mutate()}
-          >
-            {searchByFaceM.isPending ? "Searching…" : "Search"}
-          </button>
-
-          {searchByFaceM.isError && (
-            <div className="text-sm text-red-600">
-              {String(searchByFaceM.error)}
+      <Card>
+        <CardHeader>
+          <CardTitle>Search By Face (optional)</CardTitle>
+          <CardDescription>
+            Debug tool: upload a face image and see the closest employees.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1 sm:col-span-2">
+              <Label className="text-xs text-muted-foreground">Query face</Label>
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setQueryFace(e.target.files?.[0] ?? null)}
+              />
             </div>
-          )}
-        </div>
 
-        {searchByFaceM.data && (
-          <div className="mt-3 overflow-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="py-2 text-left">Employee</th>
-                  <th className="py-2 text-left">Distance</th>
-                  <th className="py-2 text-left">Confidence</th>
-                </tr>
-              </thead>
-              <tbody>
-                {searchByFaceM.data.map((m) => (
-                  <tr key={m.employee_id} className="border-b">
-                    <td className="py-2">
-                      {m.employee_code} — {m.employee_name}
-                    </td>
-                    <td className="py-2">{m.cosine_distance.toFixed(4)}</td>
-                    <td className="py-2">{m.confidence.toFixed(4)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Limit</Label>
+              <Input
+                type="number"
+                value={searchLimit}
+                min={1}
+                max={20}
+                onChange={(e) => setSearchLimit(Number(e.target.value))}
+              />
+            </div>
           </div>
-        )}
-      </section>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              disabled={searchByFaceM.isPending}
+              onClick={() => searchByFaceM.mutate()}
+            >
+              {searchByFaceM.isPending ? "Searching…" : "Search"}
+            </Button>
+
+            {searchByFaceM.isError && (
+              <div className="text-sm text-destructive">
+                {String(searchByFaceM.error)}
+              </div>
+            )}
+          </div>
+
+          {searchByFaceM.data && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Employee</TableHead>
+                  <TableHead>Distance</TableHead>
+                  <TableHead>Confidence</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {searchByFaceM.data.map((m) => (
+                  <TableRow key={m.employee_id}>
+                    <TableCell>
+                      {m.employee_code} — {m.employee_name}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {m.cosine_distance.toFixed(4)}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {m.confidence.toFixed(4)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

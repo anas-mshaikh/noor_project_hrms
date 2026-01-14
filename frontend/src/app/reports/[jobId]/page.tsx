@@ -33,6 +33,14 @@ import { AttendanceTable } from "@/components/AttendanceTable";
 import { EventsTable } from "@/components/EventsTable";
 import { MetricsChart } from "@/components/MetricsChart";
 import { DailyInsights } from "@/components/DailyInsights";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 // function paramToString(v: string | string[] | undefined): string | undefined {
 //   if (!v) return undefined;
@@ -71,28 +79,35 @@ export default function ReportPage() {
 
   if (!jobId) {
     return (
-      <div className="rounded border bg-white p-4">
-        <h1 className="text-xl font-semibold">Report</h1>
-        <div className="mt-2 text-sm text-red-600">Missing jobId in route.</div>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Report</CardTitle>
+          <CardDescription className="text-destructive">
+            Missing jobId in route.
+          </CardDescription>
+        </CardHeader>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">Report</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Report</h1>
+          <div className="mt-1 text-sm text-muted-foreground">
+            job_id: <code className="text-xs">{jobId}</code>
+          </div>
+        </div>
 
         <div className="flex gap-2">
-          <Link
-            className="rounded border px-3 py-2 hover:bg-gray-50"
-            href={`/jobs/${jobId}`}
-          >
-            Back to job
-          </Link>
+          <Button asChild variant="outline">
+            <Link href={`/jobs/${jobId}`}>Back to job</Link>
+          </Button>
 
-          <button
-            className="rounded border px-3 py-2 hover:bg-gray-50"
+          <Button
+            type="button"
+            variant="outline"
             onClick={() => {
               attendanceQ.refetch();
               eventsQ.refetch();
@@ -101,125 +116,137 @@ export default function ReportPage() {
             }}
           >
             Refresh
-          </button>
+          </Button>
         </div>
       </div>
 
-      <div className="text-sm text-gray-600">
-        job_id: <code className="text-xs">{jobId}</code>
-      </div>
-
       {/* Daily Insights */}
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Daily Insights</h2>
-
-        {attendanceQ.isLoading ? (
-          <div className="mt-2 text-sm text-gray-600">Loading…</div>
-        ) : attendanceQ.isError ? (
-          <div className="mt-2 text-sm text-red-600">
-            {String(attendanceQ.error)}
-          </div>
-        ) : (
-          <div className="mt-3">
+      <Card>
+        <CardHeader>
+          <CardTitle>Daily Insights</CardTitle>
+          <CardDescription>Quick health check for this job.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {attendanceQ.isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : attendanceQ.isError ? (
+            <div className="text-sm text-destructive">
+              {String(attendanceQ.error)}
+            </div>
+          ) : (
             <DailyInsights rows={attendanceQ.data ?? []} />
-          </div>
-        )}
-      </section>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Attendance */}
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Attendance</h2>
-
-        {attendanceQ.isLoading ? (
-          <div className="mt-2 text-sm text-gray-600">Loading…</div>
-        ) : attendanceQ.isError ? (
-          <div className="mt-2 text-sm text-red-600">
-            {String(attendanceQ.error)}
-          </div>
-        ) : (
-          <div className="mt-3">
+      <Card>
+        <CardHeader>
+          <CardTitle>Attendance</CardTitle>
+          <CardDescription>
+            One row per employee for this store/day.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {attendanceQ.isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : attendanceQ.isError ? (
+            <div className="text-sm text-destructive">
+              {String(attendanceQ.error)}
+            </div>
+          ) : (
             <AttendanceTable rows={attendanceQ.data ?? []} />
-          </div>
-        )}
-      </section>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Events */}
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Events</h2>
-
-        {eventsQ.isLoading ? (
-          <div className="mt-2 text-sm text-gray-600">Loading…</div>
-        ) : eventsQ.isError ? (
-          <div className="mt-2 text-sm text-red-600">
-            {String(eventsQ.error)}
-          </div>
-        ) : (
-          <div className="mt-3">
+      <Card>
+        <CardHeader>
+          <CardTitle>Events</CardTitle>
+          <CardDescription>
+            Door entry/exit stream (inferred events are highlighted).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {eventsQ.isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : eventsQ.isError ? (
+            <div className="text-sm text-destructive">
+              {String(eventsQ.error)}
+            </div>
+          ) : (
             <EventsTable rows={eventsQ.data ?? []} />
-          </div>
-        )}
-      </section>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Metrics */}
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Hourly Metrics</h2>
-
-        {metricsQ.isLoading ? (
-          <div className="mt-2 text-sm text-gray-600">Loading…</div>
-        ) : metricsQ.isError ? (
-          <div className="mt-2 text-sm text-red-600">
-            {String(metricsQ.error)}
-          </div>
-        ) : (
-          <div className="mt-3">
+      <Card>
+        <CardHeader>
+          <CardTitle>Hourly Metrics</CardTitle>
+          <CardDescription>Footfall buckets for this job.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {metricsQ.isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : metricsQ.isError ? (
+            <div className="text-sm text-destructive">
+              {String(metricsQ.error)}
+            </div>
+          ) : (
             <MetricsChart rows={metricsQ.data ?? []} />
-          </div>
-        )}
-      </section>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Artifacts */}
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Artifacts</h2>
+      <Card>
+        <CardHeader>
+          <CardTitle>Artifacts</CardTitle>
+          <CardDescription>CSV/JSON exports for this job.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {artifactsQ.isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : artifactsQ.isError ? (
+            <div className="text-sm text-destructive">
+              {String(artifactsQ.error)}
+            </div>
+          ) : (artifactsQ.data ?? []).length === 0 ? (
+            <div className="text-sm text-muted-foreground">No artifacts yet.</div>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {(artifactsQ.data ?? []).map((a) => (
+                <li key={a.id} className="rounded-lg border bg-muted/30 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="font-medium">{a.type}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(a.created_at).toLocaleString()}
+                      </div>
+                    </div>
 
-        {artifactsQ.isLoading ? (
-          <div className="mt-2 text-sm text-gray-600">Loading…</div>
-        ) : artifactsQ.isError ? (
-          <div className="mt-2 text-sm text-red-600">
-            {String(artifactsQ.error)}
-          </div>
-        ) : (artifactsQ.data ?? []).length === 0 ? (
-          <div className="mt-2 text-sm text-gray-600">No artifacts yet.</div>
-        ) : (
-          <ul className="mt-3 space-y-2 text-sm">
-            {(artifactsQ.data ?? []).map((a) => (
-              <li key={a.id} className="rounded border bg-gray-50 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <span className="font-medium">{a.type}</span>{" "}
-                    <span className="text-xs text-gray-500">
-                      {new Date(a.created_at).toLocaleString()}
-                    </span>
+                    <Button asChild>
+                      <a
+                        href={apiUrl(`/api/v1/artifacts/${a.id}/download`)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Download
+                      </a>
+                    </Button>
                   </div>
 
-                  {/* This link goes directly to the FastAPI backend. */}
-                  <a
-                    className="rounded bg-black px-3 py-2 text-white"
-                    href={apiUrl(`/api/v1/artifacts/${a.id}/download`)}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Download
-                  </a>
-                </div>
-
-                <div className="mt-2 text-xs text-gray-600">
-                  path: <code>{a.path}</code>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    path: <code>{a.path}</code>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

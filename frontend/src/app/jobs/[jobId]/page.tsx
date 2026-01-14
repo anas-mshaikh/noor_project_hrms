@@ -20,6 +20,15 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { apiJson } from "@/lib/api";
 import type { JobReadResponse } from "@/lib/types";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 type JobActionResponse = {
   job_id: string;
@@ -75,28 +84,38 @@ export default function JobPage() {
 
   if (!jobId) {
     return (
-      <div className="rounded border bg-white p-4">
-        <h1 className="text-xl font-semibold">Job</h1>
-        <div className="mt-2 text-sm text-red-600">Missing jobId in route.</div>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Job</CardTitle>
+          <CardDescription className="text-destructive">
+            Missing jobId in route.
+          </CardDescription>
+        </CardHeader>
+      </Card>
     );
   }
 
   if (jobQ.isLoading) {
     return (
-      <div className="rounded border bg-white p-4">
-        <h1 className="text-xl font-semibold">Job</h1>
-        <div className="mt-2 text-sm text-gray-600">Loading…</div>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Job</CardTitle>
+          <CardDescription>Loading…</CardDescription>
+        </CardHeader>
+      </Card>
     );
   }
 
   if (jobQ.isError) {
     return (
-      <div className="rounded border bg-white p-4">
-        <h1 className="text-xl font-semibold">Job</h1>
-        <div className="mt-2 text-sm text-red-600">{String(jobQ.error)}</div>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Job</CardTitle>
+          <CardDescription className="text-destructive">
+            {String(jobQ.error)}
+          </CardDescription>
+        </CardHeader>
+      </Card>
     );
   }
 
@@ -105,103 +124,120 @@ export default function JobPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Job Status</h1>
-
-      <section className="rounded border bg-white p-4">
-        <div className="text-sm text-gray-600">
-          job_id: <code className="text-xs">{jobId}</code>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Job Status</h1>
+          <div className="mt-1 text-sm text-muted-foreground">
+            job_id: <code className="text-xs">{jobId}</code>
+          </div>
         </div>
 
-        <div className="mt-3 grid gap-2 text-sm">
-          <div>
-            <span className="font-medium">Status:</span>{" "}
-            <span className="rounded bg-gray-100 px-2 py-1">{job.status}</span>
-          </div>
+        <Button asChild variant="outline">
+          <Link href={`/reports/${jobId}`}>Open report</Link>
+        </Button>
+      </div>
 
-          <div>
-            <span className="font-medium">Progress:</span> {job.progress}%
-          </div>
-
-          <div className="h-2 w-full rounded bg-gray-200">
-            <div
-              className={`h-2 rounded ${
-                job.status === "FAILED" ? "bg-red-600" : "bg-green-600"
-              }`}
-              style={{
-                width: `${Math.min(
-                  100,
-                  Math.max(0, Number(job.progress) || 0)
-                )}%`,
-              }}
-            />
-          </div>
-
-          {job.error && (
-            <div className="mt-2 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              <div className="font-medium">Error</div>
-              <pre className="mt-1 overflow-auto text-xs">{job.error}</pre>
+      <Card>
+        <CardHeader>
+          <CardTitle>Progress</CardTitle>
+          <CardDescription>
+            {job.started_at ? "Processing…" : "Queued…"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">Status:</span>
+              <Badge
+                variant={job.status === "FAILED" ? "destructive" : "secondary"}
+              >
+                {job.status}
+              </Badge>
+              <span className="ml-auto tabular-nums text-muted-foreground">
+                {job.progress}%
+              </span>
             </div>
-          )}
 
-          <div className="mt-2 text-xs text-gray-500">
-            created_at: {new Date(job.created_at).toLocaleString()}
-            {job.started_at
-              ? ` • started_at: ${new Date(job.started_at).toLocaleString()}`
-              : ""}
-            {job.finished_at
-              ? ` • finished_at: ${new Date(job.finished_at).toLocaleString()}`
-              : ""}
+            <div className="h-2 w-full overflow-hidden rounded bg-muted">
+              <div
+                className={
+                  job.status === "FAILED" ? "h-2 bg-destructive" : "h-2 bg-primary"
+                }
+                style={{
+                  width: `${Math.min(
+                    100,
+                    Math.max(0, Number(job.progress) || 0)
+                  )}%`,
+                }}
+              />
+            </div>
+
+            {job.error && (
+              <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm">
+                <div className="font-medium text-destructive">Error</div>
+                <pre className="mt-2 overflow-auto text-xs text-foreground">
+                  {job.error}
+                </pre>
+              </div>
+            )}
+
+            <div className="text-xs text-muted-foreground">
+              created_at: {new Date(job.created_at).toLocaleString()}
+              {job.started_at
+                ? ` • started_at: ${new Date(job.started_at).toLocaleString()}`
+                : ""}
+              {job.finished_at
+                ? ` • finished_at: ${new Date(job.finished_at).toLocaleString()}`
+                : ""}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isTerminal || cancelM.isPending}
+                onClick={() => cancelM.mutate()}
+              >
+                {cancelM.isPending ? "Canceling…" : "Cancel"}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                disabled={
+                  !(job.status === "FAILED" || job.status === "CANCELED") ||
+                  retryM.isPending
+                }
+                onClick={() => retryM.mutate()}
+              >
+                {retryM.isPending ? "Retrying…" : "Retry"}
+              </Button>
+
+              <Button type="button" variant="outline" onClick={() => jobQ.refetch()}>
+                Refresh now
+              </Button>
+            </div>
+
+            {(cancelM.isError || retryM.isError) && (
+              <div className="text-sm text-destructive">
+                {String(cancelM.error ?? retryM.error)}
+              </div>
+            )}
           </div>
-        </div>
+        </CardContent>
+      </Card>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Link
-            className="rounded border px-3 py-2 hover:bg-gray-50"
-            href={`/reports/${jobId}`}
-          >
-            Open report
-          </Link>
-
-          <button
-            className="rounded border px-3 py-2 hover:bg-gray-50 disabled:opacity-50"
-            disabled={isTerminal || cancelM.isPending}
-            onClick={() => cancelM.mutate()}
-          >
-            {cancelM.isPending ? "Canceling…" : "Cancel"}
-          </button>
-
-          <button
-            className="rounded border px-3 py-2 hover:bg-gray-50 disabled:opacity-50"
-            disabled={
-              !(job.status === "FAILED" || job.status === "CANCELED") ||
-              retryM.isPending
-            }
-            onClick={() => retryM.mutate()}
-          >
-            {retryM.isPending ? "Retrying…" : "Retry"}
-          </button>
-
-          <button
-            className="rounded border px-3 py-2 hover:bg-gray-50"
-            onClick={() => jobQ.refetch()}
-          >
-            Refresh now
-          </button>
-        </div>
-
-        {(cancelM.isError || retryM.isError) && (
-          <div className="mt-3 text-sm text-red-600">
-            {String(cancelM.error ?? retryM.error)}
-          </div>
-        )}
-      </section>
-
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-sm font-medium">Debug (raw job JSON)</h2>
-        <pre className="mt-2 overflow-auto rounded bg-gray-50 p-3 text-xs">
-          {JSON.stringify(job, null, 2)}
-        </pre>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Debug</CardTitle>
+          <CardDescription>Raw job JSON (useful while iterating).</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <pre className="overflow-auto rounded-lg bg-muted/30 p-3 text-xs">
+            {JSON.stringify(job, null, 2)}
+          </pre>
+        </CardContent>
+      </Card>
     </div>
   );
 }

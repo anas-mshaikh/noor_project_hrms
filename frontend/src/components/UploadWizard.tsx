@@ -33,6 +33,17 @@ import { useMemo, useState } from "react";
 import { apiJson, xhrUploadFormWithProgress } from "@/lib/api";
 import { useSelection } from "@/lib/selection";
 import type { JobCreateResponse, VideoInitResponse } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * Browser-safe helper: get today's date in LOCAL time for <input type="date" />
@@ -206,162 +217,156 @@ export function UploadWizard() {
   // Guard: if store/camera not selected, show a clear message.
   if (!storeId || !cameraId) {
     return (
-      <div className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Upload Video</h2>
-        <p className="mt-2 text-sm text-gray-600">
-          Select an organization + store + camera in the header first.
-        </p>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Upload Video</CardTitle>
+          <CardDescription>
+            Select an organization + store + camera in the header first.
+          </CardDescription>
+        </CardHeader>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-4">
-      <section className="rounded border bg-white p-4">
-        <h2 className="text-lg font-medium">Upload Video (MVP)</h2>
-
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Business date</label>
-            <input
-              type="date"
-              className="rounded border px-2 py-1"
-              value={businessDate}
-              onChange={(e) => setBusinessDate(e.target.value)}
-            />
-            <div className="text-xs text-gray-500">
-              This is the “attendance date” you’ll query later.
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">
-              Recorded start time (optional, recommended)
-            </label>
-            <input
-              type="datetime-local"
-              className="rounded border px-2 py-1"
-              value={recordedStartLocal}
-              onChange={(e) => setRecordedStartLocal(e.target.value)}
-            />
-            <div className="text-xs text-gray-500">
-              Used to map video frames → real timestamps (if your worker relies
-              on it).
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">
-              Uploaded by (optional)
-            </label>
-            <input
-              className="rounded border px-2 py-1"
-              value={uploadedBy}
-              onChange={(e) => setUploadedBy(e.target.value)}
-              placeholder="e.g. Store Manager"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Video file</label>
-            <input
-              type="file"
-              className="rounded border px-2 py-1"
-              accept="video/*"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            />
-            <div className="text-xs text-gray-500">
-              You can use your client’s 5-min clip for quick testing.
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button
-            className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
-            disabled={!canStart || step !== "idle"}
-            onClick={run}
-          >
-            {step === "idle" ? "Start upload + job" : "Working…"}
-          </button>
-
-          <button
-            className="rounded border px-3 py-2 hover:bg-gray-50 disabled:opacity-50"
-            disabled={step !== "idle"}
-            onClick={reset}
-          >
-            Reset
-          </button>
-
-          {error && <div className="text-sm text-red-600">{error}</div>}
-        </div>
-
-        {/* Progress / step indicator */}
-        <div className="mt-4 space-y-2 text-sm">
-          <div>
-            <span className="font-medium">Step:</span>{" "}
-            <span className="rounded bg-gray-100 px-2 py-1">{step}</span>
-          </div>
-
-          {step === "upload" && (
+      <Card>
+        <CardHeader>
+          <CardTitle>Upload Video</CardTitle>
+          <CardDescription>
+            Upload a full-day (or short test) clip, finalize it, then start a
+            processing job.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <div>
-                <span className="font-medium">Upload progress:</span>{" "}
-                {uploadPct}%
-              </div>
-              <div className="h-2 w-full rounded bg-gray-200">
-                <div
-                  className="h-2 rounded bg-blue-600"
-                  style={{ width: `${Math.min(100, Math.max(0, uploadPct))}%` }}
-                />
+              <Label className="text-xs text-muted-foreground">Business date</Label>
+              <Input
+                type="date"
+                value={businessDate}
+                onChange={(e) => setBusinessDate(e.target.value)}
+              />
+              <div className="text-xs text-muted-foreground">
+                This is the “attendance date” you’ll query later.
               </div>
             </div>
-          )}
 
-          {/* After job creation, show next link(s) */}
-          {jobRes && (
-            <div className="rounded border bg-gray-50 p-3">
-              <div className="font-medium">Job created</div>
-              <div className="mt-1">
-                job_id: <code className="text-xs">{jobRes.job_id}</code>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                Recorded start time (optional, recommended)
+              </Label>
+              <Input
+                type="datetime-local"
+                value={recordedStartLocal}
+                onChange={(e) => setRecordedStartLocal(e.target.value)}
+              />
+              <div className="text-xs text-muted-foreground">
+                Used to map video frames → real timestamps (if your worker relies
+                on it).
               </div>
-              <div className="mt-1">
-                status: <code className="text-xs">{jobRes.status}</code>
-              </div>
+            </div>
 
-              {!jobRes.enqueued && (
-                <div className="mt-2 text-sm text-red-600">
-                  Not enqueued: {jobRes.queue_error ?? "(unknown queue error)"}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                Uploaded by (optional)
+              </Label>
+              <Input
+                value={uploadedBy}
+                onChange={(e) => setUploadedBy(e.target.value)}
+                placeholder="e.g. Store Manager"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Video file</Label>
+              <Input
+                type="file"
+                accept="video/*"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              <div className="text-xs text-muted-foreground">
+                You can use your client’s 5-min clip for quick testing.
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" disabled={!canStart || step !== "idle"} onClick={run}>
+              {step === "idle" ? "Start upload + job" : "Working…"}
+            </Button>
+
+            <Button type="button" variant="outline" disabled={step !== "idle"} onClick={reset}>
+              Reset
+            </Button>
+
+            {error && <div className="text-sm text-destructive">{error}</div>}
+          </div>
+
+          {/* Progress / step indicator */}
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="font-medium">Step:</span>
+              <Badge variant="secondary">{step}</Badge>
+            </div>
+
+            {step === "upload" && (
+              <div className="space-y-1">
+                <div className="text-sm">
+                  <span className="font-medium">Upload progress:</span>{" "}
+                  <span className="tabular-nums">{uploadPct}%</span>
                 </div>
-              )}
-
-              <div className="mt-3 flex gap-2">
-                <Link
-                  className="rounded bg-black px-3 py-2 text-white"
-                  href={`/jobs/${jobRes.job_id}`}
-                >
-                  Open job status
-                </Link>
-
-                <Link
-                  className="rounded border px-3 py-2 hover:bg-white"
-                  href={`/reports/${jobRes.job_id}`}
-                >
-                  Open report
-                </Link>
+                <div className="h-2 w-full overflow-hidden rounded bg-muted">
+                  <div
+                    className="h-2 bg-primary"
+                    style={{ width: `${Math.min(100, Math.max(0, uploadPct))}%` }}
+                  />
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      </section>
+            )}
+
+            {/* After job creation, show next link(s) */}
+            {jobRes && (
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <div className="font-medium">Job created</div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  job_id: <code className="text-xs">{jobRes.job_id}</code> • status:{" "}
+                  <code className="text-xs">{jobRes.status}</code>
+                </div>
+
+                {!jobRes.enqueued && (
+                  <div className="mt-2 text-sm text-destructive">
+                    Not enqueued: {jobRes.queue_error ?? "(unknown queue error)"}
+                  </div>
+                )}
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button asChild>
+                    <Link href={`/jobs/${jobRes.job_id}`}>Open job status</Link>
+                  </Button>
+
+                  <Button asChild variant="outline">
+                    <Link href={`/reports/${jobRes.job_id}`}>Open report</Link>
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Debug panel: very helpful while wiring backend/frontend quickly */}
-      <section className="rounded border bg-white p-4">
-        <h3 className="text-sm font-medium">Debug (raw responses)</h3>
-        <pre className="mt-2 overflow-auto rounded bg-gray-50 p-3 text-xs">
-          {JSON.stringify({ initRes, uploadRes, finalizeRes, jobRes }, null, 2)}
-        </pre>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Debug</CardTitle>
+          <CardDescription>Raw backend responses from this wizard.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <pre className="overflow-auto rounded-lg bg-muted/30 p-3 text-xs">
+            {JSON.stringify({ initRes, uploadRes, finalizeRes, jobRes }, null, 2)}
+          </pre>
+        </CardContent>
+      </Card>
     </div>
   );
 }
