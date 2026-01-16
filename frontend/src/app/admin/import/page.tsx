@@ -17,6 +17,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiForm, apiJson } from "@/lib/api";
+import { useSelection } from "@/lib/selection";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -101,6 +102,7 @@ export default function AdminImportPage() {
   // ----------------------------
   // Import
   // ----------------------------
+  const selection = useSelection();
   const defaultMonthKey = useMemo(() => {
     // YYYY-MM (local browser time)
     return new Date().toISOString().slice(0, 7);
@@ -120,6 +122,7 @@ export default function AdminImportPage() {
       form.append("file", xlsxFile, xlsxFile.name);
       if (monthKey.trim()) form.append("month_key", monthKey.trim());
       if (uploadedBy.trim()) form.append("uploaded_by", uploadedBy.trim());
+      if (selection.storeId) form.append("store_id", selection.storeId);
 
       return apiForm<ImportResponse>("/api/v1/imports", form, { method: "POST" });
     },

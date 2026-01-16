@@ -5,7 +5,7 @@ Admin Import flow:
 - Admin uploads an Excel file containing two sheets: POS + Attendance
 - Backend parses report-style sheets (header row detected by scanning)
 - Stores normalized per-salesman summaries in Postgres (source of truth)
-- Optional: sync summary-only data to Firebase Firestore for mobile app
+- Optional: sync mobile-ready data to Firebase Firestore (new namespace)
 
 This module is intentionally self-contained and does NOT change existing routes.
 """
@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -43,7 +42,10 @@ from app.models.models import (
     MonthState,
     PosSummary,
     Salesman,
+    Store,
 )
+from app.mobile.repository import infer_single_store, resolve_store_org
+from app.mobile.service import sync_mobile_for_dataset
 
 router = APIRouter(tags=["imports"])
 logger = logging.getLogger(__name__)
@@ -227,19 +229,6 @@ def _ensure_openpyxl():
         )
 
 
-def _ensure_firebase_admin():
-    try:
-        import firebase_admin  # type: ignore
-        from firebase_admin import credentials, firestore  # type: ignore
-
-        return firebase_admin, credentials, firestore
-    except Exception as e:  # pragma: no cover
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"firebase-admin is required when FIREBASE_SYNC_ENABLED=true. ({e})",
-        )
-
-
 # -----------------------------------------------------------------------------
 # Routes
 # -----------------------------------------------------------------------------
@@ -250,6 +239,7 @@ def upload_import(
     file: UploadFile = File(...),
     month_key: str | None = Form(default=None),
     uploaded_by: str | None = Form(default=None),
+    store_id: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ) -> ImportResponse:
     # 1) Validate input
@@ -257,6 +247,21 @@ def upload_import(
         month_key_final = _validate_month_key(month_key or _month_key_now())
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+    store_uuid: UUID | None = None
+    if store_id:
+        try:
+            store_uuid = UUID(store_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="store_id must be a valid UUID",
+            )
+        if db.get(Store, store_uuid) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"store not found: {store_uuid}",
+            )
 
     # 2) Compute checksum + dedupe (idempotent per month)
     dataset_id = uuid4()
@@ -273,9 +278,23 @@ def upload_import(
         dest_path,
     )
 
-    existing = db.execute(
+    existing_all = db.execute(
         select(Dataset).where(Dataset.month_key == month_key_final, Dataset.checksum == checksum)
-    ).scalar_one_or_none()
+    ).scalars().all()
+
+    existing: Dataset | None = None
+    if store_uuid is not None:
+        for cand in existing_all:
+            if cand.store_id == store_uuid:
+                existing = cand
+                break
+        if existing is None and existing_all:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="dataset already exists for this month with a different store_id",
+            )
+    else:
+        existing = existing_all[0] if existing_all else None
 
     if existing is not None:
         # If a previous upload FAILED, allow re-upload to re-validate the same dataset_id.
@@ -309,6 +328,8 @@ def upload_import(
             dest_path.replace(stable_path)
 
             existing.raw_file_path = str(stable_path)
+            if store_uuid is not None:
+                existing.store_id = store_uuid
             if uploaded_by:
                 existing.uploaded_by = uploaded_by
             existing.status = "VALIDATING"
@@ -517,6 +538,7 @@ def upload_import(
     ds = Dataset(
         id=dataset_id,
         month_key=month_key_final,
+        store_id=store_uuid,
         uploaded_by=uploaded_by,
         status="VALIDATING",
         sync_status="DISABLED",
@@ -711,7 +733,8 @@ def publish_import(dataset_id: UUID, db: Session = Depends(get_db)) -> PublishRe
     else:
         ms.published_dataset_id = ds.id
 
-    if not settings.firebase_sync_enabled:
+    # Mobile sync is the only Firestore integration now.
+    if not settings.mobile_sync_enabled:
         ds.sync_status = "DISABLED"
         db.add(ds)
         db.commit()
@@ -724,7 +747,6 @@ def publish_import(dataset_id: UUID, db: Session = Depends(get_db)) -> PublishRe
             month_key=ds.month_key, published_dataset_id=ds.id, sync_status=ds.sync_status
         )
 
-    # Firebase enabled -> attempt sync
     ds.sync_status = "PENDING"
     db.add(ds)
     db.commit()
@@ -734,111 +756,64 @@ def publish_import(dataset_id: UUID, db: Session = Depends(get_db)) -> PublishRe
         ds.month_key,
     )
 
-    try:
-        firebase_admin, credentials, firestore = _ensure_firebase_admin()
-
-        sa_path = (settings.firebase_service_account_path or "").strip()
-        if not sa_path:
-            raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_PATH is required when sync is enabled")
-        if not os.path.exists(sa_path):
-            raise RuntimeError(f"Firebase service account JSON not found: {sa_path}")
-
-        if not firebase_admin._apps:  # type: ignore[attr-defined]
-            cred = credentials.Certificate(sa_path)
-            firebase_admin.initialize_app(cred)
-
-        client = firestore.client()
-
-        # Build leaderboard rows from DB (published dataset only)
-        q = (
-            select(
-                Salesman.salesman_id,
-                Salesman.name,
-                Salesman.department,
-                PosSummary.qty,
-                PosSummary.net_sales,
-                PosSummary.bills,
-                PosSummary.customers,
-                PosSummary.return_customers,
-                AttendanceSummary.present,
-                AttendanceSummary.absent,
-                AttendanceSummary.work_minutes,
-                AttendanceSummary.stocking_done,
-                AttendanceSummary.stocking_missed,
+    store_id = ds.store_id
+    if store_id is None:
+        # Safe fallback: only infer a store when there is exactly one in the system.
+        inferred_store = infer_single_store(db)
+        if inferred_store is not None:
+            store_id = inferred_store.id
+            ds.store_id = store_id
+            db.add(ds)
+            db.commit()
+            logger.info(
+                "mobile sync: inferred store_id=%s for dataset_id=%s",
+                store_id,
+                ds.id,
             )
-            .select_from(Salesman)
-            .join(PosSummary, (PosSummary.salesman_id == Salesman.salesman_id) & (PosSummary.dataset_id == ds.id), isouter=True)
-            .join(AttendanceSummary, (AttendanceSummary.salesman_id == Salesman.salesman_id) & (AttendanceSummary.dataset_id == ds.id), isouter=True)
-        )
-        rows = db.execute(q).all()
-
-        # 1) Write salesman docs under months/{month_key}/salesmen/{salesman_id}
-        # Firestore batch limit is 500 writes.
-        def chunks(seq: list[Any], n: int) -> list[list[Any]]:
-            return [seq[i : i + n] for i in range(0, len(seq), n)]
-
-        for batch_rows in chunks(list(rows), 450):
-            batch = client.batch()
-            for r in batch_rows:
-                doc_ref = (
-                    client.collection("months")
-                    .document(ds.month_key)
-                    .collection("salesmen")
-                    .document(r.salesman_id)
-                )
-                batch.set(
-                    doc_ref,
-                    {
-                        "dataset_id": str(ds.id),
-                        "salesman_id": r.salesman_id,
-                        "name": r.name,
-                        "department": r.department,
-                        "qty": float(r.qty) if r.qty is not None else None,
-                        "net_sales": float(r.net_sales) if r.net_sales is not None else None,
-                        "bills": r.bills,
-                        "customers": r.customers,
-                        "return_customers": r.return_customers,
-                        "present": r.present,
-                        "absent": r.absent,
-                        "work_minutes": r.work_minutes,
-                        "stocking_done": r.stocking_done,
-                        "stocking_missed": r.stocking_missed,
-                        "synced_at": firestore.SERVER_TIMESTAMP,
-                    },
-                    merge=True,
-                )
-            batch.commit()
-
-        # 2) Update month pointer doc AFTER successful salesman writes.
-        client.collection("months").document(ds.month_key).set(
-            {"published_dataset_id": str(ds.id), "updated_at": firestore.SERVER_TIMESTAMP},
-            merge=True,
-        )
-
-        ds.sync_status = "SYNCED"
+    if store_id is None:
+        # Publish is still allowed, but we mark sync as failed so it can be retried later.
+        ds.sync_status = "FAILED"
         db.add(ds)
         db.commit()
-        logger.info(
-            "imports: firebase sync complete dataset_id=%s month_key=%s sync=SYNCED",
+        logger.warning(
+            "mobile sync skipped: dataset_id=%s month_key=%s store_id missing",
             ds.id,
             ds.month_key,
         )
         return PublishResponse(
             month_key=ds.month_key, published_dataset_id=ds.id, sync_status=ds.sync_status
         )
+
+    try:
+        store, org = resolve_store_org(db, store_id)
+        sync_mobile_for_dataset(
+            db,
+            dataset=ds,
+            month_key=ds.month_key,
+            store_id=store.id,
+            org_id=org.id,
+            dry_run=settings.mobile_sync_dry_run,
+        )
+        ds.sync_status = "SYNCED"
     except Exception as e:
         ds.sync_status = "FAILED"
         db.add(ds)
         db.commit()
         logger.exception(
-            "imports: firebase sync failed dataset_id=%s month_key=%s",
+            "mobile sync failed dataset_id=%s month_key=%s",
             ds.id,
             ds.month_key,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Firebase sync failed: {e}",
+            detail=f"Mobile sync failed: {e}",
         )
+
+    db.add(ds)
+    db.commit()
+    return PublishResponse(
+        month_key=ds.month_key, published_dataset_id=ds.id, sync_status=ds.sync_status
+    )
 
 
 @router.get("/months/{month_key}/leaderboard", response_model=list[LeaderboardRowOut])

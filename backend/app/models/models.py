@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Optional
 
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
@@ -530,6 +530,12 @@ class Dataset(Base):
     )
 
     month_key: Mapped[str] = mapped_column(sa.String(16), nullable=False, index=True)
+    store_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("stores.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     uploaded_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
@@ -548,6 +554,7 @@ class Dataset(Base):
     raw_file_path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     checksum: Mapped[str] = mapped_column(sa.String(64), nullable=False)
 
+    store: Mapped[Optional["Store"]] = relationship()
     pos_rows: Mapped[list["PosSummary"]] = relationship(back_populates="dataset")
     attendance_rows: Mapped[list["AttendanceSummary"]] = relationship(
         back_populates="dataset"

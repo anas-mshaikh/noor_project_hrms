@@ -47,9 +47,19 @@ class Settings(BaseSettings):
     # This preserves idempotency while making development/debugging much easier.
     imports_revalidate_failed_on_reupload: bool = True
 
-    # Optional Firebase sync (summary-only replica for mobile app).
-    firebase_sync_enabled: bool = False
+    # Firebase credentials (used by mobile sync).
     firebase_service_account_path: str | None = None
+    firebase_service_account_json: str | None = None
+    firebase_project_id: str | None = None
+
+    # -------------------------
+    # Phase 3: Mobile sync
+    # -------------------------
+    mobile_sync_enabled: bool = False
+    mobile_sync_dry_run: bool = False
+    mobile_sync_admin_enabled: bool = False
+    mobile_sync_admin_token: str | None = None
+    mobile_sync_leaderboard_limit: int = 50
 
     # -------------------------
     # ML model paths (offline)

@@ -47,4 +47,4 @@ Import retry behavior:
 - If an import previously `FAILED`, re-uploading the same file will re-validate it (controlled by `IMPORTS_REVALIDATE_FAILED_ON_REUPLOAD`, default `true`).
 
 Firebase sync (optional):
-- Set `FIREBASE_SYNC_ENABLED=true` and provide `FIREBASE_SERVICE_ACCOUNT_PATH` (mounted in the container).
+- Provide `FIREBASE_SERVICE_ACCOUNT_PATH` (mounted in the container) and set `MOBILE_SYNC_ENABLED=true`.

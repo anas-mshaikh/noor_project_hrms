@@ -16,3 +16,4 @@ __pycache__/
 *.cache-9
 backend/.cache/fontconfig/CACHEDIR.TAG
 docs/Attendance_video_demo.mov
+test/Database schema_ attendance.public - db - Adminer.html
