@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from datetime import date, datetime
 from typing import Any
 
@@ -495,3 +496,132 @@ class Artifact(Base):
     )
 
     job: Mapped["Job"] = relationship(back_populates="artifacts")
+
+
+# -----------------------------------------------------------------------------
+# Phase 2: Admin Import (Excel -> Postgres -> optional Firebase replica)
+# -----------------------------------------------------------------------------
+
+
+class Dataset(Base):
+    """
+    A versioned upload for a given month (YYYY-MM).
+
+    Idempotency:
+    - We enforce uniqueness on (month_key, checksum). Uploading the exact same file
+      again for the same month should return the existing dataset_id.
+    """
+
+    __tablename__ = "datasets"
+    __table_args__ = (
+        sa.UniqueConstraint("month_key", "checksum", name="uq_datasets_month_checksum"),
+        sa.CheckConstraint(
+            "status in ('VALIDATING','READY','FAILED')",
+            name="ck_datasets_status",
+        ),
+        sa.CheckConstraint(
+            "sync_status in ('DISABLED','PENDING','SYNCED','FAILED')",
+            name="ck_datasets_sync_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    month_key: Mapped[str] = mapped_column(sa.String(16), nullable=False, index=True)
+
+    uploaded_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+    uploaded_by: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
+
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="VALIDATING"
+    )
+    sync_status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="DISABLED"
+    )
+
+    raw_file_path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    checksum: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+
+    pos_rows: Mapped[list["PosSummary"]] = relationship(back_populates="dataset")
+    attendance_rows: Mapped[list["AttendanceSummary"]] = relationship(
+        back_populates="dataset"
+    )
+
+
+class MonthState(Base):
+    """
+    Tracks which dataset is currently "published" for a month_key.
+
+    Postgres is the source of truth; if Firebase sync is enabled, we only update
+    Firestore AFTER month_state is updated successfully (see publish endpoint).
+    """
+
+    __tablename__ = "month_state"
+
+    month_key: Mapped[str] = mapped_column(sa.String(16), primary_key=True)
+    published_dataset_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("datasets.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+
+class Salesman(Base):
+    __tablename__ = "salesmen"
+
+    salesman_id: Mapped[str] = mapped_column(sa.String(128), primary_key=True)
+    name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    department: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
+    active: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.true())
+
+
+class PosSummary(Base):
+    __tablename__ = "pos_summary"
+
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("datasets.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    salesman_id: Mapped[str] = mapped_column(
+        sa.String(128),
+        sa.ForeignKey("salesmen.salesman_id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+
+    qty: Mapped[Decimal | None] = mapped_column(sa.Numeric, nullable=True)
+    net_sales: Mapped[Decimal | None] = mapped_column(sa.Numeric, nullable=True)
+    bills: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    customers: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    return_customers: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+
+    dataset: Mapped["Dataset"] = relationship(back_populates="pos_rows")
+
+
+class AttendanceSummary(Base):
+    __tablename__ = "attendance_summary"
+
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("datasets.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    salesman_id: Mapped[str] = mapped_column(
+        sa.String(128),
+        sa.ForeignKey("salesmen.salesman_id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+
+    present: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    absent: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    work_minutes: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    stocking_done: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    stocking_missed: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+
+    dataset: Mapped["Dataset"] = relationship(back_populates="attendance_rows")

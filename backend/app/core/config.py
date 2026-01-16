@@ -37,6 +37,21 @@ class Settings(BaseSettings):
     data_dir: str = "./data"
 
     # -------------------------
+    # Phase 2: Admin imports (Excel)
+    # -------------------------
+    # Raw uploaded XLSX files are stored here (dataset_id is part of the filename).
+    # Postgres remains the source of truth; these raw files are for audit/re-import.
+    upload_dir: str = "./data/imports"
+    # If a dataset upload previously FAILED, allow re-uploading the same file (same checksum)
+    # to re-validate using the current parser code, reusing the same dataset_id.
+    # This preserves idempotency while making development/debugging much easier.
+    imports_revalidate_failed_on_reupload: bool = True
+
+    # Optional Firebase sync (summary-only replica for mobile app).
+    firebase_sync_enabled: bool = False
+    firebase_service_account_path: str | None = None
+
+    # -------------------------
     # ML model paths (offline)
     # -------------------------
     # Root folder for weights/model packs.

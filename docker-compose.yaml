@@ -55,6 +55,7 @@ services:
     volumes:
       - ./backend/data:/app/data
       - ./backend/models:/app/models
+      - ./backend/secrets:/app/secrets:ro
     ports:
       - "8000:8000"
     depends_on:
@@ -71,6 +72,9 @@ services:
     volumes:
       - ./backend/data:/app/data
       - ./backend/models:/app/models
+      - ./backend/secrets:/app/secrets:ro
+      - ./backend/secrets/firebase-service-account.json:/app/secrets/firebase-service-account.json:ro
+
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -86,11 +90,21 @@ services:
         NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000"
     environment:
       NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000"
+      # Dev-only admin gate for /admin/import (override in your shell or .env)
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-admin}"
     ports:
       - "3000:3000"
     depends_on:
       backend:
         condition: service_started
+
+  adminer:
+    image: adminer:4
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:

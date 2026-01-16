@@ -12,6 +12,7 @@ __pycache__/
 *.csv
 *.json
 *.jpeg
+*.xlsx
 *.cache-9
 backend/.cache/fontconfig/CACHEDIR.TAG
 docs/Attendance_video_demo.mov

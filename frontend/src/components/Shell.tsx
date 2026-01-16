@@ -22,6 +22,7 @@ import {
   Users,
   Video,
   PanelLeft,
+  FileUp,
 } from "lucide-react";
 
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -36,6 +37,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     { href: "/setup", label: "Setup", icon: Settings },
     { href: "/employees", label: "Employees", icon: Users },
     { href: "/videos", label: "Videos", icon: Video },
+    { href: "/admin/import", label: "Admin Import", icon: FileUp },
   ] as const;
 
   // Highlight nested routes under a section (e.g. /jobs/*, /reports/* under Videos).
