@@ -4,7 +4,7 @@ imports.py (Phase 2)
 Admin Import flow:
 - Admin uploads an Excel file containing two sheets: POS + Attendance
 - Backend parses report-style sheets (header row detected by scanning)
-- Stores normalized per-salesman summaries in Postgres (source of truth)
+- Stores normalized per-employee summaries in Postgres (source of truth)
 - Optional: sync mobile-ready data to Firebase Firestore (new namespace)
 
 This module is intentionally self-contained and does NOT change existing routes.
@@ -30,6 +30,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.imports.excel import sheet_to_matrix
 from app.imports.parsing import (
+    ParsedEmployee,
     ParsedWorkbook,
     RowError,
     merge_parsed,
@@ -39,12 +40,12 @@ from app.imports.parsing import (
 from app.models.models import (
     AttendanceSummary,
     Dataset,
+    Employee,
     MonthState,
     PosSummary,
-    Salesman,
     Store,
 )
-from app.mobile.repository import infer_single_store, resolve_store_org
+from app.mobile.repository import resolve_store_org
 from app.mobile.service import sync_mobile_for_dataset
 
 router = APIRouter(tags=["imports"])
@@ -57,7 +58,7 @@ logger = logging.getLogger(__name__)
 
 
 class ImportCountsOut(BaseModel):
-    salesmen: int
+    employees: int
     pos_rows: int
     attendance_rows: int
 
@@ -69,7 +70,7 @@ class ImportErrorOut(BaseModel):
 
 
 class ImportTopSaleOut(BaseModel):
-    salesman_id: str
+    employee_code: str
     name: str
     net_sales: float | None
 
@@ -95,7 +96,8 @@ class PublishResponse(BaseModel):
 
 
 class LeaderboardRowOut(BaseModel):
-    salesman_id: str
+    employee_id: UUID
+    employee_code: str
     name: str
     department: str | None = None
 
@@ -198,23 +200,67 @@ def _build_preview(parsed: ParsedWorkbook) -> ImportPreviewOut:
 
     # Order by net_sales desc, nulls last.
     rows = []
-    for sid, pos in parsed.pos.items():
-        salesman = parsed.salesmen.get(sid)
+    for code, pos in parsed.pos.items():
+        employee = parsed.employees.get(code)
         rows.append(
             (
                 float(pos.net_sales) if pos.net_sales is not None else None,
-                sid,
-                salesman.name if salesman else sid,
+                code,
+                employee.name if employee else code,
             )
         )
     rows.sort(key=lambda x: (x[0] is None, -(x[0] or 0.0)))
-    for net_sales, sid, name in rows[:10]:
-        top.append(ImportTopSaleOut(salesman_id=sid, name=name, net_sales=net_sales))
+    for net_sales, code, name in rows[:10]:
+        top.append(ImportTopSaleOut(employee_code=code, name=name, net_sales=net_sales))
 
     return ImportPreviewOut(
         topSales=top,
         errors=[_row_error_out(e) for e in parsed.errors[:200]],
     )
+
+
+def _upsert_employees(
+    db: Session,
+    store_id: UUID,
+    employees: dict[str, ParsedEmployee],
+) -> dict[str, UUID]:
+    """
+    Upsert employees by (store_id, employee_code) and return a code->id map.
+
+    This keeps POS/attendance imports as the canonical source of employee identity
+    while still honoring the single-employees table design.
+    """
+    if not employees:
+        return {}
+
+    codes = list(employees.keys())
+    existing_rows = db.execute(
+        select(Employee)
+        .where(Employee.store_id == store_id)
+        .where(Employee.employee_code.in_(codes))
+    ).scalars().all()
+    existing_by_code = {row.employee_code: row for row in existing_rows}
+
+    for code, emp in employees.items():
+        department = emp.department or "Unknown"
+        current = existing_by_code.get(code)
+        if current is None:
+            current = Employee(
+                store_id=store_id,
+                employee_code=code,
+                name=emp.name,
+                department=department,
+            )
+            db.add(current)
+            existing_by_code[code] = current
+        else:
+            current.name = emp.name
+            current.department = emp.department or current.department or "Unknown"
+            current.is_active = True
+
+    # Flush to ensure IDs exist for new rows before summary inserts.
+    db.flush()
+    return {code: row.id for code, row in existing_by_code.items()}
 
 
 def _ensure_openpyxl():
@@ -239,7 +285,7 @@ def upload_import(
     file: UploadFile = File(...),
     month_key: str | None = Form(default=None),
     uploaded_by: str | None = Form(default=None),
-    store_id: str | None = Form(default=None),
+    store_id: str = Form(...),
     db: Session = Depends(get_db),
 ) -> ImportResponse:
     # 1) Validate input
@@ -248,20 +294,18 @@ def upload_import(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
-    store_uuid: UUID | None = None
-    if store_id:
-        try:
-            store_uuid = UUID(store_id)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="store_id must be a valid UUID",
-            )
-        if db.get(Store, store_uuid) is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"store not found: {store_uuid}",
-            )
+    try:
+        store_uuid = UUID(store_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="store_id must be a valid UUID",
+        )
+    if db.get(Store, store_uuid) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"store not found: {store_uuid}",
+        )
 
     # 2) Compute checksum + dedupe (idempotent per month)
     dataset_id = uuid4()
@@ -349,7 +393,7 @@ def upload_import(
                     month_key=existing.month_key,
                     status=existing.status,
                     sync_status=existing.sync_status,
-                    counts=ImportCountsOut(salesmen=0, pos_rows=0, attendance_rows=0),
+                    counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
                     preview=ImportPreviewOut(
                         topSales=[],
                         errors=[ImportErrorOut(sheet="workbook", row=1, message=str(e))],
@@ -367,7 +411,7 @@ def upload_import(
                     month_key=existing.month_key,
                     status=existing.status,
                     sync_status=existing.sync_status,
-                    counts=ImportCountsOut(salesmen=0, pos_rows=0, attendance_rows=0),
+                    counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
                     preview=ImportPreviewOut(
                         topSales=[],
                         errors=[ImportErrorOut(sheet="workbook", row=1, message=str(e))],
@@ -380,9 +424,9 @@ def upload_import(
             parsed_att = parse_attendance_sheet(att_name, att_matrix)
             parsed = merge_parsed(parsed_pos, parsed_att)
 
-            pos_header_failed = bool(parsed_pos.errors) and not parsed_pos.salesmen and not parsed_pos.pos
+            pos_header_failed = bool(parsed_pos.errors) and not parsed_pos.employees and not parsed_pos.pos
             att_header_failed = (
-                bool(parsed_att.errors) and not parsed_att.salesmen and not parsed_att.attendance
+                bool(parsed_att.errors) and not parsed_att.employees and not parsed_att.attendance
             )
             if pos_header_failed or att_header_failed:
                 existing.status = "FAILED"
@@ -393,7 +437,7 @@ def upload_import(
                     month_key=existing.month_key,
                     status=existing.status,
                     sync_status=existing.sync_status,
-                    counts=ImportCountsOut(salesmen=0, pos_rows=0, attendance_rows=0),
+                    counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
                     preview=_build_preview(parsed),
                 )
 
@@ -403,21 +447,13 @@ def upload_import(
                 sa.delete(AttendanceSummary).where(AttendanceSummary.dataset_id == existing.id)
             )
 
-            for sid, s in parsed.salesmen.items():
-                existing_salesman = db.get(Salesman, sid)
-                if existing_salesman is None:
-                    db.add(Salesman(salesman_id=sid, name=s.name, department=s.department))
-                else:
-                    existing_salesman.name = s.name
-                    if s.department:
-                        existing_salesman.department = s.department
-                    existing_salesman.active = True
+            employee_ids = _upsert_employees(db, store_uuid, parsed.employees)
 
             for sid, row in parsed.pos.items():
                 db.add(
                     PosSummary(
                         dataset_id=existing.id,
-                        salesman_id=sid,
+                        employee_id=employee_ids[sid],
                         qty=row.qty,
                         net_sales=row.net_sales,
                         bills=row.bills,
@@ -430,7 +466,7 @@ def upload_import(
                 db.add(
                     AttendanceSummary(
                         dataset_id=existing.id,
-                        salesman_id=sid,
+                        employee_id=employee_ids[sid],
                         present=row.present,
                         absent=row.absent,
                         work_minutes=row.work_minutes,
@@ -443,10 +479,10 @@ def upload_import(
             db.add(existing)
             db.commit()
             logger.info(
-                "imports: dataset READY (revalidated) dataset_id=%s month_key=%s salesmen=%s pos_rows=%s attendance_rows=%s errors=%s",
+                "imports: dataset READY (revalidated) dataset_id=%s month_key=%s employees=%s pos_rows=%s attendance_rows=%s errors=%s",
                 existing.id,
                 existing.month_key,
-                len(parsed.salesmen),
+                len(parsed.employees),
                 len(parsed.pos),
                 len(parsed.attendance),
                 len(parsed.errors),
@@ -458,7 +494,7 @@ def upload_import(
                 status=existing.status,
                 sync_status=existing.sync_status,
                 counts=ImportCountsOut(
-                    salesmen=len(parsed.salesmen),
+                    employees=len(parsed.employees),
                     pos_rows=len(parsed.pos),
                     attendance_rows=len(parsed.attendance),
                 ),
@@ -484,26 +520,26 @@ def upload_import(
         ).scalar_one()
         pos_ids = set(
             db.execute(
-                select(sa.distinct(PosSummary.salesman_id)).where(
+                select(sa.distinct(PosSummary.employee_id)).where(
                     PosSummary.dataset_id == existing.id
                 )
             ).scalars()
         )
         att_ids = set(
             db.execute(
-                select(sa.distinct(AttendanceSummary.salesman_id)).where(
+                select(sa.distinct(AttendanceSummary.employee_id)).where(
                     AttendanceSummary.dataset_id == existing.id
                 )
             ).scalars()
         )
-        salesman_count = len(pos_ids | att_ids)
+        employee_count = len(pos_ids | att_ids)
 
         top_rows = db.execute(
-            select(Salesman.salesman_id, Salesman.name, PosSummary.net_sales)
-            .select_from(Salesman)
+            select(Employee.employee_code, Employee.name, PosSummary.net_sales)
+            .select_from(Employee)
             .join(
                 PosSummary,
-                (PosSummary.salesman_id == Salesman.salesman_id)
+                (PosSummary.employee_id == Employee.id)
                 & (PosSummary.dataset_id == existing.id),
                 isouter=True,
             )
@@ -513,7 +549,7 @@ def upload_import(
 
         top_sales = [
             ImportTopSaleOut(
-                salesman_id=r.salesman_id,
+                employee_code=r.employee_code,
                 name=r.name,
                 net_sales=float(r.net_sales) if r.net_sales is not None else None,
             )
@@ -527,7 +563,7 @@ def upload_import(
             status=existing.status,
             sync_status=existing.sync_status,
             counts=ImportCountsOut(
-                salesmen=int(salesman_count),
+                employees=int(employee_count),
                 pos_rows=int(pos_count),
                 attendance_rows=int(att_count),
             ),
@@ -571,7 +607,7 @@ def upload_import(
                 month_key=existing2.month_key,
                 status=existing2.status,
                 sync_status=existing2.sync_status,
-                counts=ImportCountsOut(salesmen=0, pos_rows=0, attendance_rows=0),
+                counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
                 preview=ImportPreviewOut(topSales=[], errors=[]),
             )
         raise
@@ -589,7 +625,7 @@ def upload_import(
             month_key=ds.month_key,
             status=ds.status,
             sync_status=ds.sync_status,
-            counts=ImportCountsOut(salesmen=0, pos_rows=0, attendance_rows=0),
+                counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
             preview=ImportPreviewOut(
                 topSales=[],
                 errors=[ImportErrorOut(sheet="workbook", row=1, message=str(e))],
@@ -607,7 +643,7 @@ def upload_import(
             month_key=ds.month_key,
             status=ds.status,
             sync_status=ds.sync_status,
-            counts=ImportCountsOut(salesmen=0, pos_rows=0, attendance_rows=0),
+            counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
             preview=ImportPreviewOut(
                 topSales=[],
                 errors=[ImportErrorOut(sheet="workbook", row=1, message=str(e))],
@@ -632,9 +668,9 @@ def upload_import(
     parsed = merge_parsed(parsed_pos, parsed_att)
 
     # If either sheet failed header detection, treat as FAILED.
-    pos_header_failed = bool(parsed_pos.errors) and not parsed_pos.salesmen and not parsed_pos.pos
+    pos_header_failed = bool(parsed_pos.errors) and not parsed_pos.employees and not parsed_pos.pos
     att_header_failed = (
-        bool(parsed_att.errors) and not parsed_att.salesmen and not parsed_att.attendance
+        bool(parsed_att.errors) and not parsed_att.employees and not parsed_att.attendance
     )
     if pos_header_failed or att_header_failed:
         ds.status = "FAILED"
@@ -645,27 +681,19 @@ def upload_import(
             month_key=ds.month_key,
             status=ds.status,
             sync_status=ds.sync_status,
-            counts=ImportCountsOut(salesmen=0, pos_rows=0, attendance_rows=0),
+            counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
             preview=_build_preview(parsed),
         )
 
-    # 5) Upsert salesmen
-    for sid, s in parsed.salesmen.items():
-        existing_salesman = db.get(Salesman, sid)
-        if existing_salesman is None:
-            db.add(Salesman(salesman_id=sid, name=s.name, department=s.department))
-        else:
-            existing_salesman.name = s.name
-            if s.department:
-                existing_salesman.department = s.department
-            existing_salesman.active = True
+    # 5) Upsert employees (POS/attendance drives the canonical employee list).
+    employee_ids = _upsert_employees(db, store_uuid, parsed.employees)
 
     # 6) Insert summaries
     for sid, row in parsed.pos.items():
         db.add(
             PosSummary(
                 dataset_id=ds.id,
-                salesman_id=sid,
+                employee_id=employee_ids[sid],
                 qty=row.qty,
                 net_sales=row.net_sales,
                 bills=row.bills,
@@ -678,7 +706,7 @@ def upload_import(
         db.add(
             AttendanceSummary(
                 dataset_id=ds.id,
-                salesman_id=sid,
+                employee_id=employee_ids[sid],
                 present=row.present,
                 absent=row.absent,
                 work_minutes=row.work_minutes,
@@ -691,10 +719,10 @@ def upload_import(
     db.add(ds)
     db.commit()
     logger.info(
-        "imports: dataset READY dataset_id=%s month_key=%s salesmen=%s pos_rows=%s attendance_rows=%s errors=%s",
+        "imports: dataset READY dataset_id=%s month_key=%s employees=%s pos_rows=%s attendance_rows=%s errors=%s",
         ds.id,
         ds.month_key,
-        len(parsed.salesmen),
+        len(parsed.employees),
         len(parsed.pos),
         len(parsed.attendance),
         len(parsed.errors),
@@ -706,7 +734,7 @@ def upload_import(
         status=ds.status,
         sync_status=ds.sync_status,
         counts=ImportCountsOut(
-            salesmen=len(parsed.salesmen),
+            employees=len(parsed.employees),
             pos_rows=len(parsed.pos),
             attendance_rows=len(parsed.attendance),
         ),
@@ -758,30 +786,18 @@ def publish_import(dataset_id: UUID, db: Session = Depends(get_db)) -> PublishRe
 
     store_id = ds.store_id
     if store_id is None:
-        # Safe fallback: only infer a store when there is exactly one in the system.
-        inferred_store = infer_single_store(db)
-        if inferred_store is not None:
-            store_id = inferred_store.id
-            ds.store_id = store_id
-            db.add(ds)
-            db.commit()
-            logger.info(
-                "mobile sync: inferred store_id=%s for dataset_id=%s",
-                store_id,
-                ds.id,
-            )
-    if store_id is None:
-        # Publish is still allowed, but we mark sync as failed so it can be retried later.
+        # In the unified schema, datasets are always tied to a store.
         ds.sync_status = "FAILED"
         db.add(ds)
         db.commit()
-        logger.warning(
-            "mobile sync skipped: dataset_id=%s month_key=%s store_id missing",
+        logger.error(
+            "mobile sync failed: dataset_id=%s month_key=%s store_id missing",
             ds.id,
             ds.month_key,
         )
-        return PublishResponse(
-            month_key=ds.month_key, published_dataset_id=ds.id, sync_status=ds.sync_status
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="dataset store_id is missing; cannot sync mobile data",
         )
 
     try:
@@ -826,9 +842,10 @@ def leaderboard(month_key: str, db: Session = Depends(get_db)) -> list[Leaderboa
 
     q = (
         select(
-            Salesman.salesman_id,
-            Salesman.name,
-            Salesman.department,
+            Employee.id,
+            Employee.employee_code,
+            Employee.name,
+            Employee.department,
             PosSummary.qty,
             PosSummary.net_sales,
             PosSummary.bills,
@@ -840,15 +857,15 @@ def leaderboard(month_key: str, db: Session = Depends(get_db)) -> list[Leaderboa
             AttendanceSummary.stocking_done,
             AttendanceSummary.stocking_missed,
         )
-        .select_from(Salesman)
+        .select_from(Employee)
         .join(
             PosSummary,
-            (PosSummary.salesman_id == Salesman.salesman_id) & (PosSummary.dataset_id == dataset_id),
+            (PosSummary.employee_id == Employee.id) & (PosSummary.dataset_id == dataset_id),
             isouter=True,
         )
         .join(
             AttendanceSummary,
-            (AttendanceSummary.salesman_id == Salesman.salesman_id)
+            (AttendanceSummary.employee_id == Employee.id)
             & (AttendanceSummary.dataset_id == dataset_id),
             isouter=True,
         )
@@ -865,7 +882,8 @@ def leaderboard(month_key: str, db: Session = Depends(get_db)) -> list[Leaderboa
     for r in rows_sorted:
         out.append(
             LeaderboardRowOut(
-                salesman_id=r.salesman_id,
+                employee_id=r.id,
+                employee_code=r.employee_code,
                 name=r.name,
                 department=r.department,
                 qty=float(r.qty) if r.qty is not None else None,

@@ -11,17 +11,18 @@ from sqlalchemy.orm import Session
 from app.models.models import (
     AttendanceSummary,
     Dataset,
+    Employee,
     MonthState,
     Organization,
     PosSummary,
-    Salesman,
     Store,
 )
 
 
 @dataclass(frozen=True)
 class MobileRow:
-    salesman_id: str
+    employee_id: uuid.UUID
+    employee_code: str
     name: str
     department: str | None
 
@@ -58,19 +59,13 @@ def resolve_store_org(db: Session, store_id: uuid.UUID) -> tuple[Store, Organiza
     return store, org
 
 
-def infer_single_store(db: Session) -> Store | None:
-    store_count = db.execute(select(sa.func.count()).select_from(Store)).scalar_one()
-    if int(store_count or 0) != 1:
-        return None
-    return db.execute(select(Store).limit(1)).scalar_one_or_none()
-
-
 def rows_to_mobile(rows: Iterable[sa.Row]) -> list[MobileRow]:
     out: list[MobileRow] = []
     for r in rows:
         out.append(
             MobileRow(
-                salesman_id=r.salesman_id,
+                employee_id=r.employee_id,
+                employee_code=r.employee_code,
                 name=r.name,
                 department=r.department,
                 qty=float(r.qty) if r.qty is not None else None,
@@ -90,19 +85,20 @@ def rows_to_mobile(rows: Iterable[sa.Row]) -> list[MobileRow]:
 
 def fetch_monthly_rows(db: Session, dataset_id: uuid.UUID) -> list[MobileRow]:
     """
-    Fetch per-salesman monthly aggregates for a dataset by joining POS + Attendance.
+    Fetch per-employee monthly aggregates for a dataset by joining POS + Attendance.
     """
-    pos_ids = select(PosSummary.salesman_id).where(PosSummary.dataset_id == dataset_id)
-    att_ids = select(AttendanceSummary.salesman_id).where(
+    pos_ids = select(PosSummary.employee_id).where(PosSummary.dataset_id == dataset_id)
+    att_ids = select(AttendanceSummary.employee_id).where(
         AttendanceSummary.dataset_id == dataset_id
     )
     ids_subq = sa.union(pos_ids, att_ids).subquery()
 
     q = (
         select(
-            Salesman.salesman_id,
-            Salesman.name,
-            Salesman.department,
+            Employee.id.label("employee_id"),
+            Employee.employee_code,
+            Employee.name,
+            Employee.department,
             PosSummary.qty,
             PosSummary.net_sales,
             PosSummary.bills,
@@ -115,16 +111,16 @@ def fetch_monthly_rows(db: Session, dataset_id: uuid.UUID) -> list[MobileRow]:
             AttendanceSummary.stocking_missed,
         )
         .select_from(ids_subq)
-        .join(Salesman, Salesman.salesman_id == ids_subq.c.salesman_id)
+        .join(Employee, Employee.id == ids_subq.c.employee_id)
         .join(
             PosSummary,
-            (PosSummary.salesman_id == ids_subq.c.salesman_id)
+            (PosSummary.employee_id == ids_subq.c.employee_id)
             & (PosSummary.dataset_id == dataset_id),
             isouter=True,
         )
         .join(
             AttendanceSummary,
-            (AttendanceSummary.salesman_id == ids_subq.c.salesman_id)
+            (AttendanceSummary.employee_id == ids_subq.c.employee_id)
             & (AttendanceSummary.dataset_id == dataset_id),
             isouter=True,
         )
@@ -134,5 +130,5 @@ def fetch_monthly_rows(db: Session, dataset_id: uuid.UUID) -> list[MobileRow]:
     return rows_to_mobile(rows)
 
 
-def iter_salesman_ids(rows: Iterable[MobileRow]) -> set[str]:
-    return {r.salesman_id for r in rows}
+def iter_employee_ids(rows: Iterable[MobileRow]) -> set[uuid.UUID]:
+    return {r.employee_id for r in rows}

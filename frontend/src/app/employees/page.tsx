@@ -73,24 +73,28 @@ export default function EmployeesPage() {
   // ----------------------------
   const [newName, setNewName] = useState("");
   const [newCode, setNewCode] = useState("");
+  const [newDept, setNewDept] = useState("");
 
   const createEmployeeM = useMutation({
     mutationFn: async () => {
       if (!storeId) throw new Error("Select a store first (top-right picker).");
       if (!newName.trim()) throw new Error("Employee name is required.");
       if (!newCode.trim()) throw new Error("Employee code is required.");
+      const department = newDept.trim() || "Unknown";
 
       return apiJson<EmployeeOut>(`/api/v1/stores/${storeId}/employees`, {
         method: "POST",
         body: JSON.stringify({
           name: newName.trim(),
           employee_code: newCode.trim(),
+          department,
         }),
       });
     },
     onSuccess: async () => {
       setNewName("");
       setNewCode("");
+      setNewDept("");
       await qc.invalidateQueries({ queryKey: ["employees", storeId] });
     },
   });
@@ -213,6 +217,15 @@ export default function EmployeesPage() {
               />
             </div>
 
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Department</Label>
+              <Input
+                value={newDept}
+                onChange={(e) => setNewDept(e.target.value)}
+                placeholder="e.g. Grocery"
+              />
+            </div>
+
             <div className="space-y-1 sm:col-span-2">
               <Label className="text-xs text-muted-foreground">
                 Employee name
@@ -265,6 +278,7 @@ export default function EmployeesPage() {
                 <TableRow>
                   <TableHead>Code</TableHead>
                   <TableHead>Name</TableHead>
+                  <TableHead>Department</TableHead>
                   <TableHead>Active</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -276,6 +290,7 @@ export default function EmployeesPage() {
                       {e.employee_code}
                     </TableCell>
                     <TableCell className="font-medium">{e.name}</TableCell>
+                    <TableCell>{e.department}</TableCell>
                     <TableCell>
                       {e.is_active ? (
                         <Badge variant="secondary">Yes</Badge>

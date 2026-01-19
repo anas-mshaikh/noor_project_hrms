@@ -37,8 +37,10 @@ export type EmployeeOut = {
   store_id: UUID;
   name: string;
   employee_code: string;
+  department: string;
   is_active: boolean;
   created_at: string;
+  updated_at: string;
 };
 
 export type FaceCreatedOut = {

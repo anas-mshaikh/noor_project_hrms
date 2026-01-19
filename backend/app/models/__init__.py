@@ -12,7 +12,6 @@ from app.models.models import (
     MetricsHourly,
     Organization,
     PosSummary,
-    Salesman,
     Store,
     Track,
     Video,

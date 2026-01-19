@@ -21,15 +21,15 @@ class RowError:
 
 
 @dataclass
-class ParsedSalesman:
-    salesman_id: str
+class ParsedEmployee:
+    employee_code: str
     name: str
     department: str | None = None
 
 
 @dataclass
 class ParsedPosSummary:
-    salesman_id: str
+    employee_code: str
     qty: Decimal | None = None
     net_sales: Decimal | None = None
     bills: int | None = None
@@ -39,7 +39,7 @@ class ParsedPosSummary:
 
 @dataclass
 class ParsedAttendanceSummary:
-    salesman_id: str
+    employee_code: str
     present: int | None = None
     absent: int | None = None
     work_minutes: int | None = None
@@ -49,7 +49,7 @@ class ParsedAttendanceSummary:
 
 @dataclass
 class ParsedWorkbook:
-    salesmen: dict[str, ParsedSalesman]
+    employees: dict[str, ParsedEmployee]
     pos: dict[str, ParsedPosSummary]
     attendance: dict[str, ParsedAttendanceSummary]
     errors: list[RowError]
@@ -78,12 +78,13 @@ def normalize_header_text(value: Any) -> str:
     return " ".join(text.split())
 
 
-def slugify_salesman_id(name: str) -> str:
+def normalize_employee_code(name: str) -> str:
     """
-    Deterministic salesman_id based on the salesman name.
+    Deterministic employee_code based on the employee name.
 
-    NOTE: This is deliberately simple; if you later add an explicit mapping table,
-    you can override this behavior without rewriting the importer.
+    NOTE: This is deliberately simple. If you add an explicit mapping table or a
+    dedicated employee_code column later, you can swap this implementation without
+    rewriting the importer.
     """
     cleaned = normalize_header_text(name)
     if not cleaned:
@@ -305,13 +306,13 @@ def iter_data_rows(
     rows: list[list[Any]],
     *,
     header_row_index: int,
-    salesman_col_index: int,
+    employee_col_index: int,
 ) -> Iterable[tuple[int, list[Any]]]:
     """
     Yield (excel_row_number, row_values) for rows after the header.
 
     Stop conditions:
-    - Salesman cell contains "TOTAL" (case-insensitive) or starts with "TOTAL"
+    - Employee cell contains "TOTAL" (case-insensitive) or starts with "TOTAL"
     - blank row AFTER we've started reading data
     """
     started = False
@@ -320,7 +321,7 @@ def iter_data_rows(
         excel_row_num = r_idx + 1
 
         # Treat out-of-range as blank.
-        salesman_val = row[salesman_col_index] if salesman_col_index < len(row) else None
+        employee_val = row[employee_col_index] if employee_col_index < len(row) else None
 
         # Blank row detection
         if all((c is None or str(c).strip() == "") for c in row):
@@ -330,8 +331,8 @@ def iter_data_rows(
 
         started = True
 
-        salesman_text = str(salesman_val).strip() if salesman_val is not None else ""
-        if salesman_text and salesman_text.strip().lower().startswith("total"):
+        employee_text = str(employee_val).strip() if employee_val is not None else ""
+        if employee_text and employee_text.strip().lower().startswith("total"):
             break
 
         yield (excel_row_num, row)
@@ -344,14 +345,14 @@ def iter_data_rows(
 
 def parse_pos_sheet(sheet_name: str, rows: list[list[Any]]) -> ParsedWorkbook:
     """
-    Parse a POS sheet into per-salesman summaries.
+    Parse a POS sheet into per-employee summaries.
     """
     errors: list[RowError] = []
-    salesmen: dict[str, ParsedSalesman] = {}
+    employees: dict[str, ParsedEmployee] = {}
     pos: dict[str, ParsedPosSummary] = {}
 
     required = {
-        "salesman": ["salesman", "sales man", "sales person", "name"],
+        "employee": ["employee", "salesman", "sales man", "sales person", "name"],
         "qty": ["qty", "quantity"],
         "net_sales": ["net sales", "netsales", "net sale", "net amount", "amount"],
         "customers": ["customers", "customer"],
@@ -372,19 +373,19 @@ def parse_pos_sheet(sheet_name: str, rows: list[list[Any]]) -> ParsedWorkbook:
         )
         return ParsedWorkbook({}, {}, {}, [RowError(sheet_name, 1, str(e))])
 
-    salesman_col = cols["salesman"]
+    employee_col = cols["employee"]
 
     for excel_row, row in iter_data_rows(
-        sheet_name, rows, header_row_index=header_idx, salesman_col_index=salesman_col
+        sheet_name, rows, header_row_index=header_idx, employee_col_index=employee_col
     ):
-        name_val = row[salesman_col] if salesman_col < len(row) else None
+        name_val = row[employee_col] if employee_col < len(row) else None
         name = str(name_val).strip() if name_val is not None else ""
         if not name:
             continue
 
-        salesman_id = slugify_salesman_id(name)
-        if not salesman_id:
-            errors.append(RowError(sheet_name, excel_row, "Invalid salesman name"))
+        employee_code = normalize_employee_code(name)
+        if not employee_code:
+            errors.append(RowError(sheet_name, excel_row, "Invalid employee name"))
             continue
 
         dept: str | None = None
@@ -392,7 +393,10 @@ def parse_pos_sheet(sheet_name: str, rows: list[list[Any]]) -> ParsedWorkbook:
             dept_val = row[cols["department"]]
             dept = str(dept_val).strip() if dept_val is not None and str(dept_val).strip() else None
 
-        salesmen.setdefault(salesman_id, ParsedSalesman(salesman_id=salesman_id, name=name, department=dept))
+        employees.setdefault(
+            employee_code,
+            ParsedEmployee(employee_code=employee_code, name=name, department=dept),
+        )
 
         def col_value(key: str) -> Any:
             idx = cols.get(key)
@@ -431,9 +435,9 @@ def parse_pos_sheet(sheet_name: str, rows: list[list[Any]]) -> ParsedWorkbook:
             # Likely a separator row; ignore.
             continue
 
-        cur = pos.get(salesman_id) or ParsedPosSummary(salesman_id=salesman_id)
+        cur = pos.get(employee_code) or ParsedPosSummary(employee_code=employee_code)
 
-        # Sum fields (report may contain multiple rows per salesman in some stores).
+        # Sum fields (report may contain multiple rows per employee in some stores).
         cur.qty = (cur.qty or Decimal(0)) + (qty or Decimal(0)) if qty is not None else cur.qty
         cur.net_sales = (
             (cur.net_sales or Decimal(0)) + (net_sales or Decimal(0))
@@ -447,18 +451,18 @@ def parse_pos_sheet(sheet_name: str, rows: list[list[Any]]) -> ParsedWorkbook:
         if return_customers is not None:
             cur.return_customers = (cur.return_customers or 0) + return_customers
 
-        pos[salesman_id] = cur
+        pos[employee_code] = cur
 
-    return ParsedWorkbook(salesmen=salesmen, pos=pos, attendance={}, errors=errors)
+    return ParsedWorkbook(employees=employees, pos=pos, attendance={}, errors=errors)
 
 
 def parse_attendance_sheet(sheet_name: str, rows: list[list[Any]]) -> ParsedWorkbook:
     errors: list[RowError] = []
-    salesmen: dict[str, ParsedSalesman] = {}
+    employees: dict[str, ParsedEmployee] = {}
     attendance: dict[str, ParsedAttendanceSummary] = {}
 
     required = {
-        "salesman": ["salesman", "sales man", "sales person", "name"],
+        "employee": ["employee", "salesman", "sales man", "sales person", "name"],
         "present": ["present", "presents", "days present"],
         "absent": ["absent", "absents", "days absent"],
         "work_hours": ["work hours", "workhours", "workhrs", "work hrs", "work hour"],
@@ -478,19 +482,19 @@ def parse_attendance_sheet(sheet_name: str, rows: list[list[Any]]) -> ParsedWork
         )
         return ParsedWorkbook({}, {}, {}, [RowError(sheet_name, 1, str(e))])
 
-    salesman_col = cols["salesman"]
+    employee_col = cols["employee"]
 
     for excel_row, row in iter_data_rows(
-        sheet_name, rows, header_row_index=header_idx, salesman_col_index=salesman_col
+        sheet_name, rows, header_row_index=header_idx, employee_col_index=employee_col
     ):
-        name_val = row[salesman_col] if salesman_col < len(row) else None
+        name_val = row[employee_col] if employee_col < len(row) else None
         name = str(name_val).strip() if name_val is not None else ""
         if not name:
             continue
 
-        salesman_id = slugify_salesman_id(name)
-        if not salesman_id:
-            errors.append(RowError(sheet_name, excel_row, "Invalid salesman name"))
+        employee_code = normalize_employee_code(name)
+        if not employee_code:
+            errors.append(RowError(sheet_name, excel_row, "Invalid employee name"))
             continue
 
         dept: str | None = None
@@ -498,7 +502,10 @@ def parse_attendance_sheet(sheet_name: str, rows: list[list[Any]]) -> ParsedWork
             dept_val = row[cols["department"]]
             dept = str(dept_val).strip() if dept_val is not None and str(dept_val).strip() else None
 
-        salesmen.setdefault(salesman_id, ParsedSalesman(salesman_id=salesman_id, name=name, department=dept))
+        employees.setdefault(
+            employee_code,
+            ParsedEmployee(employee_code=employee_code, name=name, department=dept),
+        )
 
         def col_value(key: str) -> Any:
             idx = cols.get(key)
@@ -539,7 +546,9 @@ def parse_attendance_sheet(sheet_name: str, rows: list[list[Any]]) -> ParsedWork
         if present is None and absent is None and work_minutes is None:
             continue
 
-        cur = attendance.get(salesman_id) or ParsedAttendanceSummary(salesman_id=salesman_id)
+        cur = attendance.get(employee_code) or ParsedAttendanceSummary(
+            employee_code=employee_code
+        )
 
         if present is not None:
             cur.present = (cur.present or 0) + present
@@ -552,21 +561,21 @@ def parse_attendance_sheet(sheet_name: str, rows: list[list[Any]]) -> ParsedWork
         if stocking_missed is not None:
             cur.stocking_missed = (cur.stocking_missed or 0) + stocking_missed
 
-        attendance[salesman_id] = cur
+        attendance[employee_code] = cur
 
-    return ParsedWorkbook(salesmen=salesmen, pos={}, attendance=attendance, errors=errors)
+    return ParsedWorkbook(employees=employees, pos={}, attendance=attendance, errors=errors)
 
 
 def merge_parsed(pos: ParsedWorkbook, att: ParsedWorkbook) -> ParsedWorkbook:
     errors = list(pos.errors) + list(att.errors)
 
-    salesmen = dict(pos.salesmen)
-    for sid, s in att.salesmen.items():
+    employees = dict(pos.employees)
+    for code, employee in att.employees.items():
         # Prefer POS name/department if present; otherwise take attendance.
-        salesmen.setdefault(sid, s)
+        employees.setdefault(code, employee)
 
     return ParsedWorkbook(
-        salesmen=salesmen,
+        employees=employees,
         pos=pos.pos,
         attendance=att.attendance,
         errors=errors,

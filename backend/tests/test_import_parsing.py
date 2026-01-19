@@ -54,8 +54,8 @@ class TestImportParsing(unittest.TestCase):
         out = parse_pos_sheet("POS", rows)
         self.assertEqual(len(out.pos), 1)
         sid = next(iter(out.pos.keys()))
-        self.assertIn(sid, out.salesmen)
-        self.assertEqual(out.salesmen[sid].name, "Rahul")
+        self.assertIn(sid, out.employees)
+        self.assertEqual(out.employees[sid].name, "Rahul")
         self.assertEqual(out.pos[sid].qty, Decimal("10"))
 
     def test_pos_sheet_header_detection_no_of_customers(self) -> None:
@@ -71,7 +71,7 @@ class TestImportParsing(unittest.TestCase):
         out = parse_pos_sheet("POS", rows)
         self.assertEqual(len(out.pos), 1)
         sid = next(iter(out.pos.keys()))
-        self.assertEqual(out.salesmen[sid].name, "Rahul")
+        self.assertEqual(out.employees[sid].name, "Rahul")
         self.assertEqual(out.pos[sid].customers, 12)
 
     def test_attendance_sheet_blank_row_stop(self) -> None:

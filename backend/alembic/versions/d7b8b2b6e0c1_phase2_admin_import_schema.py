@@ -69,49 +69,31 @@ def upgrade() -> None:
     )
 
     op.create_table(
-        "salesmen",
-        sa.Column("salesman_id", sa.String(length=128), nullable=False),
-        sa.Column("name", sa.String(length=200), nullable=False),
-        sa.Column("department", sa.String(length=200), nullable=True),
-        sa.Column(
-            "active",
-            sa.Boolean(),
-            server_default=sa.text("true"),
-            nullable=False,
-        ),
-        sa.PrimaryKeyConstraint("salesman_id"),
-    )
-
-    op.create_table(
         "pos_summary",
         sa.Column("dataset_id", sa.UUID(), nullable=False),
-        sa.Column("salesman_id", sa.String(length=128), nullable=False),
+        sa.Column("employee_id", sa.UUID(), nullable=False),
         sa.Column("qty", sa.Numeric(), nullable=True),
         sa.Column("net_sales", sa.Numeric(), nullable=True),
         sa.Column("bills", sa.Integer(), nullable=True),
         sa.Column("customers", sa.Integer(), nullable=True),
         sa.Column("return_customers", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(["dataset_id"], ["datasets.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["salesman_id"], ["salesmen.salesman_id"], ondelete="RESTRICT"
-        ),
-        sa.PrimaryKeyConstraint("dataset_id", "salesman_id"),
+        sa.ForeignKeyConstraint(["employee_id"], ["employees.id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("dataset_id", "employee_id"),
     )
 
     op.create_table(
         "attendance_summary",
         sa.Column("dataset_id", sa.UUID(), nullable=False),
-        sa.Column("salesman_id", sa.String(length=128), nullable=False),
+        sa.Column("employee_id", sa.UUID(), nullable=False),
         sa.Column("present", sa.Integer(), nullable=True),
         sa.Column("absent", sa.Integer(), nullable=True),
         sa.Column("work_minutes", sa.Integer(), nullable=True),
         sa.Column("stocking_done", sa.Integer(), nullable=True),
         sa.Column("stocking_missed", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(["dataset_id"], ["datasets.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["salesman_id"], ["salesmen.salesman_id"], ondelete="RESTRICT"
-        ),
-        sa.PrimaryKeyConstraint("dataset_id", "salesman_id"),
+        sa.ForeignKeyConstraint(["employee_id"], ["employees.id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("dataset_id", "employee_id"),
     )
 
 
@@ -119,8 +101,6 @@ def downgrade() -> None:
     """Downgrade schema."""
     op.drop_table("attendance_summary")
     op.drop_table("pos_summary")
-    op.drop_table("salesmen")
     op.drop_table("month_state")
     op.drop_index(op.f("ix_datasets_month_key"), table_name="datasets")
     op.drop_table("datasets")
-

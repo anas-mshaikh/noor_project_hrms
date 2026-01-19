@@ -93,6 +93,7 @@ class Employee(Base):
         sa.UniqueConstraint(
             "store_id", "employee_code", name="uq_employees_store_employee_code"
         ),
+        sa.Index("ix_employees_store_active", "store_id", "is_active"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -107,6 +108,11 @@ class Employee(Base):
 
     name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
     employee_code: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    department: Mapped[str] = mapped_column(
+        sa.String(200),
+        nullable=False,
+        server_default="Unknown",
+    )
     is_active: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.true()
     )
@@ -114,6 +120,12 @@ class Employee(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
         server_default=sa.func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
         nullable=False,
     )
 
@@ -530,10 +542,10 @@ class Dataset(Base):
     )
 
     month_key: Mapped[str] = mapped_column(sa.String(16), nullable=False, index=True)
-    store_id: Mapped[uuid.UUID | None] = mapped_column(
+    store_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("stores.id", ondelete="SET NULL"),
-        nullable=True,
+        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
         index=True,
     )
 
@@ -579,15 +591,6 @@ class MonthState(Base):
     )
 
 
-class Salesman(Base):
-    __tablename__ = "salesmen"
-
-    salesman_id: Mapped[str] = mapped_column(sa.String(128), primary_key=True)
-    name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
-    department: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
-    active: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.true())
-
-
 class PosSummary(Base):
     __tablename__ = "pos_summary"
 
@@ -596,9 +599,9 @@ class PosSummary(Base):
         sa.ForeignKey("datasets.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    salesman_id: Mapped[str] = mapped_column(
-        sa.String(128),
-        sa.ForeignKey("salesmen.salesman_id", ondelete="RESTRICT"),
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("employees.id", ondelete="RESTRICT"),
         primary_key=True,
     )
 
@@ -619,9 +622,9 @@ class AttendanceSummary(Base):
         sa.ForeignKey("datasets.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    salesman_id: Mapped[str] = mapped_column(
-        sa.String(128),
-        sa.ForeignKey("salesmen.salesman_id", ondelete="RESTRICT"),
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("employees.id", ondelete="RESTRICT"),
         primary_key=True,
     )
 

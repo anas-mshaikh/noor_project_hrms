@@ -18,7 +18,8 @@ class MonthlyEmployeeStatsV1(BaseModel):
     store_id: str
     org_id: str
 
-    salesman_id: str
+    employee_id: str
+    employee_code: str
     name: str
     department: str | None = None
 
@@ -43,7 +44,8 @@ class MonthlyEmployeeStatsV1(BaseModel):
 
 class LeaderboardEntryV1(BaseModel):
     rank: int
-    salesman_id: str
+    employee_id: str
+    employee_code: str
     name: str
     department: str | None = None
     metric_value: float

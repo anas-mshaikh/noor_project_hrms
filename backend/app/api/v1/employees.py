@@ -88,6 +88,7 @@ def _save_upload_and_sha256(upload: UploadFile, dest: Path) -> tuple[int, str]:
 class EmployeeCreateRequest(BaseModel):
     name: str
     employee_code: str
+    department: str
 
 
 class EmployeeOut(BaseModel):
@@ -95,8 +96,10 @@ class EmployeeOut(BaseModel):
     store_id: UUID
     name: str
     employee_code: str
+    department: str
     is_active: bool
     created_at: datetime
+    updated_at: datetime
 
 
 @router.post(
@@ -111,7 +114,12 @@ def create_employee(
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
 
-    emp = Employee(store_id=store_id, name=body.name, employee_code=body.employee_code)
+    emp = Employee(
+        store_id=store_id,
+        name=body.name,
+        employee_code=body.employee_code,
+        department=body.department,
+    )
     db.add(emp)
 
     try:
@@ -128,8 +136,10 @@ def create_employee(
         store_id=emp.store_id,
         name=emp.name,
         employee_code=emp.employee_code,
+        department=emp.department,
         is_active=emp.is_active,
         created_at=emp.created_at,
+        updated_at=emp.updated_at,
     )
 
 
@@ -147,8 +157,10 @@ def list_employees(store_id: UUID, db: Session = Depends(get_db)) -> list[Employ
             store_id=e.store_id,
             name=e.name,
             employee_code=e.employee_code,
+            department=e.department,
             is_active=e.is_active,
             created_at=e.created_at,
+            updated_at=e.updated_at,
         )
         for e in rows
     ]

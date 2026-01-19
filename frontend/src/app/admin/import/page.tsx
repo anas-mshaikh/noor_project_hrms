@@ -34,13 +34,13 @@ import { Badge } from "@/components/ui/badge";
 type AdminMe = { is_admin: boolean };
 
 type ImportErrorOut = { sheet: string; row: number; message: string };
-type ImportTopSaleOut = { salesman_id: string; name: string; net_sales: number | null };
+type ImportTopSaleOut = { employee_code: string; name: string; net_sales: number | null };
 type ImportResponse = {
   dataset_id: string;
   month_key: string;
   status: string;
   sync_status: string;
-  counts: { salesmen: number; pos_rows: number; attendance_rows: number };
+  counts: { employees: number; pos_rows: number; attendance_rows: number };
   preview: { topSales: ImportTopSaleOut[]; errors: ImportErrorOut[] };
 };
 
@@ -257,8 +257,8 @@ export default function AdminImportPage() {
 
               <div className="grid gap-2 text-sm md:grid-cols-3">
                 <div>
-                  <div className="text-muted-foreground">Salesmen</div>
-                  <div className="font-medium">{lastImport.counts.salesmen}</div>
+                  <div className="text-muted-foreground">Employees</div>
+                  <div className="font-medium">{lastImport.counts.employees}</div>
                 </div>
                 <div>
                   <div className="text-muted-foreground">POS rows</div>
@@ -307,16 +307,16 @@ export default function AdminImportPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Salesman</TableHead>
+                      <TableHead>Employee</TableHead>
                       <TableHead className="text-right">Net Sales</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {lastImport.preview.topSales.map((r) => (
-                      <TableRow key={r.salesman_id}>
+                      <TableRow key={r.employee_code}>
                         <TableCell>
                           <div className="font-medium">{r.name}</div>
-                          <div className="text-xs text-muted-foreground">{r.salesman_id}</div>
+                          <div className="text-xs text-muted-foreground">{r.employee_code}</div>
                         </TableCell>
                         <TableCell className="text-right">
                           {typeof r.net_sales === "number" ? r.net_sales.toFixed(2) : "—"}

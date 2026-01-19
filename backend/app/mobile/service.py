@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RankedRow:
-    salesman_id: str
+    employee_id: uuid.UUID
+    employee_code: str
     name: str
     department: str | None
 
@@ -54,7 +55,7 @@ def _sort_key(row: RankedRow) -> tuple[float, float, float, str]:
         -_metric_or_zero(row.net_sales),
         -_metric_or_zero(row.bills),
         -_metric_or_zero(row.customers),
-        row.salesman_id,
+        row.employee_code,
     )
 
 
@@ -67,7 +68,8 @@ def _department_key(dept: str | None) -> str:
 def rank_rows(rows: Iterable[MobileRow]) -> list[RankedRow]:
     ranked = [
         RankedRow(
-            salesman_id=r.salesman_id,
+            employee_id=r.employee_id,
+            employee_code=r.employee_code,
             name=r.name,
             department=r.department,
             qty=r.qty,
@@ -113,7 +115,8 @@ def build_leaderboards(
     overall_entries = [
         LeaderboardEntryV1(
             rank=row.rank_overall,
-            salesman_id=row.salesman_id,
+            employee_id=str(row.employee_id),
+            employee_code=row.employee_code,
             name=row.name,
             department=row.department,
             metric_value=_metric_or_zero(row.net_sales),
@@ -137,7 +140,8 @@ def build_leaderboards(
         entries = [
             LeaderboardEntryV1(
                 rank=row.rank_department,
-                salesman_id=row.salesman_id,
+                employee_id=str(row.employee_id),
+                employee_code=row.employee_code,
                 name=row.name,
                 department=row.department,
                 metric_value=_metric_or_zero(row.net_sales),
@@ -173,7 +177,8 @@ def build_mobile_stats(
                 published_dataset_id=str(dataset_id),
                 store_id=str(store_id),
                 org_id=str(org_id),
-                salesman_id=row.salesman_id,
+                employee_id=str(row.employee_id),
+                employee_code=row.employee_code,
                 name=row.name,
                 department=row.department,
                 qty=row.qty,

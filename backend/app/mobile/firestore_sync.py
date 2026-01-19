@@ -63,9 +63,9 @@ def sync_month(
     Write mobile-ready docs to Firestore.
 
     Target structure:
-      orgs/{orgId}/stores/{storeId}/months/{YYYY-MM}/employees/{salesman_id}
+      orgs/{orgId}/stores/{storeId}/months/{YYYY-MM}/employees/{employee_code}
       orgs/{orgId}/stores/{storeId}/months/{YYYY-MM}/leaderboards/overall
-      orgs/{orgId}/stores/{storeId}/months/{YYYY-MM}/leaderboards/departments/{departmentKey}
+      orgs/{orgId}/stores/{storeId}/months/{YYYY-MM}/leaderboards/dept-{departmentKey}
       orgs/{orgId}/stores/{storeId}/months/{YYYY-MM} (metadata)
     """
     synced_at = datetime.now(timezone.utc)
@@ -105,7 +105,7 @@ def sync_month(
     for batch_rows in _chunked(stats, 450):
         batch = client.batch()
         for row in batch_rows:
-            doc = employees_coll.document(row.salesman_id)
+            doc = employees_coll.document(row.employee_code)
             payload = row.model_dump()
             payload["synced_at"] = synced_at
             batch.set(doc, payload)

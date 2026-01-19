@@ -16,7 +16,8 @@ class TestMobileRanking(unittest.TestCase):
     def test_rank_overall_with_tie_breakers(self) -> None:
         rows = [
             MobileRow(
-                salesman_id="b",
+                employee_id=uuid.uuid4(),
+                employee_code="b",
                 name="B",
                 department="Grocery",
                 qty=10,
@@ -31,7 +32,8 @@ class TestMobileRanking(unittest.TestCase):
                 stocking_missed=0,
             ),
             MobileRow(
-                salesman_id="a",
+                employee_id=uuid.uuid4(),
+                employee_code="a",
                 name="A",
                 department="Grocery",
                 qty=10,
@@ -47,14 +49,15 @@ class TestMobileRanking(unittest.TestCase):
             ),
         ]
         ranked = rank_rows(rows)
-        rank_map = {r.salesman_id: r.rank_overall for r in ranked}
+        rank_map = {r.employee_code: r.rank_overall for r in ranked}
         self.assertEqual(rank_map["a"], 1)
         self.assertEqual(rank_map["b"], 2)
 
     def test_rank_department(self) -> None:
         rows = [
             MobileRow(
-                salesman_id="a",
+                employee_id=uuid.uuid4(),
+                employee_code="a",
                 name="A",
                 department="Grocery",
                 qty=10,
@@ -69,7 +72,8 @@ class TestMobileRanking(unittest.TestCase):
                 stocking_missed=0,
             ),
             MobileRow(
-                salesman_id="b",
+                employee_id=uuid.uuid4(),
+                employee_code="b",
                 name="B",
                 department="Grocery",
                 qty=10,
@@ -84,7 +88,8 @@ class TestMobileRanking(unittest.TestCase):
                 stocking_missed=0,
             ),
             MobileRow(
-                salesman_id="c",
+                employee_id=uuid.uuid4(),
+                employee_code="c",
                 name="C",
                 department="Dairy",
                 qty=10,
@@ -100,7 +105,7 @@ class TestMobileRanking(unittest.TestCase):
             ),
         ]
         ranked = rank_rows(rows)
-        dept_rank = {r.salesman_id: r.rank_department for r in ranked}
+        dept_rank = {r.employee_code: r.rank_department for r in ranked}
         self.assertEqual(dept_rank["a"], 1)
         self.assertEqual(dept_rank["b"], 2)
         self.assertEqual(dept_rank["c"], 1)
@@ -108,7 +113,8 @@ class TestMobileRanking(unittest.TestCase):
     def test_build_leaderboards(self) -> None:
         rows = [
             MobileRow(
-                salesman_id="a",
+                employee_id=uuid.uuid4(),
+                employee_code="a",
                 name="A",
                 department="Grocery",
                 qty=10,
@@ -123,7 +129,8 @@ class TestMobileRanking(unittest.TestCase):
                 stocking_missed=0,
             ),
             MobileRow(
-                salesman_id="b",
+                employee_id=uuid.uuid4(),
+                employee_code="b",
                 name="B",
                 department="Grocery",
                 qty=10,
@@ -140,14 +147,15 @@ class TestMobileRanking(unittest.TestCase):
         ]
         ranked = rank_rows(rows)
         overall, departments = build_leaderboards(ranked, month_key="2026-01", limit=10)
-        self.assertEqual(overall.top[0].salesman_id, "a")
+        self.assertEqual(overall.top[0].employee_code, "a")
         self.assertIn("grocery", departments)
-        self.assertEqual(departments["grocery"].top[0].salesman_id, "a")
+        self.assertEqual(departments["grocery"].top[0].employee_code, "a")
 
     def test_build_mobile_stats(self) -> None:
         rows = [
             MobileRow(
-                salesman_id="a",
+                employee_id=uuid.uuid4(),
+                employee_code="a",
                 name="A",
                 department=None,
                 qty=None,

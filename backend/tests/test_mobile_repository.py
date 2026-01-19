@@ -2,6 +2,7 @@ import unittest
 from collections import namedtuple
 from pathlib import Path
 import sys
+import uuid
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
@@ -15,7 +16,8 @@ class TestMobileRepository(unittest.TestCase):
         Row = namedtuple(
             "Row",
             [
-                "salesman_id",
+                "employee_id",
+                "employee_code",
                 "name",
                 "department",
                 "qty",
@@ -32,7 +34,8 @@ class TestMobileRepository(unittest.TestCase):
         )
         rows = [
             Row(
-                salesman_id="a",
+                employee_id=uuid.uuid4(),
+                employee_code="a",
                 name="Aamir",
                 department="Bakery",
                 qty=10,
@@ -49,7 +52,7 @@ class TestMobileRepository(unittest.TestCase):
         ]
         out = rows_to_mobile(rows)
         self.assertEqual(len(out), 1)
-        self.assertEqual(out[0].salesman_id, "a")
+        self.assertEqual(out[0].employee_code, "a")
         self.assertEqual(out[0].net_sales, 100.5)
 
 
