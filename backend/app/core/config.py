@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # Firebase credentials (used by mobile sync).
     firebase_service_account_path: str | None = None
     firebase_service_account_json: str | None = None
+    # Alias for clarity: this should contain BASE64-encoded JSON.
+    # We keep `firebase_service_account_json` for backwards compatibility in dev.
+    firebase_service_account_json_base64: str | None = None
     firebase_project_id: str | None = None
 
     # -------------------------
@@ -60,6 +63,16 @@ class Settings(BaseSettings):
     mobile_sync_admin_enabled: bool = False
     mobile_sync_admin_token: str | None = None
     mobile_sync_leaderboard_limit: int = 50
+
+    # -------------------------
+    # Mobile app login bootstrap mapping
+    # -------------------------
+    # Development-only guard for admin endpoints that provision/revoke mobile accounts.
+    # If false, we return 404 to avoid accidentally exposing these endpoints.
+    admin_mode: bool = False
+    # If true, do NOT call Firebase (Auth/Firestore). We will only log payloads.
+    # Useful for local development where Firebase credentials are not available.
+    mobile_mapping_dry_run: bool = False
 
     # -------------------------
     # ML model paths (offline)

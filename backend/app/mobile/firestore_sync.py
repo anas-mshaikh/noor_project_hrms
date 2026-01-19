@@ -1,47 +1,13 @@
-from __future__ import annotations
-
-import base64
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
 from app.core.config import settings
+from app.mobile.firebase_admin import get_firestore_client
 from app.mobile.schemas import LeaderboardDocV1, MonthlyEmployeeStatsV1
 
 logger = logging.getLogger(__name__)
-
-
-def _load_service_account_info() -> dict[str, Any]:
-    if settings.firebase_service_account_json:
-        raw = settings.firebase_service_account_json.strip()
-        decoded = base64.b64decode(raw)
-        return json.loads(decoded)
-
-    if settings.firebase_service_account_path:
-        with open(settings.firebase_service_account_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    raise RuntimeError(
-        "Firebase service account missing. Set FIREBASE_SERVICE_ACCOUNT_JSON or "
-        "FIREBASE_SERVICE_ACCOUNT_PATH."
-    )
-
-
-def _get_firestore_client():
-    try:
-        import firebase_admin  # type: ignore
-        from firebase_admin import credentials, firestore  # type: ignore
-    except Exception as e:  # pragma: no cover
-        raise RuntimeError(f"firebase-admin is required for mobile sync. ({e})") from e
-
-    if not firebase_admin._apps:  # type: ignore[attr-defined]
-        info = _load_service_account_info()
-        cred = credentials.Certificate(info)
-        firebase_admin.initialize_app(cred)
-
-    return firestore.client()
 
 
 def _chunked(items: list[Any], n: int) -> list[list[Any]]:
@@ -81,7 +47,7 @@ def sync_month(
         )
         return
 
-    client = _get_firestore_client()
+    client = get_firestore_client()
 
     base = (
         client.collection("orgs")

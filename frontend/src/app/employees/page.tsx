@@ -20,7 +20,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiForm, apiJson } from "@/lib/api";
 import { useSelection } from "@/lib/selection";
-import type { EmployeeOut, FaceCreatedOut } from "@/lib/types";
+import type { EmployeeOut, FaceCreatedOut, MobileAccountOut } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -40,6 +40,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 // Local type (so you don't have to edit lib/types.ts right now)
 type FaceSearchMatchOut = {
@@ -50,11 +59,43 @@ type FaceSearchMatchOut = {
   confidence: number;
 };
 
+type AdminMe = { is_admin: boolean };
+
+type MobileProvisionOut = {
+  firebase_uid: string;
+  employee_id: string;
+  employee_code: string;
+  active: boolean;
+  generated_password?: string | null;
+};
+
 export default function EmployeesPage() {
   const qc = useQueryClient();
 
   // Store comes from the top picker (Zustand persisted state)
   const storeId = useSelection((s) => s.storeId);
+
+  // ----------------------------
+  // Admin gate (dev-only)
+  // ----------------------------
+  //
+  // The mobile provisioning endpoints are admin-only on the backend (guarded by ADMIN_MODE).
+  // In the dashboard we reuse the same cookie-based dev gate as /admin/import:
+  // - /api/admin/login sets an httpOnly cookie
+  // - /api/admin/me returns {is_admin: boolean}
+  //
+  // This keeps the "mobile provisioning controls" hidden unless you're signed in as admin.
+  const adminMeQ = useQuery({
+    queryKey: ["adminMe"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/me", { cache: "no-store" });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as AdminMe;
+    },
+    refetchOnWindowFocus: false,
+  });
+
+  const isAdmin = Boolean(adminMeQ.data?.is_admin);
 
   // ----------------------------
   // 1) List employees
@@ -67,6 +108,26 @@ export default function EmployeesPage() {
   });
 
   const employees = useMemo(() => employeesQ.data ?? [], [employeesQ.data]);
+
+  // ----------------------------
+  // 1b) Mobile accounts (admin-only)
+  // ----------------------------
+  //
+  // We list store-scoped mobile_accounts so we can show status per employee
+  // and enable "Provision / Revoke / Resync" actions.
+  const mobileAccountsQ = useQuery({
+    queryKey: ["mobileAccounts", storeId],
+    enabled: Boolean(storeId && isAdmin),
+    queryFn: () =>
+      apiJson<MobileAccountOut[]>(`/api/v1/stores/${storeId}/mobile/accounts`),
+    refetchOnWindowFocus: false,
+  });
+
+  const mobileByEmployeeId = useMemo(() => {
+    const map = new Map<string, MobileAccountOut>();
+    for (const row of mobileAccountsQ.data ?? []) map.set(row.employee_id, row);
+    return map;
+  }, [mobileAccountsQ.data]);
 
   // ----------------------------
   // 2) Create employee (name + employee_code)
@@ -173,6 +234,73 @@ export default function EmployeesPage() {
     }));
   }, [employees]);
 
+  // ----------------------------
+  // 5) Mobile access provisioning (Firebase Auth + Firestore users/{uid})
+  // ----------------------------
+  //
+  // We keep this intentionally simple:
+  // - Provision: creates/reenables Firebase Auth user and writes users/{uid} doc (backend)
+  // - Revoke: disables user and marks mapping inactive (backend)
+  // - Resync: re-upserts users/{uid} from Postgres source-of-truth (backend)
+  //
+  // The mobile app’s bootstrap:
+  //   Firebase login -> uid -> Firestore users/{uid} -> org_id/store_id/employee_code -> read months docs
+  const [mobileDialogEmployee, setMobileDialogEmployee] =
+    useState<EmployeeOut | null>(null);
+  const [mobileEmail, setMobileEmail] = useState("");
+  const [mobileRole, setMobileRole] = useState<"employee" | "admin">("employee");
+  const [mobileTempPassword, setMobileTempPassword] = useState("");
+  const [mobileGeneratedPassword, setMobileGeneratedPassword] = useState<
+    string | null
+  >(null);
+
+  const provisionMobileM = useMutation({
+    mutationFn: async () => {
+      if (!storeId) throw new Error("Select a store first.");
+      if (!mobileDialogEmployee) throw new Error("Select an employee first.");
+      if (!mobileEmail.trim())
+        throw new Error("Email is required for MVP provisioning.");
+
+      return apiJson<MobileProvisionOut>(
+        `/api/v1/stores/${storeId}/employees/${mobileDialogEmployee.id}/mobile/provision`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            email: mobileEmail.trim(),
+            role: mobileRole,
+            // If blank, omit and allow backend to auto-generate (new users only).
+            temp_password: mobileTempPassword.trim() || undefined,
+          }),
+        }
+      );
+    },
+    onSuccess: async (res) => {
+      setMobileGeneratedPassword(res.generated_password ?? null);
+      await qc.invalidateQueries({ queryKey: ["mobileAccounts", storeId] });
+    },
+  });
+
+  const revokeMobileM = useMutation({
+    mutationFn: async (employeeId: string) => {
+      return apiJson<{ firebase_uid: string; active: boolean }>(
+        `/api/v1/employees/${employeeId}/mobile/revoke`,
+        { method: "POST" }
+      );
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["mobileAccounts", storeId] });
+    },
+  });
+
+  const resyncMobileM = useMutation({
+    mutationFn: async (firebaseUid: string) => {
+      return apiJson<{ firebase_uid: string; resynced: boolean }>(
+        `/api/v1/mobile/resync/${firebaseUid}`,
+        { method: "POST" }
+      );
+    },
+  });
+
   // If store isn't selected, we can't do anything meaningful here.
   if (!storeId) {
     return (
@@ -260,6 +388,22 @@ export default function EmployeesPage() {
       <Card>
         <CardHeader>
           <CardTitle>Employee List</CardTitle>
+          <CardDescription>
+            {isAdmin ? (
+              <>
+                Mobile provisioning is enabled. Use “Provision mobile” to create a Firebase login
+                and write the Firestore bootstrap doc at `users/{`{"uid"}`}`.
+              </>
+            ) : (
+              <>
+                Mobile provisioning is admin-only. Sign in once on{" "}
+                <a className="underline" href="/admin/import">
+                  /admin/import
+                </a>{" "}
+                to unlock mobile actions here.
+              </>
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {employeesQ.isLoading ? (
@@ -280,36 +424,237 @@ export default function EmployeesPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Department</TableHead>
                   <TableHead>Active</TableHead>
+                  <TableHead>Mobile</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {employees.map((e) => (
-                  <TableRow key={e.id}>
-                    <TableCell className="font-mono text-xs">
-                      {e.employee_code}
-                    </TableCell>
-                    <TableCell className="font-medium">{e.name}</TableCell>
-                    <TableCell>{e.department}</TableCell>
-                    <TableCell>
-                      {e.is_active ? (
-                        <Badge variant="secondary">Yes</Badge>
-                      ) : (
-                        <Badge variant="outline">No</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setTargetEmployeeId(e.id)}
-                      >
-                        Enroll faces
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {employees.map((e) => {
+                  const acc = isAdmin ? (mobileByEmployeeId.get(e.id) ?? null) : null;
+
+                  return (
+                    <TableRow key={e.id}>
+                      <TableCell className="font-mono text-xs">
+                        {e.employee_code}
+                      </TableCell>
+                      <TableCell className="font-medium">{e.name}</TableCell>
+                      <TableCell>{e.department}</TableCell>
+                      <TableCell>
+                        {e.is_active ? (
+                          <Badge variant="secondary">Yes</Badge>
+                        ) : (
+                          <Badge variant="outline">No</Badge>
+                        )}
+                      </TableCell>
+
+                      {/* Mobile access status (admin-only) */}
+                      <TableCell>
+                        {!isAdmin ? (
+                          <Badge variant="outline">Admin required</Badge>
+                        ) : mobileAccountsQ.isLoading ? (
+                          <span className="text-xs text-muted-foreground">
+                            Loading…
+                          </span>
+                        ) : acc ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              {acc.active ? (
+                                <Badge variant="secondary">Active</Badge>
+                              ) : (
+                                <Badge variant="outline">Revoked</Badge>
+                              )}
+                              <span className="text-xs text-muted-foreground">
+                                {acc.role}
+                              </span>
+                            </div>
+                            <div className="font-mono text-[11px] text-muted-foreground">
+                              uid: {acc.firebase_uid}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            Not provisioned
+                          </span>
+                        )}
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setTargetEmployeeId(e.id)}
+                          >
+                            Enroll faces
+                          </Button>
+
+                          {/* Mobile access actions (admin-only) */}
+                          {isAdmin ? (
+                            acc?.active ? (
+                              <>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => revokeMobileM.mutate(e.id)}
+                                  disabled={revokeMobileM.isPending}
+                                >
+                                  {revokeMobileM.isPending
+                                    ? "Revoking…"
+                                    : "Revoke mobile"}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    resyncMobileM.mutate(acc.firebase_uid)
+                                  }
+                                  disabled={resyncMobileM.isPending}
+                                >
+                                  {resyncMobileM.isPending
+                                    ? "Resyncing…"
+                                    : "Resync"}
+                                </Button>
+                              </>
+                            ) : (
+                              <Dialog
+                                open={mobileDialogEmployee?.id === e.id}
+                                onOpenChange={(open) => {
+                                  if (!open) {
+                                    setMobileDialogEmployee(null);
+                                    setMobileEmail("");
+                                    setMobileTempPassword("");
+                                    setMobileRole("employee");
+                                    setMobileGeneratedPassword(null);
+                                    provisionMobileM.reset();
+                                  }
+                                }}
+                              >
+                                <DialogTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setMobileDialogEmployee(e);
+                                      setMobileGeneratedPassword(null);
+                                      provisionMobileM.reset();
+                                    }}
+                                  >
+                                    {acc ? "Re-enable mobile" : "Provision mobile"}
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                  <DialogHeader>
+                                    <DialogTitle>Provision Mobile Access</DialogTitle>
+                                    <DialogDescription>
+                                      Creates (or re-enables) a Firebase Auth user and writes the
+                                      Firestore bootstrap doc at `users/{`{"uid"}`}`.
+                                    </DialogDescription>
+                                  </DialogHeader>
+
+                                  <div className="space-y-4">
+                                    <div className="space-y-1">
+                                      <Label className="text-xs text-muted-foreground">
+                                        Employee
+                                      </Label>
+                                      <div className="text-sm font-medium">
+                                        {e.employee_code} — {e.name}
+                                      </div>
+                                    </div>
+
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-muted-foreground">
+                                          Email
+                                        </Label>
+                                        <Input
+                                          value={mobileEmail}
+                                          onChange={(ev) =>
+                                            setMobileEmail(ev.target.value)
+                                          }
+                                          placeholder="e.g. rahul@example.com"
+                                        />
+                                      </div>
+
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-muted-foreground">
+                                          Role
+                                        </Label>
+                                        <select
+                                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                          value={mobileRole}
+                                          onChange={(ev) =>
+                                            setMobileRole(
+                                              ev.target.value === "admin"
+                                                ? "admin"
+                                                : "employee"
+                                            )
+                                          }
+                                        >
+                                          <option value="employee">employee</option>
+                                          <option value="admin">admin</option>
+                                        </select>
+                                      </div>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                      <Label className="text-xs text-muted-foreground">
+                                        Temp password (optional)
+                                      </Label>
+                                      <Input
+                                        value={mobileTempPassword}
+                                        onChange={(ev) =>
+                                          setMobileTempPassword(ev.target.value)
+                                        }
+                                        placeholder="If empty, backend generates one (new users only)"
+                                      />
+                                      <div className="text-xs text-muted-foreground">
+                                        Tip: for re-enabling existing users, set a password here to
+                                        reset it.
+                                      </div>
+                                    </div>
+
+                                    {mobileGeneratedPassword ? (
+                                      <div className="rounded-md border p-3">
+                                        <div className="text-xs font-medium text-muted-foreground">
+                                          Generated password
+                                        </div>
+                                        <div className="mt-1 font-mono text-sm">
+                                          {mobileGeneratedPassword}
+                                        </div>
+                                      </div>
+                                    ) : null}
+
+                                    {provisionMobileM.error ? (
+                                      <div className="text-sm text-destructive">
+                                        {String(provisionMobileM.error)}
+                                      </div>
+                                    ) : null}
+                                  </div>
+
+                                  <DialogFooter>
+                                    <Button
+                                      type="button"
+                                      onClick={() => provisionMobileM.mutate()}
+                                      disabled={provisionMobileM.isPending}
+                                    >
+                                      {provisionMobileM.isPending
+                                        ? "Provisioning…"
+                                        : "Provision"}
+                                    </Button>
+                                  </DialogFooter>
+                                </DialogContent>
+                              </Dialog>
+                            )
+                          ) : null}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

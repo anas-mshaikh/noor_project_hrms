@@ -50,6 +50,17 @@ export type FaceCreatedOut = {
   model_version: string;
 };
 
+// ----- Mobile Accounts (Firebase bootstrap mapping) -----
+export type MobileAccountOut = {
+  employee_id: UUID;
+  employee_code: string;
+  firebase_uid: string;
+  role: string;
+  active: boolean;
+  created_at: string;
+  revoked_at: string | null;
+};
+
 // ----- Videos / Jobs -----
 export type VideoInitResponse = {
   video_id: UUID;

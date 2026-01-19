@@ -10,6 +10,7 @@ from app.api.v1.stores import router as stores_router
 from app.api.v1.employees import router as employees_router
 from app.api.v1.imports import router as imports_router
 from app.face_system.api import router as face_router
+from app.mobile.accounts_router import router as mobile_accounts_router
 from app.mobile.router import router as mobile_router
 
 
@@ -25,3 +26,4 @@ api_router.include_router(employees_router)
 api_router.include_router(imports_router)
 api_router.include_router(face_router)
 api_router.include_router(mobile_router)
+api_router.include_router(mobile_accounts_router)

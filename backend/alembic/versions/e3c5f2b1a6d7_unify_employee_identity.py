@@ -42,12 +42,20 @@ def upgrade() -> None:
     # creating it again will crash with DuplicateTable. So we only create it
     # if it does not already exist.
     conn = op.get_bind()
-    exists = conn.execute(
+    exists_constraint = conn.execute(
         text("SELECT 1 FROM pg_constraint WHERE conname = :name"),
         {"name": "uq_employees_store_employee_code"},
     ).first()
+    # In some dev DBs we may end up with a leftover unique index (relation) with the
+    # same name even if the constraint itself was dropped (or never created).
+    # Postgres reports that scenario as:
+    #   DuplicateTable: relation "uq_employees_store_employee_code" already exists
+    exists_relation = conn.execute(
+        text("SELECT to_regclass(:qualified_name)"),
+        {"qualified_name": "public.uq_employees_store_employee_code"},
+    ).scalar()
 
-    if not exists:
+    if not exists_constraint and exists_relation is None:
         op.create_unique_constraint(
             "uq_employees_store_employee_code",
             "employees",

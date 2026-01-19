@@ -10,6 +10,7 @@ from app.models.models import (
     Job,
     MonthState,
     MetricsHourly,
+    MobileAccount,
     Organization,
     PosSummary,
     Store,

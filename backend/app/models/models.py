@@ -52,6 +52,10 @@ class Store(Base):
     organization: Mapped[Organization] = relationship(back_populates="stores")
     cameras: Mapped[list["Camera"]] = relationship(back_populates="store")
     employees: Mapped[list["Employee"]] = relationship(back_populates="store")
+    # Mobile login bootstrap mapping (Postgres source-of-truth, Firestore derived).
+    mobile_accounts: Mapped[list["MobileAccount"]] = relationship(
+        back_populates="store"
+    )
     videos: Mapped[list["Video"]] = relationship(back_populates="store")
     attendance_daily: Mapped[list["AttendanceDaily"]] = relationship(
         back_populates="store"
@@ -166,6 +170,81 @@ class EmployeeFace(Base):
     )
 
     employee: Mapped[Employee] = relationship(back_populates="faces")
+
+
+class MobileAccount(Base):
+    """
+    Mobile app bootstrap mapping.
+
+    Why this table exists:
+    - Firebase Auth gives the mobile app a `uid`, but our domain identity lives in Postgres.
+    - The mobile app must be able to resolve org/store/employee in ONE read:
+        Auth -> uid -> Firestore users/{uid} -> org_id/store_id/employee_code
+    - Postgres is the source of truth; Firestore `users/{uid}` is a derived cache.
+    """
+
+    __tablename__ = "mobile_accounts"
+    __table_args__ = (
+        # An employee should have at most one active mapping per store.
+        sa.UniqueConstraint(
+            "store_id", "employee_id", name="uq_mobile_accounts_store_employee"
+        ),
+        # Firebase UID must be unique globally.
+        sa.UniqueConstraint("firebase_uid", name="uq_mobile_accounts_firebase_uid"),
+        # Common query patterns: list active users for a store, or lookup by employee_id.
+        sa.Index("ix_mobile_accounts_store_active", "store_id", "active"),
+        sa.Index("ix_mobile_accounts_employee_id", "employee_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    # Denormalized for readability and to avoid extra joins for auditing/logs.
+    employee_code: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+
+    # Firebase Auth user id (uid). We use this as the Firestore doc id under users/{uid}.
+    firebase_uid: Mapped[str] = mapped_column(sa.String(128), nullable=False)
+
+    # Role for mobile app access control (future: "admin" for store managers).
+    role: Mapped[str] = mapped_column(
+        sa.String(32), nullable=False, server_default="employee"
+    )
+
+    # `active=false` means access is revoked; we keep the row for audit/re-provisioning.
+    active: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.true()
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+    store: Mapped["Store"] = relationship(back_populates="mobile_accounts")
+    employee: Mapped["Employee"] = relationship()
 
 
 class Video(Base):
