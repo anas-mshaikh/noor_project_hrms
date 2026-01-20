@@ -10,10 +10,18 @@ __pycache__/
 *.jpg
 *.pt
 *.csv
-*.json
+# *.json
 *.jpeg
 *.xlsx
 *.cache-9
-backend/.cache/fontconfig/CACHEDIR.TAG
-docs/Attendance_video_demo.mov
-test/Database schema_ attendance.public - db - Adminer.html
+
+backend/data/jobs/f577bcb5-4616-4eba-a54c-03130f274061/exports/
+
+*report.json
+backend/app/secrets/firebase-service-account.json
+
+backend/.cache/
+node_modules
+mobile-application/node_modules/
+docs/*.mov
+docs/test/Database schema_ attendance.public - db - Adminer.html
