@@ -6,8 +6,8 @@ __pycache__/
 .DS_Store
 *.mp4
 *.onnx
-*.png
-*.jpg
+# *.png
+# *.jpg
 *.pt
 *.csv
 # *.json
@@ -15,13 +15,13 @@ __pycache__/
 *.xlsx
 *.cache-9
 
-backend/data/jobs/f577bcb5-4616-4eba-a54c-03130f274061/exports/
+backend/data/
 
 *report.json
-backend/app/secrets/firebase-service-account.json
+backend/app/secrets/
 
 backend/.cache/
 node_modules
 mobile-application/node_modules/
 docs/*.mov
-docs/test/Database schema_ attendance.public - db - Adminer.html
+docs/test/
