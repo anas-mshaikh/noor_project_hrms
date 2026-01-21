@@ -25,3 +25,4 @@ node_modules
 mobile-application/node_modules/
 docs/*.mov
 docs/test/
+mobile-application/android/
