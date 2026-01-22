@@ -21,6 +21,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
+from app.employees.schemas import EmployeeCreateRequest, EmployeeOut
+from app.employees.service import create_employee_in_db
 from app.face_system.detector.opencv_yn import FaceSystemModelError
 from app.face_system.runtime_processor import get_runtime_processor
 from app.models.models import Employee, EmployeeFace, Store
@@ -85,23 +87,6 @@ def _save_upload_and_sha256(upload: UploadFile, dest: Path) -> tuple[int, str]:
         upload.file.close()
 
 
-class EmployeeCreateRequest(BaseModel):
-    name: str
-    employee_code: str
-    department: str
-
-
-class EmployeeOut(BaseModel):
-    id: UUID
-    store_id: UUID
-    name: str
-    employee_code: str
-    department: str
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
-
-
 @router.post(
     "/stores/{store_id}/employees",
     response_model=EmployeeOut,
@@ -114,15 +99,8 @@ def create_employee(
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
 
-    emp = Employee(
-        store_id=store_id,
-        name=body.name,
-        employee_code=body.employee_code,
-        department=body.department,
-    )
-    db.add(emp)
-
     try:
+        emp = create_employee_in_db(db, store_id=store_id, body=body)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -131,16 +109,7 @@ def create_employee(
         )
 
     db.refresh(emp)
-    return EmployeeOut(
-        id=emp.id,
-        store_id=emp.store_id,
-        name=emp.name,
-        employee_code=emp.employee_code,
-        department=emp.department,
-        is_active=emp.is_active,
-        created_at=emp.created_at,
-        updated_at=emp.updated_at,
-    )
+    return EmployeeOut.model_validate(emp, from_attributes=True)
 
 
 @router.get("/stores/{store_id}/employees", response_model=list[EmployeeOut])
@@ -151,19 +120,7 @@ def list_employees(store_id: UUID, db: Session = Depends(get_db)) -> list[Employ
         .order_by(Employee.employee_code.asc())
         .all()
     )
-    return [
-        EmployeeOut(
-            id=e.id,
-            store_id=e.store_id,
-            name=e.name,
-            employee_code=e.employee_code,
-            department=e.department,
-            is_active=e.is_active,
-            created_at=e.created_at,
-            updated_at=e.updated_at,
-        )
-        for e in rows
-    ]
+    return [EmployeeOut.model_validate(e, from_attributes=True) for e in rows]
 
 
 class FaceCreatedOut(BaseModel):

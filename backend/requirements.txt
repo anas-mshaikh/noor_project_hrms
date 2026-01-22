@@ -12,6 +12,22 @@ redis>=5.0
 rq>=1.16
 openpyxl>=3.1
 firebase-admin>=6.5
+requests>=2.32
+pytest>=8.0
+
+# --- HR (Phase 1): Resume parsing ---
+# We keep this minimal: PDFs + DOCX are the common resume formats.
+unstructured[pdf,docx]>=0.12.0
+
+# --- HR (Phase 2): Text embeddings (HuggingFace) ---
+# We use SentenceTransformers as a thin wrapper around HuggingFace models so we can
+# switch models easily in the MVP (BGE-M3 now, others later).
+sentence-transformers>=2.6.0
+
+# --- HR (Phase 3): Reranker (local) ---
+# We use FlagEmbedding for BGE rerankers (cross-encoder style) to keep the pipeline
+# fully local and to match the BGE ecosystem.
+FlagEmbedding>=1.2.8
 
 # --- ML ---
 numpy>=1.26

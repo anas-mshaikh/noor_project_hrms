@@ -82,6 +82,23 @@ services:
         condition: service_healthy
     command: ["python", "-m", "app.worker.worker"]
 
+  hr_worker:
+    # Dedicated worker for HR resume parsing (RQ queue: "hr").
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env.docker
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/models:/app/models
+      - ./backend/secrets:/app/secrets:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "app.worker.hr_worker"]
+
   frontend:
     build:
       context: ./frontend

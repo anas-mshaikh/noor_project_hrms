@@ -60,6 +60,17 @@ class Store(Base):
     attendance_daily: Mapped[list["AttendanceDaily"]] = relationship(
         back_populates="store"
     )
+    # HR module (Phase 1): openings + resumes (store-scoped).
+    hr_openings: Mapped[list["HROpening"]] = relationship(back_populates="store")
+    # HR module (Phase 3): ScreeningRun runs (store-scoped).
+    hr_screening_runs: Mapped[list["HRScreeningRun"]] = relationship(
+        back_populates="store"
+    )
+    # HR module (Phase 5): ATS applications (store-scoped).
+    # This is optional, but makes it easy to list/filter applications by store.
+    hr_applications: Mapped[list["HRApplication"]] = relationship(
+        back_populates="store"
+    )
 
 
 class Camera(Base):
@@ -136,6 +147,10 @@ class Employee(Base):
     store: Mapped[Store] = relationship(back_populates="employees")
     faces: Mapped[list["EmployeeFace"]] = relationship(back_populates="employee")
     attendance_daily: Mapped[list["AttendanceDaily"]] = relationship(
+        back_populates="employee"
+    )
+    # HR module (Phase 6): onboarding plans created from HIRED ATS applications.
+    onboarding_plans: Mapped[list["HROnboardingPlan"]] = relationship(
         back_populates="employee"
     )
 
@@ -714,3 +729,808 @@ class AttendanceSummary(Base):
     stocking_missed: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
 
     dataset: Mapped["Dataset"] = relationship(back_populates="attendance_rows")
+
+
+# ---------------------------------------------------------------------------
+# HR module (Phase 1 only): Openings + Resume parsing
+# ---------------------------------------------------------------------------
+
+
+class HROpening(Base):
+    """
+    Hiring opening (store-scoped).
+
+    Notes:
+    - This is intentionally named "Opening" (not "Job") to avoid conflict with CCTV jobs.
+    - `jd_text` is required in Phase 1 so Unstructured parsing can be tested against realistic data later.
+    """
+
+    __tablename__ = "hr_openings"
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    title: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    jd_text: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    requirements_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sa.text("'{}'::jsonb"),
+    )
+
+    # ACTIVE | ARCHIVED
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="ACTIVE", index=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+        nullable=False,
+    )
+
+    store: Mapped["Store"] = relationship(back_populates="hr_openings")
+    resumes: Mapped[list["HRResume"]] = relationship(
+        back_populates="opening", cascade="all, delete-orphan"
+    )
+    resume_batches: Mapped[list["HRResumeBatch"]] = relationship(
+        back_populates="opening", cascade="all, delete-orphan"
+    )
+    screening_runs: Mapped[list["HRScreeningRun"]] = relationship(
+        back_populates="opening", cascade="all, delete-orphan"
+    )
+    # HR module (Phase 5): ATS pipeline stages + applications.
+    pipeline_stages: Mapped[list["HRPipelineStage"]] = relationship(
+        back_populates="opening", cascade="all, delete-orphan"
+    )
+    applications: Mapped[list["HRApplication"]] = relationship(
+        back_populates="opening", cascade="all, delete-orphan"
+    )
+
+
+class HRResumeBatch(Base):
+    """
+    Optional grouping record for a multi-file upload.
+
+    This makes the UI simpler (you can show batch progress), but the parsing
+    still runs per-resume in RQ.
+    """
+
+    __tablename__ = "hr_resume_batches"
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    opening_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_openings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    total_count: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+
+    opening: Mapped["HROpening"] = relationship(back_populates="resume_batches")
+    resumes: Mapped[list["HRResume"]] = relationship(back_populates="batch")
+
+
+class HRResume(Base):
+    """
+    Resume uploaded to an opening.
+
+    Storage:
+    - file_path: raw upload stored under DATA_DIR/hr/resumes/...
+    - parsed_path: parsed.json artifact stored under DATA_DIR/hr/resumes/.../parsed
+    - clean_text_path: plain text for quick preview (debugging)
+    """
+
+    __tablename__ = "hr_resumes"
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    opening_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_openings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_resume_batches.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    original_filename: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    file_path: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    parsed_path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    clean_text_path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+
+    # UPLOADED | PARSING | PARSED | FAILED
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="UPLOADED", index=True
+    )
+
+    error: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    rq_job_id: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+
+    # -----------------------------
+    # Phase 2 (HR): embeddings status
+    # -----------------------------
+    # We keep embedding status separate from parsing status so:
+    # - parsing can succeed but embedding can fail (e.g., model missing)
+    # - the UI can show clear progress and retry decisions
+    #
+    # Values:
+    #   PENDING   -> waiting for embedding (usually right after PARSED)
+    #   EMBEDDING -> embedding task is running
+    #   EMBEDDED  -> at least the "full" view is embedded and stored
+    #   FAILED    -> embedding task failed (see embedding_error)
+    embedding_status: Mapped[str] = mapped_column(
+        sa.String(16),
+        nullable=False,
+        server_default="PENDING",
+        index=True,
+    )
+    embedding_error: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    embedded_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+        nullable=False,
+    )
+
+    opening: Mapped["HROpening"] = relationship(back_populates="resumes")
+    batch: Mapped[Optional["HRResumeBatch"]] = relationship(back_populates="resumes")
+
+    # Phase 2: multiple text "views" per resume (full/skills/experience).
+    views: Mapped[list["HRResumeView"]] = relationship(
+        back_populates="resume", cascade="all, delete-orphan"
+    )
+
+
+class HRResumeView(Base):
+    """
+    Derived "view" text for one resume + its embedding.
+
+    Why multiple views?
+    - `full`: the full clean text (best recall)
+    - `skills`: a focused skills section (better for skill-based search)
+    - `experience`: a focused experience section (better for role fit)
+
+    In Phase 2 we embed these views using BGE-M3 (1024-d) and store them in Postgres pgvector.
+    """
+
+    __tablename__ = "hr_resume_views"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "resume_id", "view_type", name="uq_hr_resume_views_resume_type"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    resume_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_resumes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # full | skills | experience
+    view_type: Mapped[str] = mapped_column(sa.String(16), nullable=False, index=True)
+
+    # sha256 hex of the normalized + truncated text used for embedding
+    text_hash: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+
+    # BGE-M3 embeddings are 1024 dimensions.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(dim=1024), nullable=True)
+
+    # Optional: store an approximate token count for debugging.
+    tokens: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+        nullable=False,
+    )
+
+    resume: Mapped["HRResume"] = relationship(back_populates="views")
+
+
+# ---------------------------------------------------------------------------
+# HR module (Phase 3): Screening runs (retrieve + rerank)
+# ---------------------------------------------------------------------------
+
+
+class HRScreeningRun(Base):
+    """
+    Async ScreeningRun for an opening.
+
+    A ScreeningRun is the HR equivalent of a "job", but we intentionally do NOT reuse
+    the CCTV `jobs` table/routes.
+
+    Pipeline (Phase 3):
+    1) Retrieve candidate resumes using vector similarity (pgvector) over resume views.
+    2) Rerank the candidate pool using a cross-encoder reranker (BGE reranker v2 M3).
+    3) Persist ranked results for paging / audit.
+    """
+
+    __tablename__ = "hr_screening_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    opening_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_openings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # QUEUED|RUNNING|DONE|FAILED|CANCELLED
+    status: Mapped[str] = mapped_column(
+        sa.String(16),
+        nullable=False,
+        server_default="QUEUED",
+        index=True,
+    )
+
+    # Run configuration and model versions are stored for audit/debugging.
+    config_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")
+    )
+    model_versions_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")
+    )
+
+    rq_job_id: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+    # Simple progress counters for UI polling.
+    progress_total: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="0"
+    )
+    progress_done: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="0"
+    )
+
+    opening: Mapped["HROpening"] = relationship(back_populates="screening_runs")
+    store: Mapped["Store"] = relationship(back_populates="hr_screening_runs")
+    results: Mapped[list["HRScreeningResult"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
+
+
+class HRScreeningResult(Base):
+    """
+    Ranked result row for a ScreeningRun.
+
+    Primary key is (run_id, resume_id) so each resume appears at most once per run.
+    """
+
+    __tablename__ = "hr_screening_results"
+    __table_args__ = (
+        sa.Index("ix_hr_screening_results_run_rank", "run_id", "rank"),
+    )
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_screening_runs.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    resume_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_resumes.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    rank: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+
+    # `final_score` is what we sort on for the run output. In MVP Phase 3 we use:
+    #   final_score = rerank_score
+    final_score: Mapped[float] = mapped_column(sa.Float, nullable=False)
+
+    # Keep component scores for debugging/tuning.
+    rerank_score: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    retrieval_score: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    best_view_type: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+
+    run: Mapped["HRScreeningRun"] = relationship(back_populates="results")
+    resume: Mapped["HRResume"] = relationship()
+
+
+class HRScreeningExplanation(Base):
+    """
+    Structured LLM explanation for one ScreeningRun result row.
+
+    Why a separate table?
+    - Explanations are generated asynchronously (after ranking) and may be regenerated.
+    - We store only structured JSON for UI display; we do NOT store raw resume text in DB.
+
+    Primary key is (run_id, resume_id) so each resume has at most one explanation per run.
+    If you change prompt/model, the backend overwrites this row deterministically.
+    """
+
+    __tablename__ = "hr_screening_explanations"
+    __table_args__ = (
+        sa.Index("ix_hr_screening_explanations_run_created_at", "run_id", "created_at"),
+    )
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_screening_runs.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    resume_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_resumes.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    # Optional: snapshot rank at the time of explanation generation.
+    rank: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+
+    model_name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    prompt_version: Mapped[str] = mapped_column(sa.Text, nullable=False)
+
+    explanation_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+        index=True,
+    )
+
+    run: Mapped["HRScreeningRun"] = relationship()
+    resume: Mapped["HRResume"] = relationship()
+
+
+# ---------------------------------------------------------------------------
+# HR module (Phase 5): ATS MVP (resume == applicant)
+# ---------------------------------------------------------------------------
+
+
+class HRPipelineStage(Base):
+    """
+    Pipeline stage for an opening (Kanban columns).
+
+    Why stages are opening-scoped:
+    - Different openings may want different pipelines (e.g., "Phone Screen" vs "Interview 1").
+    - Keeping stages per opening keeps the MVP flexible without a global taxonomy.
+
+    We create a default set of stages automatically when an opening is created:
+      Applied -> Screened -> Interview -> Offer -> Hired / Rejected
+    """
+
+    __tablename__ = "hr_pipeline_stages"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "opening_id", "name", name="uq_hr_pipeline_stages_opening_name"
+        ),
+        sa.Index("ix_hr_pipeline_stages_opening_sort", "opening_id", "sort_order"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    opening_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_openings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    sort_order: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    is_terminal: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.false()
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+
+    opening: Mapped["HROpening"] = relationship(back_populates="pipeline_stages")
+
+
+class HRApplication(Base):
+    """
+    ATS application row.
+
+    MVP simplification:
+    - We treat each resume as the applicant (1 resume = 1 application).
+    - Uniqueness is enforced by UNIQUE(opening_id, resume_id).
+
+    Notes:
+    - `status` is a lightweight terminal marker; the stage is the primary pipeline position.
+    - `source_run_id` links an application to the ScreeningRun that created it (if any).
+    """
+
+    __tablename__ = "hr_applications"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "opening_id", "resume_id", name="uq_hr_applications_opening_resume"
+        ),
+        sa.Index("ix_hr_applications_opening_id", "opening_id"),
+        sa.Index("ix_hr_applications_stage_id", "stage_id"),
+        sa.Index("ix_hr_applications_store_id", "store_id"),
+        sa.Index("ix_hr_applications_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    opening_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_openings.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    resume_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_resumes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Phase 6: once a HIRED application is converted, link it to the canonical Employee row.
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    hired_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    start_date: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
+
+    stage_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_pipeline_stages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # ACTIVE|REJECTED|HIRED
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="ACTIVE", index=True
+    )
+
+    source_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_screening_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+        nullable=False,
+    )
+
+    opening: Mapped["HROpening"] = relationship(back_populates="applications")
+    store: Mapped["Store"] = relationship(back_populates="hr_applications")
+    resume: Mapped["HRResume"] = relationship()
+    stage: Mapped["HRPipelineStage"] = relationship()
+    # Optional link to the canonical Employee once a HIRED application is converted.
+    # Use Optional[...] instead of `"Employee" | None` because this file does not use
+    # `from __future__ import annotations`, and the `|` operator would be evaluated
+    # at runtime (causing a TypeError when used inside a quoted forward ref).
+    employee: Mapped[Optional["Employee"]] = relationship()
+    notes: Mapped[list["HRApplicationNote"]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
+
+
+class HRApplicationNote(Base):
+    """
+    Free-form notes on an application.
+
+    We keep notes as a separate table so:
+    - the application row stays small,
+    - we can paginate/stream notes later,
+    - and we avoid write contention on the main application record.
+    """
+
+    __tablename__ = "hr_application_notes"
+    __table_args__ = (
+        sa.Index(
+            "ix_hr_application_notes_application_created_at",
+            "application_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    application_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_applications.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    author_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    note: Mapped[str] = mapped_column(sa.Text, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+
+    application: Mapped["HRApplication"] = relationship(back_populates="notes")
+
+
+class HROnboardingPlan(Base):
+    """
+    Onboarding plan for a newly hired employee.
+
+    Key goals:
+    - Persist a checklist (tasks) so managers can track onboarding progress.
+    - Track required documents uploaded locally (IDs, contract, bank details, etc).
+    - Keep the plan tied to the canonical Employee identity in our system.
+    """
+
+    __tablename__ = "hr_onboarding_plans"
+    __table_args__ = (
+        sa.Index("ix_hr_onboarding_plans_employee_id", "employee_id"),
+        sa.Index("ix_hr_onboarding_plans_store_id", "store_id"),
+        sa.Index("ix_hr_onboarding_plans_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    application_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_applications.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # ACTIVE|COMPLETED|CANCELLED
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="ACTIVE", index=True
+    )
+    start_date: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+        nullable=False,
+    )
+
+    employee: Mapped["Employee"] = relationship(back_populates="onboarding_plans")
+    store: Mapped["Store"] = relationship()
+    # Optional link back to the originating ATS application.
+    application: Mapped[Optional["HRApplication"]] = relationship()
+
+    tasks: Mapped[list["HROnboardingTask"]] = relationship(
+        back_populates="plan", cascade="all, delete-orphan"
+    )
+    documents: Mapped[list["HREmployeeDocument"]] = relationship(
+        back_populates="plan", cascade="all, delete-orphan"
+    )
+
+
+class HROnboardingTask(Base):
+    """
+    One onboarding checklist item.
+
+    The `metadata_json` field allows the UI to attach structured meaning without changing
+    schema frequently (e.g., document type required, target endpoint for an ACTION).
+    """
+
+    __tablename__ = "hr_onboarding_tasks"
+    __table_args__ = (
+        sa.Index("ix_hr_onboarding_tasks_plan_sort", "plan_id", "sort_order"),
+        sa.Index("ix_hr_onboarding_tasks_plan_status", "plan_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    plan_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_onboarding_plans.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    title: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    # TASK|DOCUMENT|ACTION
+    task_type: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="TASK"
+    )
+    # PENDING|DONE|BLOCKED
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="PENDING", index=True
+    )
+    sort_order: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="0"
+    )
+
+    due_date: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sa.text("'{}'::jsonb"),
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+        nullable=False,
+    )
+
+    plan: Mapped["HROnboardingPlan"] = relationship(back_populates="tasks")
+
+
+class HREmployeeDocument(Base):
+    """
+    One onboarding document uploaded for an employee.
+
+    Storage:
+    - file_path is stored as a path RELATIVE to settings.data_dir (portable).
+    - files are stored under: hr/onboarding/{employee_id}/{document_id}/files/{filename}
+    """
+
+    __tablename__ = "hr_employee_documents"
+    __table_args__ = (
+        sa.Index("ix_hr_employee_documents_employee_id", "employee_id"),
+        sa.Index("ix_hr_employee_documents_plan_id", "plan_id"),
+        sa.Index("ix_hr_employee_documents_doc_type", "doc_type"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    plan_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_onboarding_plans.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    doc_type: Mapped[str] = mapped_column(sa.String(32), nullable=False, index=True)
+    original_filename: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    file_path: Mapped[str] = mapped_column(sa.Text, nullable=False)
+
+    # UPLOADED|VERIFIED|REJECTED
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="UPLOADED", index=True
+    )
+    verified_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+
+    plan: Mapped["HROnboardingPlan"] = relationship(back_populates="documents")
+    employee: Mapped["Employee"] = relationship()

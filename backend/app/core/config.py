@@ -37,6 +37,78 @@ class Settings(BaseSettings):
     data_dir: str = "./data"
 
     # -------------------------
+    # HR module (Phase 1/2)
+    # -------------------------
+    # Phase 1 stores resumes + parsed artifacts under:
+    #   <DATA_DIR>/hr/resumes/<opening_id>/<resume_id>/...
+    #
+    # Phase 2 stores embeddings in Postgres (pgvector) using BGE-M3 (1024-d).
+    hr_embeddings_enabled: bool = True
+    hr_embed_model_name: str = "BAAI/bge-m3"
+    # IMPORTANT: must match the DB column type `vector(<dim>)` in `hr_resume_views.embedding`.
+    # If you switch to a model with a different embedding size, you must:
+    # 1) create a migration to change the vector column dimension, and
+    # 2) update this setting.
+    hr_embed_dim: int = 1024
+    # Cache directory for HuggingFace model downloads.
+    # In Docker, mount `./backend/models` to persist caches.
+    hr_embed_cache_dir: str = "./models/text_embeddings"
+    hr_embed_device: str = "cpu"
+    # BGE-M3 supports very long contexts; keep configurable because higher values
+    # cost more CPU/RAM. If the library/model doesn't support it, we fall back.
+    hr_embed_max_seq_length: int = 8192
+    # Safety truncation for extremely long resumes (char-based, cheap).
+    hr_embed_max_chars: int = 12000
+    # Minimum chars required for derived "skills"/"experience" views.
+    hr_view_min_chars: int = 120
+    # Debug-only semantic search endpoint for HR (MVP retrieval).
+    hr_search_debug_enabled: bool = False
+
+    # -------------------------
+    # HR module (Phase 3): Screening runs (retrieve + rerank)
+    # -------------------------
+    # Phase 3 introduces an async "ScreeningRun" pipeline:
+    # 1) retrieve Top-K candidates using pgvector embeddings (Phase 2),
+    # 2) rerank the candidate pool using a BGE reranker model, and
+    # 3) store ranked results for later paging/export.
+    #
+    # All of this remains local: Redis/RQ for async, Postgres for storage.
+    hr_rerank_enabled: bool = True
+    hr_reranker_model_name: str = "BAAI/bge-reranker-v2-m3"
+    # Reranker batch size is a tradeoff: higher is faster but uses more RAM.
+    hr_reranker_batch_size: int = 32
+    # Safety truncation for reranker inputs (char-based).
+    hr_reranker_max_chars: int = 12000
+    # Default ScreeningRun config (used when API caller doesn't provide overrides).
+    hr_screening_default_view_types: list[str] = ["skills", "experience", "full"]
+    hr_screening_default_k_per_view: int = 200
+    hr_screening_default_pool_size: int = 400
+    hr_screening_default_top_n: int = 200
+    # Job timeout for ScreeningRun jobs (reranking can be slow on CPU).
+    hr_screening_job_timeout_sec: int = 60 * 60  # 60 minutes
+    # How often the worker should persist progress updates (in processed docs).
+    hr_screening_progress_update_every: int = 10
+
+    # -------------------------
+    # HR module (Phase 4): Explanations (Gemini)
+    # -------------------------
+    # Phase 4 adds post-ranking explanations for top ScreeningRun candidates.
+    #
+    # Key design goals:
+    # - Run asynchronously via RQ so ScreeningRuns are not blocked.
+    # - Store ONLY structured JSON outputs (no raw resume text persisted to DB).
+    # - Keep config minimal and environment-driven.
+    #
+    # Operational note:
+    # - If GEMINI_API_KEY is missing/empty, the backend will skip auto-enqueueing
+    #   explanation jobs and manual endpoints will return a clear error.
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.0-flash-lite-001"
+    gemini_timeout_sec: int = 60
+    # Hard cap for "explain top N" to control spend and latency during MVP.
+    gemini_max_top_n: int = 20
+
+    # -------------------------
     # Phase 2: Admin imports (Excel)
     # -------------------------
     # Raw uploaded XLSX files are stored here (dataset_id is part of the filename).

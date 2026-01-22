@@ -21,6 +21,7 @@ backend/data/
 backend/app/secrets/
 
 backend/.cache/
+backend/models/text_embeddings/
 node_modules
 mobile-application/node_modules/
 docs/*.mov
