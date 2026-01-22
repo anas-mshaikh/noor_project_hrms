@@ -23,6 +23,7 @@ import {
   Video,
   PanelLeft,
   FileUp,
+  Sparkles,
 } from "lucide-react";
 
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -40,6 +41,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
     { href: "/admin/import", label: "Admin Import", icon: FileUp },
   ] as const;
 
+  const hrNav = [{ href: "/hr", label: "HR Overview", icon: Sparkles }] as const;
+
   // Highlight nested routes under a section (e.g. /jobs/*, /reports/* under Videos).
   function isActive(href: string): boolean {
     if (href === "/videos") {
@@ -48,6 +51,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
         pathname.startsWith("/jobs/") ||
         pathname.startsWith("/reports/")
       );
+    }
+    if (href === "/hr") {
+      return pathname === "/hr" || pathname.startsWith("/hr/");
     }
     return pathname === href;
   }
@@ -75,6 +81,30 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   variant="ghost"
                   className={cn(
                     "w-full justify-start",
+                    active && "bg-accent text-accent-foreground"
+                  )}
+                >
+                  <Link href={item.href}>
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                </Button>
+              );
+            })}
+
+            <div className="mt-4 px-2 text-xs font-medium text-muted-foreground">
+              HR Suite
+            </div>
+            {hrNav.map((item) => {
+              const active = isActive(item.href);
+              const Icon = item.icon;
+              return (
+                <Button
+                  key={item.href}
+                  asChild
+                  variant="ghost"
+                  className={cn(
+                    "mt-1 w-full justify-start",
                     active && "bg-accent text-accent-foreground"
                   )}
                 >
@@ -125,7 +155,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
               {/* Mobile navigation (keeps the app usable on small screens). */}
               <nav className="flex flex-wrap items-center gap-1 md:hidden">
-                {nav.map((item) => {
+                {[...nav, ...hrNav].map((item) => {
                   const active = isActive(item.href);
                   const Icon = item.icon;
                   return (
