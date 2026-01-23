@@ -58,7 +58,7 @@ function isAbsent(row: AttendanceOut): boolean {
 function PunchInTrend({ minutes }: { minutes: number[] }) {
   if (minutes.length < 2) {
     return (
-      <div className="text-sm text-gray-600">
+      <div className="text-sm text-muted-foreground">
         Not enough punch‑ins to draw a trend yet.
       </div>
     );
@@ -97,9 +97,9 @@ function PunchInTrend({ minutes }: { minutes: number[] }) {
         role="img"
         aria-label="Punch-in time trend"
       >
-        <path d={path} fill="none" stroke="#2563eb" strokeWidth={2} />
+        <path d={path} fill="none" stroke="#a855f7" strokeWidth={2} />
         {points.map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r={2.5} fill="#2563eb" />
+          <circle key={i} cx={x} cy={y} r={2.5} fill="#a855f7" />
         ))}
       </svg>
     </div>

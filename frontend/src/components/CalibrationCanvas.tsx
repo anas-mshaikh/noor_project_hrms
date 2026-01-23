@@ -255,7 +255,7 @@ export function CalibrationCanvas({
         width={stageSize.w}
         height={stageSize.h}
         onMouseDown={handleClick}
-        className="bg-gray-200"
+        className="bg-muted/40"
       >
         <Layer>
           {image && (
@@ -339,17 +339,17 @@ export function CalibrationCanvas({
       </Stage>
 
       {/* Mask management helper */}
-      <div className="flex items-center gap-2 bg-white px-3 py-2 text-xs">
+      <div className="flex items-center gap-2 border-t border-border bg-white/[0.03] px-3 py-2 text-xs text-muted-foreground backdrop-blur-xl">
         <button
-          className="rounded border px-2 py-1 hover:bg-gray-50"
+          className="rounded-md border border-border bg-background/30 px-2 py-1 text-foreground hover:bg-accent"
           onClick={startNewMask}
         >
           New Mask
         </button>
         <div className="flex items-center gap-2">
-          <span className="text-gray-600">Active mask:</span>
+          <span>Active mask:</span>
           <select
-            className="rounded border px-2 py-1"
+            className="rounded-md border border-border bg-background/30 px-2 py-1 text-foreground"
             value={activeMaskIndex}
             onChange={(e) => setActiveMaskIndex(Number(e.target.value))}
           >

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { apiJson } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 type UUID = string;
 type Point = [number, number];
@@ -220,7 +221,7 @@ export default function CalibrationPage() {
     return (
       <div className="p-4">
         <h1 className="text-xl font-semibold">Calibration</h1>
-        <p className="mt-2 text-red-600">cameraId missing in URL</p>
+        <p className="mt-2 text-destructive">cameraId missing in URL</p>
       </div>
     );
   }
@@ -228,34 +229,35 @@ export default function CalibrationPage() {
   return (
     <div className="flex h-[calc(100vh-80px)] flex-col">
       {/* Top bar */}
-      <div className="flex items-center justify-between border-b bg-white px-4 py-3">
+      <div className="flex items-center justify-between border-b border-border bg-white/[0.03] px-4 py-3 backdrop-blur-xl">
         <div>
-          <div className="text-sm text-gray-500">Camera</div>
+          <div className="text-sm text-muted-foreground">Camera</div>
           <div className="text-lg font-semibold">
             {cameraQ.data?.name ?? "Loading..."}
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
+          <Button
+            type="button"
+            variant="outline"
             onClick={() => setShowJson((v) => !v)}
           >
             {showJson ? "Hide JSON" : "Show JSON"}
-          </button>
-          <button
-            className="rounded bg-black px-4 py-2 text-sm text-white disabled:opacity-50"
+          </Button>
+          <Button
+            type="button"
             disabled={saveM.isPending}
             onClick={() => saveM.mutate()}
           >
             {saveM.isPending ? "Saving…" : "Save"}
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Main layout */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left panel */}
-        <div className="w-72 shrink-0 border-r bg-white p-4 text-sm space-y-3">
+        <div className="w-72 shrink-0 space-y-3 border-r border-border bg-white/[0.03] p-4 text-sm backdrop-blur-xl">
           <div className="font-medium">Tools</div>
           <div className="grid grid-cols-1 gap-2">
             {(
@@ -271,8 +273,10 @@ export default function CalibrationPage() {
             ).map(([m, label]) => (
               <button
                 key={m}
-                className={`rounded border px-2 py-1 text-left ${
-                  mode === m ? "border-black bg-gray-100" : "hover:bg-gray-50"
+                className={`rounded-md border border-border px-2 py-1 text-left text-foreground ${
+                  mode === m
+                    ? "bg-white/[0.06] ring-1 ring-white/10"
+                    : "bg-background/30 hover:bg-accent"
                 }`}
                 onClick={() => setMode(m)}
               >
@@ -282,10 +286,10 @@ export default function CalibrationPage() {
           </div>
 
           <div className="pt-2">
-            <div className="text-xs text-gray-600">Neutral band (px)</div>
+            <div className="text-xs text-muted-foreground">Neutral band (px)</div>
             <input
               type="number"
-              className="w-full rounded border px-2 py-1"
+              className="w-full rounded-md border border-border bg-background/30 px-2 py-1 text-foreground"
               value={state.neutralBandPx}
               onChange={(e) =>
                 setDraftState((s) => ({
@@ -297,40 +301,40 @@ export default function CalibrationPage() {
           </div>
 
           <div className="space-y-1 pt-2">
-            <div className="text-xs text-gray-600">Clear</div>
+            <div className="text-xs text-muted-foreground">Clear</div>
             <div className="grid grid-cols-1 gap-1">
               <button
-                className="rounded border px-2 py-1 hover:bg-gray-50"
+                className="rounded-md border border-border bg-background/30 px-2 py-1 text-foreground hover:bg-accent"
                 onClick={() => clearPoly("inside")}
               >
                 Clear Inside
               </button>
               <button
-                className="rounded border px-2 py-1 hover:bg-gray-50"
+                className="rounded-md border border-border bg-background/30 px-2 py-1 text-foreground hover:bg-accent"
                 onClick={() => clearPoly("outside")}
               >
                 Clear Outside
               </button>
               <button
-                className="rounded border px-2 py-1 hover:bg-gray-50"
+                className="rounded-md border border-border bg-background/30 px-2 py-1 text-foreground hover:bg-accent"
                 onClick={() => clearPoly("gate")}
               >
                 Clear Gate
               </button>
               <button
-                className="rounded border px-2 py-1 hover:bg-gray-50"
+                className="rounded-md border border-border bg-background/30 px-2 py-1 text-foreground hover:bg-accent"
                 onClick={() => clearMasks()}
               >
                 Clear Masks
               </button>
               <button
-                className="rounded border px-2 py-1 hover:bg-gray-50"
+                className="rounded-md border border-border bg-background/30 px-2 py-1 text-foreground hover:bg-accent"
                 onClick={() => clearLine()}
               >
                 Clear Line/Test Point
               </button>
               <button
-                className="rounded border px-2 py-1 hover:bg-gray-50"
+                className="rounded-md border border-border bg-background/30 px-2 py-1 text-foreground hover:bg-accent"
                 onClick={() => clearAll()}
               >
                 Clear All
@@ -338,19 +342,19 @@ export default function CalibrationPage() {
             </div>
           </div>
 
-          <div className="pt-2 text-xs text-gray-600">
+          <div className="pt-2 text-xs text-muted-foreground">
             Gate polygon limits where entry/exit line crossings are trusted
             (door region). Optional but recommended.
           </div>
 
           {message && (
-            <div className="rounded border border-gray-200 bg-gray-50 p-2 text-xs">
+            <div className="rounded-md border border-border bg-muted/20 p-2 text-xs text-muted-foreground">
               {message}
             </div>
           )}
 
           {validate(state).length > 0 && (
-            <div className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+            <div className="rounded-md border border-destructive/30 bg-destructive/15 p-2 text-xs text-destructive">
               {validate(state).map((e) => (
                 <div key={e}>• {e}</div>
               ))}
@@ -359,10 +363,10 @@ export default function CalibrationPage() {
         </div>
 
         {/* Canvas panel */}
-        <div className="flex-1 overflow-hidden bg-gray-50">
+        <div className="flex-1 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2 text-sm">
             <div className="flex items-center gap-2">
-              <label className="rounded border px-2 py-1 hover:bg-white cursor-pointer">
+              <label className="cursor-pointer rounded-md border border-border bg-background/30 px-2 py-1 text-foreground hover:bg-accent">
                 Upload reference image
                 <input
                   type="file"
@@ -374,7 +378,7 @@ export default function CalibrationPage() {
                   }}
                 />
               </label>
-              <div className="text-xs text-gray-600">
+              <div className="text-xs text-muted-foreground">
                 {state.frameSize
                   ? `Frame: ${state.frameSize.w}x${state.frameSize.h}`
                   : "No frame loaded"}
@@ -394,11 +398,11 @@ export default function CalibrationPage() {
 
         {/* JSON panel */}
         {showJson && (
-          <div className="w-96 shrink-0 border-l bg-white p-4 text-xs overflow-auto">
+          <div className="w-96 shrink-0 overflow-auto border-l border-border bg-white/[0.03] p-4 text-xs backdrop-blur-xl">
             <div className="flex items-center justify-between">
               <div className="font-medium">Calibration JSON</div>
               <button
-                className="rounded border px-2 py-1 hover:bg-gray-50"
+                className="rounded-md border border-border bg-background/30 px-2 py-1 text-foreground hover:bg-accent"
                 onClick={() =>
                   navigator.clipboard.writeText(
                     JSON.stringify(buildPayload(state), null, 2)

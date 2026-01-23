@@ -134,8 +134,8 @@ export function EventsTable({ rows }: { rows: EventOut[] }) {
                     variant="secondary"
                     className={
                       e.event_type === "entry"
-                        ? "bg-emerald-500/15 text-emerald-700"
-                        : "bg-blue-500/15 text-blue-700"
+                        ? "bg-emerald-500/15 text-emerald-200"
+                        : "bg-sky-500/15 text-sky-200"
                     }
                   >
                     {e.event_type}

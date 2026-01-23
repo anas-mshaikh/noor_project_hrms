@@ -3,8 +3,7 @@
 /**
  * components/hr/RightRailPanel.tsx
  *
- * A simple "right rail" list panel used on the HR Overview page.
- * Built with the HR-local GlassCard primitive so it doesn't affect the rest of the app.
+ * A simple "right rail" list panel, built on the glass surface primitive.
  */
 
 import * as React from "react";
@@ -50,7 +49,7 @@ export function RightRailPanel({
             variant="ghost"
             size="sm"
             onClick={onAction}
-            className="h-8 rounded-xl px-2 text-white/70 hover:bg-white/10 hover:text-white"
+            className="h-8 rounded-xl px-2 text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             {actionLabel}
           </Button>
@@ -77,7 +76,7 @@ export function RightRailPanel({
             ))}
           </>
         ) : items.length === 0 ? (
-          <div className="rounded-2xl bg-white/[0.02] p-4 text-sm text-white/60 ring-1 ring-white/5">
+          <div className="rounded-2xl bg-white/[0.02] p-4 text-sm text-muted-foreground ring-1 ring-white/5">
             Nothing here yet.
           </div>
         ) : (
@@ -92,9 +91,9 @@ export function RightRailPanel({
                   <div className="relative h-9 w-9 shrink-0 rounded-xl bg-white/5 ring-1 ring-white/10">
                     <div className="pointer-events-none absolute inset-0 rounded-xl bg-[radial-gradient(16px_circle_at_30%_25%,rgba(168,85,247,0.32),transparent_60%)]" />
                     {Icon ? (
-                      <Icon className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-white/80" />
+                      <Icon className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-foreground/80" />
                     ) : (
-                      <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/70" />
+                      <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/70" />
                     )}
                   </div>
 
@@ -103,7 +102,7 @@ export function RightRailPanel({
                       {it.title}
                     </div>
                     {it.subtitle ? (
-                      <div className="truncate text-xs text-white/60">
+                      <div className="truncate text-xs text-muted-foreground">
                         {it.subtitle}
                       </div>
                     ) : null}
@@ -111,7 +110,7 @@ export function RightRailPanel({
                 </div>
 
                 {it.meta ? (
-                  <div className="shrink-0 text-xs text-white/60">{it.meta}</div>
+                  <div className="shrink-0 text-xs text-muted-foreground">{it.meta}</div>
                 ) : null}
               </div>
             );
@@ -121,4 +120,3 @@ export function RightRailPanel({
     </GlassCard>
   );
 }
-

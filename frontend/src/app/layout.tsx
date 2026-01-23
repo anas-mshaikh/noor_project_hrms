@@ -19,7 +19,9 @@ export default function RootLayout({
    * It can safely render client components (Providers/Shell) inside it.
    */
   return (
-    <html lang="en">
+    // For this dashboard we intentionally default to the dark theme.
+    // It keeps the "glass" styling consistent across all pages.
+    <html lang="en" className="dark">
       {/* Use system fonts to avoid build-time network fetches (Google Fonts). */}
       <body className="antialiased">
         <Providers>

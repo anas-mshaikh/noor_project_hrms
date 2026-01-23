@@ -3,10 +3,10 @@
 /**
  * components/hr/GlassCard.tsx
  *
- * A minimal "purple glass" card primitive for HR pages.
+ * A minimal "purple glass" surface primitive.
  *
- * This intentionally does NOT change the global shadcn Card component.
- * We keep the styling local to HR so existing pages remain unchanged.
+ * Even though this lives under components/hr/, it's intentionally generic so
+ * it can be reused across the app wherever we want a premium glass look.
  */
 
 import * as React from "react";
@@ -23,7 +23,7 @@ export function GlassCard({ asChild, className, ...props }: GlassCardProps) {
   return (
     <Comp
       className={cn(
-        "group relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.035] text-white shadow-[0_18px_60px_-35px_rgba(0,0,0,0.8)] backdrop-blur-xl",
+        "group relative overflow-hidden rounded-3xl border border-border bg-white/[0.035] text-foreground shadow-[0_18px_60px_-35px_rgba(0,0,0,0.8)] backdrop-blur-xl",
         // Subtle hover lift (disabled for reduced motion).
         "transition-transform duration-300 motion-reduce:transition-none motion-reduce:transform-none hover:-translate-y-0.5",
         // Soft inner highlight.
@@ -34,4 +34,3 @@ export function GlassCard({ asChild, className, ...props }: GlassCardProps) {
     />
   );
 }
-
