@@ -136,3 +136,64 @@ export type ArtifactOut = {
   path: string;
   created_at: string;
 };
+
+// ----- HR (Openings + Resume parsing) -----
+export type OpeningCreateRequest = {
+  title: string;
+  jd_text: string;
+  requirements_json?: Record<string, unknown>;
+};
+
+export type OpeningUpdateRequest = {
+  title?: string | null;
+  jd_text?: string | null;
+  requirements_json?: Record<string, unknown> | null;
+  status?: "ACTIVE" | "ARCHIVED" | null;
+};
+
+export type OpeningOut = {
+  id: UUID;
+  store_id: UUID;
+  title: string;
+  status: "ACTIVE" | "ARCHIVED" | string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ResumeOut = {
+  id: UUID;
+  opening_id: UUID;
+  store_id: UUID;
+  batch_id: UUID | null;
+  original_filename: string;
+  status: "UPLOADED" | "PARSING" | "PARSED" | "FAILED" | string;
+  rq_job_id: string | null;
+  error: string | null;
+  embedding_status: string;
+  embedding_error: string | null;
+  embedded_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UploadResumesResponse = {
+  batch_id: UUID;
+  resume_ids: UUID[];
+};
+
+export type BatchStatusOut = {
+  batch_id: UUID;
+  total_count: number;
+  uploaded_count: number;
+  parsing_count: number;
+  parsed_count: number;
+  failed_count: number;
+};
+
+export type ParsedResumeArtifact = {
+  resume_id?: UUID;
+  clean_text?: string;
+  elements?: unknown[];
+  metadata?: Record<string, unknown>;
+  [key: string]: unknown;
+};

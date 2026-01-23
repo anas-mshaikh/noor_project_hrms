@@ -24,7 +24,10 @@ import { PanelCard } from "@/features/hr/components/cards/PanelCard";
 import { useMockLoading } from "@/features/hr/hooks/useMockLoading";
 import { useReducedMotion } from "@/features/hr/hooks/useReducedMotion";
 import { staggerContainer, staggerItem } from "@/features/hr/lib/motion";
-import { HR_OPENINGS, HR_ONBOARDING, HR_PIPELINE_CARDS } from "@/features/hr/mock/data";
+import { HR_ONBOARDING, HR_PIPELINE_CARDS } from "@/features/hr/mock/data";
+import { useSelection } from "@/lib/selection";
+import { useOpenings } from "@/features/hr/hooks/useOpenings";
+import { StorePicker } from "@/components/StorePicker";
 
 type ActivityItem = {
   id: string;
@@ -37,18 +40,24 @@ export default function HROverviewPage() {
   const reducedMotion = useReducedMotion();
   const { loading } = useMockLoading(600);
 
-  const activeOpenings = HR_OPENINGS.filter((o) => o.status === "ACTIVE").length;
+  const storeId = useSelection((s) => s.storeId);
+  const showDebugIds =
+    process.env.NEXT_PUBLIC_SHOW_DEBUG_IDS === "true" ||
+    process.env.NODE_ENV === "development";
+  const { list } = useOpenings(storeId ?? null);
+
+  const openings = list.data ?? [];
+  const activeOpenings = openings.filter((o) => o.status === "ACTIVE").length;
   const inPipeline = HR_PIPELINE_CARDS.filter((c) => c.stage !== "rejected").length;
   const onboardingActive = HR_ONBOARDING.length;
   const screened7d = 128;
 
-  const topOpening = HR_OPENINGS.slice()
-    .filter((o) => o.status === "ACTIVE")
-    .sort((a, b) => b.resumes_count - a.resumes_count)[0];
+  const topOpening = openings.find((o) => o.status === "ACTIVE") ?? null;
 
-  const isEmpty = !loading && activeOpenings === 0;
+  const isEmpty = Boolean(storeId) && !list.isPending && activeOpenings === 0;
 
   const chips = [
+    !storeId ? "Select a store" : showDebugIds ? `store_id: ${storeId}` : null,
     topOpening ? `Top opening: ${topOpening.title}` : null,
     "Last run: Cashier (DONE)",
   ].filter(Boolean) as string[];
@@ -85,6 +94,30 @@ export default function HROverviewPage() {
         }
       />
 
+      {!storeId ? (
+        <EmptyStateCard
+          title="Select a store to manage HR"
+          description="HR data is store-scoped. Pick a store to view openings and uploads."
+          icon={Users2}
+          actions={<div className="w-full max-w-xl"><StorePicker /></div>}
+        />
+      ) : list.isError ? (
+        <EmptyStateCard
+          title="Could not load HR data"
+          description={list.error instanceof Error ? list.error.message : "Unknown error"}
+          icon={Users2}
+          actions={
+            <Button
+              type="button"
+              variant="outline"
+              className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+              onClick={() => list.refetch()}
+            >
+              Retry
+            </Button>
+          }
+        />
+      ) : (
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <div className="space-y-6 lg:col-span-8">
           <motion.div
@@ -96,9 +129,9 @@ export default function HROverviewPage() {
             <motion.div variants={staggerItem(reducedMotion)}>
               <StatCard
                 label="Active Openings"
-                value={activeOpenings}
+                value={list.isPending ? "—" : activeOpenings}
                 icon={ClipboardList}
-                loading={loading}
+                loading={loading || list.isPending}
               />
             </motion.div>
             <motion.div variants={staggerItem(reducedMotion)}>
@@ -301,6 +334,7 @@ export default function HROverviewPage() {
           </GlassCard>
         </div>
       </div>
+      )}
     </HrPageShell>
   );
 }

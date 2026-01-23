@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -20,11 +20,12 @@ type WizardDraft = {
 
 type OpeningWizardProps = {
   onSave: (draft: WizardDraft) => void;
+  saving?: boolean;
 };
 
 const STEPS = ["Basics", "Job Description", "Requirements"] as const;
 
-export function OpeningWizard({ onSave }: OpeningWizardProps) {
+export function OpeningWizard({ onSave, saving }: OpeningWizardProps) {
   const [step, setStep] = React.useState(0);
   const [draft, setDraft] = React.useState<WizardDraft>({
     title: "",
@@ -178,12 +179,13 @@ export function OpeningWizard({ onSave }: OpeningWizardProps) {
                 <Button
                   type="button"
                   onClick={() => {
-                    toast("Saved (mock)", { description: "Opening created" });
                     onSave(draft);
                   }}
+                  disabled={Boolean(saving)}
                   className="rounded-2xl bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white hover:from-violet-400 hover:to-fuchsia-400"
                 >
-                  Save Opening
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {saving ? "Saving…" : "Save Opening"}
                 </Button>
               )}
             </div>
@@ -217,4 +219,3 @@ export function OpeningWizard({ onSave }: OpeningWizardProps) {
     </div>
   );
 }
-

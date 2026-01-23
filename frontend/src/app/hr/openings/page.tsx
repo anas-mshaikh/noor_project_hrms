@@ -14,20 +14,48 @@ import { OpeningCard } from "@/features/hr/components/openings/OpeningCard";
 import { EmptyStateCard } from "@/features/hr/components/cards/EmptyStateCard";
 import { PanelCard } from "@/features/hr/components/cards/PanelCard";
 import { TagChip } from "@/features/hr/components/candidates/TagChip";
-import { useMockLoading } from "@/features/hr/hooks/useMockLoading";
 import { useReducedMotion } from "@/features/hr/hooks/useReducedMotion";
 import { staggerContainer, staggerItem } from "@/features/hr/lib/motion";
 import { HR_OPENINGS, HR_RUNS } from "@/features/hr/mock/data";
+import { useSelection } from "@/lib/selection";
+import { useOpenings } from "@/features/hr/hooks/useOpenings";
+import type { HrOpening } from "@/features/hr/mock/types";
+import { StorePicker } from "@/components/StorePicker";
 
 type FilterKey = "ACTIVE" | "ARCHIVED" | "ALL";
 
+function openingOutToCard(o: { id: string; title: string; status: string; created_at: string }): HrOpening {
+  // Backend OpeningOut does not include department/location/counts yet.
+  // Keep the UI stable by providing safe placeholders (can be enriched later).
+  return {
+    id: o.id,
+    title: o.title,
+    status: (o.status as HrOpening["status"]) ?? "ACTIVE",
+    created_at: o.created_at,
+    department: "—",
+    location: "—",
+    resumes_count: 0,
+    in_pipeline_count: 0,
+    last_run_id: null,
+  };
+}
+
 export default function HROpeningsPage() {
   const reducedMotion = useReducedMotion();
-  const { loading } = useMockLoading(600);
+  const storeId = useSelection((s) => s.storeId);
+  const { list } = useOpenings(storeId ?? null);
   const [filter, setFilter] = React.useState<FilterKey>("ACTIVE");
+  const showDebugIds =
+    process.env.NEXT_PUBLIC_SHOW_DEBUG_IDS === "true" ||
+    process.env.NODE_ENV === "development";
 
-  const openings = HR_OPENINGS.filter((o) => (filter === "ALL" ? true : o.status === filter));
-  const isEmpty = !loading && openings.length === 0;
+  const loading = list.isPending;
+  const openingsRaw = list.data ?? [];
+  const openings = openingsRaw
+    .filter((o) => (filter === "ALL" ? true : o.status === filter))
+    .map(openingOutToCard);
+
+  const isEmpty = Boolean(storeId) && !loading && openings.length === 0;
 
   const topByVolume = HR_OPENINGS.slice()
     .filter((o) => o.status === "ACTIVE")
@@ -43,7 +71,10 @@ export default function HROpeningsPage() {
       <HrHeader
         title="Openings"
         subtitle="Create openings, upload resumes, and run AI screening."
-        chips={["Mock data", "Backend wiring later"]}
+        chips={[
+          storeId ? (showDebugIds ? `store_id: ${storeId}` : null) : "Select a store",
+          process.env.NODE_ENV === "development" ? "Backend: Phase‑1" : null,
+        ].filter(Boolean) as string[]}
         actions={
           <>
             <GradientButton asChild>
@@ -65,6 +96,30 @@ export default function HROpeningsPage() {
         }
       />
 
+      {!storeId ? (
+        <EmptyStateCard
+          title="Select a store to manage openings"
+          description="HR Openings are store-scoped. Pick a store to view and create openings."
+          icon={FolderOpen}
+          actions={<div className="w-full max-w-xl"><StorePicker /></div>}
+        />
+      ) : list.isError ? (
+        <EmptyStateCard
+          title="Could not load openings"
+          description={list.error instanceof Error ? list.error.message : "Unknown error"}
+          icon={FolderOpen}
+          actions={
+            <Button
+              type="button"
+              variant="outline"
+              className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+              onClick={() => list.refetch()}
+            >
+              Retry
+            </Button>
+          }
+        />
+      ) : (
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <div className="space-y-5 lg:col-span-8">
           <div className="flex flex-wrap items-center gap-2">
@@ -185,7 +240,7 @@ export default function HROpeningsPage() {
           </PanelCard>
         </div>
       </div>
+      )}
     </HrPageShell>
   );
 }
-
