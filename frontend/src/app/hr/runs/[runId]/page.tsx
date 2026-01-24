@@ -17,6 +17,7 @@ import { EmptyStateCard } from "@/features/hr/components/cards/EmptyStateCard";
 import { ScorePill } from "@/features/hr/components/candidates/ScorePill";
 import { TagChip } from "@/features/hr/components/candidates/TagChip";
 import { RunStatusPill } from "@/features/hr/components/runs/RunStatusPill";
+import { RunProgressBar } from "@/features/hr/components/runs/RunProgressBar";
 import { RunResultDrawer } from "@/features/hr/components/runs/RunResultDrawer";
 import { useMockLoading } from "@/features/hr/hooks/useMockLoading";
 import { useScreeningRun } from "@/features/hr/hooks/useScreeningRun";
@@ -24,13 +25,8 @@ import { useScreeningResults } from "@/features/hr/hooks/useScreeningResults";
 import { useExplainActions } from "@/features/hr/hooks/useExplainActions";
 import { hrQueryKeys } from "@/features/hr/api/queryKeys";
 import { cancelScreeningRun, retryScreeningRun } from "@/features/hr/api/hr";
+import { toScorePercent } from "@/features/hr/lib/scoring";
 import type { ScreeningResultRowOut, UUID } from "@/lib/types";
-
-function scoreToPct(score: number): number {
-  if (!Number.isFinite(score)) return 0;
-  const pct = score <= 1.0 ? score * 100 : score;
-  return Math.max(0, Math.min(100, Math.round(pct)));
-}
 
 export default function HRRunDetailPage() {
   const { loading } = useMockLoading(600);
@@ -46,7 +42,7 @@ export default function HRRunDetailPage() {
   const run = runQ.data;
 
   const [query, setQuery] = React.useState("");
-  const [minScore, setMinScore] = React.useState(60);
+  const [minScore, setMinScore] = React.useState(0);
   const [selected, setSelected] = React.useState<ScreeningResultRowOut | null>(
     null
   );
@@ -133,7 +129,7 @@ export default function HRRunDetailPage() {
 
   const allRows = resultsQ.data?.results ?? [];
   const filtered = allRows
-    .filter((r) => scoreToPct(r.final_score) >= minScore)
+    .filter((r) => toScorePercent(r.final_score) >= minScore)
     .filter((r) => {
       const q = query.trim().toLowerCase();
       if (!q) return true;
@@ -285,18 +281,13 @@ export default function HRRunDetailPage() {
                         </div>
                         <div className="mt-2 flex flex-wrap gap-2">
                           {r.best_view_type ? <TagChip>{r.best_view_type}</TagChip> : null}
-                          {r.rerank_score != null ? (
-                            <TagChip className="bg-white/[0.03]">
-                              rerank: {r.rerank_score.toFixed(3)}
-                            </TagChip>
-                          ) : null}
                         </div>
                         <div className="mt-3 text-xs text-muted-foreground tabular-nums">
                           resume_status: {r.resume_status} • embedding: {r.embedding_status}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <ScorePill score={scoreToPct(r.final_score)} />
+                        <ScorePill score={toScorePercent(r.final_score)} />
                       </div>
                     </div>
                   </button>
@@ -337,7 +328,15 @@ export default function HRRunDetailPage() {
                     : "This run is still processing. Keep this page open — it will update automatically."
                 }
                 icon={Sparkles}
-              />
+              >
+                {run ? (
+                  <RunProgressBar
+                    className="max-w-sm"
+                    progressDone={run.progress_done}
+                    progressTotal={run.progress_total}
+                  />
+                ) : null}
+              </EmptyStateCard>
             )}
           </div>
 

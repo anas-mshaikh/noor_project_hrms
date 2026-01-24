@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import uuid
 import logging
+import math
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +47,29 @@ logger = logging.getLogger(__name__)
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _sigmoid(x: float) -> float:
+    """
+    Stable sigmoid for turning reranker logits into a 0..1 score.
+
+    Notes:
+    - BGE rerankers typically output a raw, unbounded logit that can be negative.
+    - Sigmoid preserves ordering (monotonic), so ranking is stable and reproducible.
+    """
+    if x >= 0:
+        z = math.exp(-x)
+        return 1.0 / (1.0 + z)
+    z = math.exp(x)
+    return z / (1.0 + z)
+
+
+def _clamp01(x: float) -> float:
+    if x < 0.0:
+        return 0.0
+    if x > 1.0:
+        return 1.0
+    return x
 
 
 def _elements_to_dicts(elements: list[Any]) -> list[dict[str, Any]]:
@@ -367,10 +391,14 @@ class _ScreeningCandidate:
     best_view_type: str
     retrieval_score: float
     rerank_score: float | None = None
+    final_score_norm: float | None = None
 
     @property
     def final_score(self) -> float:
-        # Phase 3 MVP: final_score is the reranker score (higher is better).
+        # `final_score` is the UI-friendly score used for sorting and filtering.
+        # We compute it as a 0..1 value and keep `rerank_score` as the raw logit.
+        if self.final_score_norm is not None:
+            return float(self.final_score_norm)
         return float(self.rerank_score or 0.0)
 
 
@@ -633,8 +661,23 @@ def run_screening(run_id: str) -> None:
                 _set_run(db, run, progress_done=done)
 
         # Attach rerank scores to candidates.
+        # Normalize weights to keep `final_score` in a predictable 0..1 scale.
+        w_ret = max(0.0, float(settings.hr_screening_score_w_retrieval))
+        w_rer = max(0.0, float(settings.hr_screening_score_w_rerank))
+        w_sum = w_ret + w_rer
+        if w_sum <= 0.0:
+            # Fallback: if misconfigured, rely only on the reranker signal.
+            w_ret, w_rer, w_sum = 0.0, 1.0, 1.0
+        w_ret /= w_sum
+        w_rer /= w_sum
+
         for cand, score in zip(pool, rerank_scores):
-            cand.rerank_score = float(score)
+            raw = float(score)
+            cand.rerank_score = raw
+            rerank01 = _sigmoid(raw)
+            cand.final_score_norm = _clamp01(
+                (w_ret * float(cand.retrieval_score)) + (w_rer * rerank01)
+            )
 
         # Final ranking (MVP Phase 3: sort by rerank score, then retrieval score).
         pool.sort(

@@ -21,6 +21,7 @@ import { TagChip } from "@/features/hr/components/candidates/TagChip";
 import { useParsedResume } from "@/features/hr/hooks/useParsedResume";
 import { useExplainActions } from "@/features/hr/hooks/useExplainActions";
 import { useScreeningExplanation } from "@/features/hr/hooks/useScreeningExplanation";
+import { toScorePercent } from "@/features/hr/lib/scoring";
 
 type RunResultDrawerProps = {
   open: boolean;
@@ -34,12 +35,6 @@ function parseStatusCode(err: unknown): number | null {
   const m = err.message.trim();
   const maybe = Number(m.slice(0, 3));
   return Number.isFinite(maybe) ? maybe : null;
-}
-
-function scoreToPct(score: number): number {
-  if (!Number.isFinite(score)) return 0;
-  const pct = score <= 1.0 ? score * 100 : score;
-  return Math.max(0, Math.min(100, Math.round(pct)));
 }
 
 function asStringArray(v: unknown): string[] {
@@ -103,7 +98,7 @@ export function RunResultDrawer({
     }
   }, [open]);
 
-  const displayScore = result ? scoreToPct(result.final_score) : 0;
+  const displayScore = result ? toScorePercent(result.final_score) : 0;
 
   // Explanation JSON schema (Phase 4 prompt v1).
   const exp = (explainQ.data?.explanation_json ?? {}) as Record<string, unknown>;
@@ -130,14 +125,18 @@ export function RunResultDrawer({
                 {result ? `resume_id: ${result.resume_id}` : "Select a result to preview."}
               </SheetDescription>
             </div>
-            {result ? <ScorePill score={displayScore} /> : null}
+            {result ? (
+              <div className="shrink-0 text-right">
+                <div className="text-[10px] font-medium text-muted-foreground">
+                  Model score
+                </div>
+                <ScorePill score={displayScore} />
+              </div>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {result?.best_view_type ? <TagChip>{result.best_view_type}</TagChip> : null}
-            {result?.rerank_score != null ? (
-              <TagChip className="bg-white/[0.03]">rerank: {result.rerank_score.toFixed(3)}</TagChip>
-            ) : null}
             {result?.retrieval_score != null ? (
               <TagChip className="bg-white/[0.03]">retrieval: {result.retrieval_score.toFixed(3)}</TagChip>
             ) : null}
@@ -209,8 +208,19 @@ export function RunResultDrawer({
             ) : explainQ.data ? (
               <div className="mt-3 space-y-4">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-medium tracking-tight">Summary</div>
-                  {typeof expFit === "number" ? <ScorePill score={Math.max(0, Math.min(100, expFit))} /> : null}
+                  <div className="text-sm font-medium tracking-tight">
+                    LLM Summary
+                  </div>
+                  {typeof expFit === "number" ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-medium text-muted-foreground">
+                        LLM fit
+                      </span>
+                      <ScorePill
+                        score={Math.max(0, Math.min(100, expFit))}
+                      />
+                    </div>
+                  ) : null}
                 </div>
                 {expSummary ? <div className="text-sm text-muted-foreground">{expSummary}</div> : null}
 
@@ -383,4 +393,3 @@ export function RunResultDrawer({
     </Sheet>
   );
 }
-

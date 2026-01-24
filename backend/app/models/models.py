@@ -1090,8 +1090,13 @@ class HRScreeningResult(Base):
 
     rank: Mapped[int] = mapped_column(sa.Integer, nullable=False)
 
-    # `final_score` is what we sort on for the run output. In MVP Phase 3 we use:
-    #   final_score = rerank_score
+    # `final_score` is the UI-friendly score used for filtering/sorting in the UI.
+    # We keep it normalized in 0..1 so clients can treat it like a probability-like score.
+    #
+    # Current behavior (Phase 3):
+    # - rerank_score: raw reranker logit (unbounded; can be negative)
+    # - final_score: 0..1 blend of retrieval similarity and sigmoid(rerank_score)
+    #   (weights are configurable via HR_SCREENING_SCORE_W_* settings)
     final_score: Mapped[float] = mapped_column(sa.Float, nullable=False)
 
     # Keep component scores for debugging/tuning.

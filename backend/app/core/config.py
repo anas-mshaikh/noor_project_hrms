@@ -88,6 +88,16 @@ class Settings(BaseSettings):
     hr_screening_job_timeout_sec: int = 60 * 60  # 60 minutes
     # How often the worker should persist progress updates (in processed docs).
     hr_screening_progress_update_every: int = 10
+    # Final score (UI-friendly) is a 0..1 value used by the frontend for percent bars
+    # and min-score filtering. By default we blend:
+    #   final_score = w_retrieval * retrieval_similarity + w_rerank * sigmoid(rerank_logit)
+    #
+    # Notes:
+    # - `rerank_logit` is a raw, unbounded logit (often negative). Sigmoid maps it to 0..1.
+    # - `retrieval_similarity` is already 0..1 (computed from cosine distance).
+    # - We normalize weights to sum to 1 at runtime; setting a weight to 0 disables it.
+    hr_screening_score_w_retrieval: float = 0.35
+    hr_screening_score_w_rerank: float = 0.65
 
     # -------------------------
     # HR module (Phase 4): Explanations (Gemini)
