@@ -2,10 +2,12 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
-import { ClipboardList, Sparkles, UploadCloud } from "lucide-react";
+import { ClipboardList, Loader2, Sparkles, UploadCloud } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,10 +20,11 @@ import { EmptyStateCard } from "@/features/hr/components/cards/EmptyStateCard";
 import { ResumeDropzone } from "@/features/hr/components/openings/ResumeDropzone";
 import { BatchProgress, type BatchProgressItem } from "@/features/hr/components/openings/BatchProgress";
 import { ParsedResumeSheet } from "@/features/hr/components/openings/ParsedResumeSheet";
-import { DataTable } from "@/features/hr/components/tables/DataTable";
 import { KanbanBoard } from "@/features/hr/components/pipeline/KanbanBoard";
+import { RunStatusPill } from "@/features/hr/components/runs/RunStatusPill";
 import { useMockLoading } from "@/features/hr/hooks/useMockLoading";
 import { useReducedMotion } from "@/features/hr/hooks/useReducedMotion";
+import { useOpeningIndexStatus } from "@/features/hr/hooks/useOpeningIndexStatus";
 import { staggerContainer, staggerItem } from "@/features/hr/lib/motion";
 import {
   getRunResults,
@@ -29,11 +32,17 @@ import {
   HR_PIPELINE_STAGES,
   HR_RUNS,
 } from "@/features/hr/mock/data";
-import type { HrOpening, HrScreeningRun } from "@/features/hr/mock/types";
+import type { HrOpening } from "@/features/hr/mock/types";
 import { useOpening } from "@/features/hr/hooks/useOpening";
 import { useResumes } from "@/features/hr/hooks/useResumes";
 import { useBatchPoll } from "@/features/hr/hooks/useBatchPoll";
 import type { ResumeOut, UUID } from "@/lib/types";
+import {
+  createScreeningRun,
+  enqueueOpeningEmbeddings,
+  enqueueRunExplanations,
+} from "@/features/hr/api/hr";
+import { useScreeningRun } from "@/features/hr/hooks/useScreeningRun";
 
 type PageProps = { params: { id: string } };
 
@@ -44,6 +53,7 @@ function toBatchItem(r: ResumeOut): BatchProgressItem {
     id: r.id,
     filename: r.original_filename,
     status,
+    embedding_status: r.embedding_status,
     error: r.error,
   };
 }
@@ -51,6 +61,7 @@ function toBatchItem(r: ResumeOut): BatchProgressItem {
 export default function HROpeningDetailPage(_props: PageProps) {
   const reducedMotion = useReducedMotion();
   const { loading } = useMockLoading(600);
+  const router = useRouter();
 
   // In production builds, using `useParams()` is the most reliable way to read dynamic
   // route segments from a client component.
@@ -72,6 +83,57 @@ export default function HROpeningDetailPage(_props: PageProps) {
       }
     : null;
   const isLoadingOpening = openingQ.isPending;
+
+  const createRun = useMutation({
+    mutationFn: () => {
+      // `openingId` comes from the route; during the first render it can be null.
+      // This mutation should never be invoked without an id, but we guard anyway
+      // so the callback is type-safe and fails with a clear message if misused.
+      if (!openingId) throw new Error("Missing opening id");
+      return createScreeningRun(openingId, {});
+    },
+    onSuccess: (run) => {
+      try {
+        localStorage.setItem(`hr:lastRun:${openingId}`, run.id);
+      } catch {
+        // ignore (private browsing / storage disabled)
+      }
+
+      toast("Screening run started", {
+        description: `run_id: ${run.id}`,
+      });
+      router.push(`/hr/runs/${run.id}`);
+    },
+    onError: (err) => {
+      toast("Could not start run", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    },
+  });
+
+  const [lastRunId, setLastRunId] = React.useState<UUID | null>(null);
+  React.useEffect(() => {
+    try {
+      const v = localStorage.getItem(`hr:lastRun:${openingId}`);
+      setLastRunId((v as UUID) || null);
+    } catch {
+      setLastRunId(null);
+    }
+  }, [openingId]);
+
+  const lastRunQ = useScreeningRun(lastRunId);
+  const enqueueExplain = useMutation({
+    mutationFn: () =>
+      enqueueRunExplanations(lastRunId as UUID, { topN: 20, force: false }),
+    onSuccess: () =>
+      toast("Explanations queued", {
+        description: "Generating for top candidates…",
+      }),
+    onError: (err) =>
+      toast("Could not enqueue explanations", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      }),
+  });
 
   // While route params are not ready, keep the UI mounted but don't start fetching.
   if (!openingId) {
@@ -129,6 +191,22 @@ export default function HROpeningDetailPage(_props: PageProps) {
   const topCandidates = lastRun ? getRunResults(lastRun.id).slice(0, 5) : [];
 
   const { list: resumesQ, upload: uploadMutation } = useResumes(openingId);
+  const indexQ = useOpeningIndexStatus(openingId);
+  const enqueueEmbed = useMutation({
+    mutationFn: () => enqueueOpeningEmbeddings(openingId as UUID, { force: false }),
+    onSuccess: (resp) => {
+      toast("Embedding queued", {
+        description: `${resp.enqueued} enqueued, ${resp.skipped} skipped`,
+      });
+      resumesQ.refetch();
+      indexQ.refetch();
+    },
+    onError: (err) => {
+      toast("Could not enqueue embeddings", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    },
+  });
   const [activeBatchId, setActiveBatchId] = React.useState<UUID | null>(null);
   const batchQ = useBatchPoll(
     activeBatchId ? { openingId, batchId: activeBatchId } : null
@@ -165,11 +243,17 @@ export default function HROpeningDetailPage(_props: PageProps) {
         ].filter(Boolean) as string[]}
         actions={
           <>
-            <GradientButton asChild>
-              <Link href="/hr/runs">
+            <GradientButton
+              type="button"
+              disabled={createRun.isPending || openingQ.isPending}
+              onClick={() => createRun.mutate()}
+            >
+              {createRun.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
                 <Sparkles className="h-4 w-4" />
-                Run Screening
-              </Link>
+              )}
+              Run Screening
             </GradientButton>
             <Button
               type="button"
@@ -304,6 +388,65 @@ export default function HROpeningDetailPage(_props: PageProps) {
                 }}
               />
 
+              <PanelCard
+                title="Embeddings"
+                description="Generate embeddings used by screening runs."
+              >
+                <div className="rounded-2xl bg-white/[0.02] p-4 text-sm text-muted-foreground ring-1 ring-white/5">
+                  {indexQ.isPending ? (
+                    <div className="space-y-2">
+                      <div className="h-3 w-56 rounded bg-white/10" />
+                      <div className="h-3 w-44 rounded bg-white/10" />
+                    </div>
+                  ) : indexQ.isError ? (
+                    <div>Could not load embedding status.</div>
+                  ) : indexQ.data ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        Parsed{" "}
+                        <span className="text-foreground/90 tabular-nums">
+                          {indexQ.data.parsed_resumes}
+                        </span>{" "}
+                        • Embedded{" "}
+                        <span className="text-foreground/90 tabular-nums">
+                          {indexQ.data.embedded_resumes}
+                        </span>{" "}
+                        • Failed{" "}
+                        <span className="text-foreground/90 tabular-nums">
+                          {indexQ.data.embedding_failed}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                          onClick={() => enqueueEmbed.mutate()}
+                          disabled={
+                            enqueueEmbed.isPending ||
+                            (indexQ.data.parsed_resumes ?? 0) === 0
+                          }
+                        >
+                          {enqueueEmbed.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            "Embed resumes"
+                          )}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                          onClick={() => indexQ.refetch()}
+                        >
+                          Refresh
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </PanelCard>
+
               <PanelCard title="Batch progress" description="Resume parsing status (live).">
                 {activeBatchId && batchQ.data ? (
                   <div className="mb-3 rounded-2xl bg-white/[0.02] p-4 text-sm text-muted-foreground ring-1 ring-white/5">
@@ -362,7 +505,16 @@ export default function HROpeningDetailPage(_props: PageProps) {
               <span className="text-foreground/90">400</span> • Top N: <span className="text-foreground/90">200</span>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              <GradientButton onClick={() => toast("Coming soon", { description: "Create screening run" })}>
+              <GradientButton
+                type="button"
+                disabled={createRun.isPending || openingQ.isPending}
+                onClick={() => createRun.mutate()}
+              >
+                {createRun.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
                 Create Run
               </GradientButton>
               <Button
@@ -376,42 +528,85 @@ export default function HROpeningDetailPage(_props: PageProps) {
             </div>
           </PanelCard>
 
-          <DataTable
-            loading={loading}
-            columns={[
-              {
-                key: "title",
-                header: "Run",
-                className: "col-span-6",
-                cell: (r: HrScreeningRun) => (
-                  <div className="text-sm font-medium">{r.title}</div>
-                ),
-              },
-              {
-                key: "status",
-                header: "Status",
-                className: "col-span-2",
-                cell: (r: HrScreeningRun) => (
-                  <div className="text-xs text-muted-foreground">{r.status}</div>
-                ),
-              },
-              {
-                key: "progress",
-                header: "Progress",
-                className: "col-span-4",
-                cell: (r: HrScreeningRun) => (
+          <PanelCard title="Latest run" description="Most recent run for this opening.">
+            {!lastRunId ? (
+              <EmptyStateCard
+                title="No runs yet"
+                description="Create a run to generate ranked candidates."
+                icon={Sparkles}
+                actions={
+                  <GradientButton
+                    type="button"
+                    disabled={createRun.isPending || openingQ.isPending}
+                    onClick={() => createRun.mutate()}
+                  >
+                    {createRun.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4" />
+                    )}
+                    Create Run
+                  </GradientButton>
+                }
+              />
+            ) : lastRunQ.isPending ? (
+              <div className="rounded-2xl bg-white/[0.02] p-4 ring-1 ring-white/5">
+                <div className="h-4 w-40 rounded bg-white/10" />
+                <div className="mt-3 h-3 w-64 rounded bg-white/10" />
+              </div>
+            ) : lastRunQ.isError ? (
+              <EmptyStateCard
+                title="Could not load run"
+                description={
+                  lastRunQ.error instanceof Error
+                    ? lastRunQ.error.message
+                    : "Unknown error"
+                }
+                icon={Sparkles}
+                actions={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                    onClick={() => lastRunQ.refetch()}
+                  >
+                    Retry
+                  </Button>
+                }
+              />
+            ) : lastRunQ.data ? (
+              <div className="rounded-2xl bg-white/[0.02] p-4 ring-1 ring-white/5">
+                <div className="flex items-center justify-between gap-2">
+                  <RunStatusPill status={lastRunQ.data.status} />
                   <div className="text-xs text-muted-foreground tabular-nums">
-                    {r.progress_done}/{r.progress_total}
+                    {lastRunQ.data.progress_done}/{lastRunQ.data.progress_total}
                   </div>
-                ),
-              },
-            ]}
-            rows={runs}
-            rowKey={(r: HrScreeningRun) => r.id}
-            emptyTitle="No runs yet"
-            emptyDescription="Create a run to generate ranked candidates."
-            className="overflow-hidden"
-          />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <GradientButton asChild>
+                    <Link href={`/hr/runs/${lastRunId}`}>Open run</Link>
+                  </GradientButton>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                    onClick={() => {
+                      if (lastRunQ.data?.status !== "DONE") {
+                        toast("Run not done yet");
+                        return;
+                      }
+                      enqueueExplain.mutate();
+                    }}
+                    disabled={
+                      enqueueExplain.isPending || lastRunQ.data?.status !== "DONE"
+                    }
+                  >
+                    Generate explanations
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </PanelCard>
         </TabsContent>
 
         <TabsContent value="pipeline" className="mt-4 space-y-6">

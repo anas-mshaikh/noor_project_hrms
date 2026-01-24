@@ -190,10 +190,92 @@ export type BatchStatusOut = {
   failed_count: number;
 };
 
+// Phase 2: embedding/indexing status for an opening.
+export type OpeningIndexStatusOut = {
+  opening_id: UUID;
+  total_resumes: number;
+  parsed_resumes: number;
+  parsing_failed: number;
+  embedded_resumes: number;
+  embedding_failed: number;
+};
+
+export type EnqueueOpeningEmbeddingsRequest = {
+  resume_ids?: UUID[] | null;
+  force?: boolean;
+};
+
+export type EnqueueOpeningEmbeddingsResponse = {
+  opening_id: UUID;
+  enqueued: number;
+  skipped: number;
+  rq_job_ids: string[];
+};
+
 export type ParsedResumeArtifact = {
   resume_id?: UUID;
   clean_text?: string;
   elements?: unknown[];
   metadata?: Record<string, unknown>;
   [key: string]: unknown;
+};
+
+// ----- HR (Screening Runs + Results + Explanations) -----
+export type ScreeningRunCreateRequest = {
+  view_types?: string[] | null;
+  k_per_view?: number | null;
+  pool_size?: number | null;
+  top_n?: number | null;
+};
+
+export type ScreeningRunOut = {
+  id: UUID;
+  opening_id: UUID;
+  store_id: UUID;
+  status: "QUEUED" | "RUNNING" | "DONE" | "FAILED" | "CANCELLED" | string;
+  config_json: Record<string, unknown>;
+  model_versions_json: Record<string, unknown>;
+  rq_job_id: string | null;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  progress_total: number;
+  progress_done: number;
+};
+
+export type ScreeningResultRowOut = {
+  rank: number;
+  resume_id: UUID;
+  original_filename: string;
+  resume_status: string;
+  embedding_status: string;
+  final_score: number;
+  rerank_score: number | null;
+  retrieval_score: number | null;
+  best_view_type: string | null;
+};
+
+export type ScreeningResultsPageOut = {
+  run_id: UUID;
+  status: string;
+  page: number;
+  page_size: number;
+  total_results: number;
+  results: ScreeningResultRowOut[];
+};
+
+export type ScreeningExplanationOut = {
+  run_id: UUID;
+  resume_id: UUID;
+  rank: number | null;
+  model_name: string;
+  prompt_version: string;
+  explanation_json: Record<string, unknown>;
+  created_at: string;
+};
+
+export type ScreeningEnqueueResponse = {
+  enqueued: boolean;
+  rq_job_id: string | null;
 };

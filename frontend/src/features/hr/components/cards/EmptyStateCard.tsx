@@ -11,6 +11,7 @@ type EmptyStateCardProps = {
   description?: string;
   icon?: LucideIcon;
   actions?: React.ReactNode;
+  children?: React.ReactNode;
   className?: string;
 };
 
@@ -19,6 +20,7 @@ export function EmptyStateCard({
   description,
   icon: Icon,
   actions,
+  children,
   className,
 }: EmptyStateCardProps) {
   return (
@@ -34,8 +36,8 @@ export function EmptyStateCard({
           {Icon ? <Icon className="h-5 w-5 text-foreground/80" /> : null}
         </div>
       </div>
+      {children ? <div className="mt-4">{children}</div> : null}
       {actions ? <div className="mt-4 flex flex-wrap gap-2">{actions}</div> : null}
     </GlassCard>
   );
 }
-

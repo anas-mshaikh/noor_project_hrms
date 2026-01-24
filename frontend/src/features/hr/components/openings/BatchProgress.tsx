@@ -12,6 +12,7 @@ export type BatchProgressItem = {
   id: string;
   filename: string;
   status: BatchItemStatus;
+  embedding_status?: string | null;
   error?: string | null;
 };
 
@@ -72,7 +73,15 @@ export function BatchProgress({ items, loading, className }: BatchProgressProps)
             </div>
 
             <div className="shrink-0 text-xs text-muted-foreground">
-              {it.status === "PARSED" ? "Ready" : it.status}
+              {it.status === "PARSED"
+                ? it.embedding_status === "EMBEDDED"
+                  ? "Embedded"
+                  : it.embedding_status === "FAILED"
+                    ? "Embed failed"
+                    : it.embedding_status
+                      ? `Embed: ${it.embedding_status}`
+                      : "Ready"
+                : it.status}
             </div>
           </div>
         ))
@@ -80,4 +89,3 @@ export function BatchProgress({ items, loading, className }: BatchProgressProps)
     </div>
   );
 }
-

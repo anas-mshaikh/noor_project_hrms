@@ -34,7 +34,7 @@ from app.db.session import get_db
 from app.hr.ats import ensure_default_pipeline_stages
 from app.hr.queue import get_hr_queue
 from app.hr.storage import build_resume_paths, safe_resolve_under_data_dir, save_upload_to_disk
-from app.hr.tasks import parse_resume
+from app.hr.tasks import embed_resume, parse_resume
 from app.models.models import HROpening, HRResume, HRResumeBatch, HRResumeView, Store
 
 router = APIRouter(tags=["hr"])
@@ -95,6 +95,29 @@ class BatchStatusOut(BaseModel):
     parsing_count: int
     parsed_count: int
     failed_count: int
+
+
+class EnqueueEmbeddingRequest(BaseModel):
+    """
+    Request payload for enqueuing Phase 2 embedding jobs.
+
+    Why this exists:
+    - Parsing and embedding are separate background steps.
+    - If embeddings were disabled or failed earlier, we need a safe manual
+      "retry embeddings" entrypoint to unblock Phase 3 screening runs.
+    """
+
+    # If provided, only these resumes are enqueued (must belong to the opening).
+    resume_ids: list[UUID] | None = None
+    # If true, enqueue even if a resume is already EMBEDDED (force regeneration).
+    force: bool = False
+
+
+class EnqueueEmbeddingResponse(BaseModel):
+    opening_id: UUID
+    enqueued: int
+    skipped: int
+    rq_job_ids: list[str]
 
 
 class IndexStatusOut(BaseModel):
@@ -344,6 +367,66 @@ def list_resumes(
         q = q.filter(HRResume.status == status_filter)
     rows = q.order_by(HRResume.created_at.desc()).all()
     return [_resume_out(r) for r in rows]
+
+
+@router.post(
+    "/openings/{opening_id}/resumes/embed",
+    response_model=EnqueueEmbeddingResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def enqueue_opening_embeddings(
+    opening_id: UUID,
+    body: EnqueueEmbeddingRequest,
+    db: Session = Depends(get_db),
+) -> EnqueueEmbeddingResponse:
+    """
+    Phase 2: enqueue embeddings for already-parsed resumes in an opening.
+
+    Notes:
+    - This endpoint never embeds inline; it only enqueues RQ jobs.
+    - Resumes must be PARSED (clean text artifacts exist on disk).
+    - We skip resumes that are already EMBEDDED unless `force=true`.
+    """
+    _require_opening(db, opening_id)
+
+    q = db.query(HRResume).filter(HRResume.opening_id == opening_id)
+    if body.resume_ids:
+        q = q.filter(HRResume.id.in_(body.resume_ids))
+    rows = q.order_by(HRResume.created_at.desc()).all()
+
+    enqueued = 0
+    skipped = 0
+    job_ids: list[str] = []
+
+    hrq = get_hr_queue()
+
+    for resume in rows:
+        if resume.status != "PARSED":
+            skipped += 1
+            continue
+
+        if not body.force and resume.embedding_status == "EMBEDDED":
+            skipped += 1
+            continue
+
+        # Reset state so the UI reflects that embeddings are pending.
+        resume.embedding_status = "PENDING"
+        resume.embedding_error = None
+        resume.embedded_at = None
+        db.add(resume)
+
+        job = hrq.enqueue(embed_resume, str(resume.id))
+        job_ids.append(job.id)
+        enqueued += 1
+
+    db.commit()
+
+    return EnqueueEmbeddingResponse(
+        opening_id=opening_id,
+        enqueued=enqueued,
+        skipped=skipped,
+        rq_job_ids=job_ids,
+    )
 
 
 @router.get(
