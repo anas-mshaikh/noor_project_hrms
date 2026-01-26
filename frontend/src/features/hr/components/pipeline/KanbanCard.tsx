@@ -3,7 +3,6 @@
 import * as React from "react";
 import { MoreHorizontal } from "lucide-react";
 
-import type { HrPipelineCard, HrPipelineStage } from "@/features/hr/mock/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,11 +14,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScorePill } from "@/features/hr/components/candidates/ScorePill";
 import { TagChip } from "@/features/hr/components/candidates/TagChip";
+import type {
+  PipelineCardUi,
+  PipelineStageUi,
+} from "@/features/hr/components/pipeline/types";
 
 type KanbanCardProps = {
-  card: HrPipelineCard;
-  stages: HrPipelineStage[];
-  onMove?: (cardId: string, stageKey: HrPipelineStage["key"]) => void;
+  card: PipelineCardUi;
+  stages: PipelineStageUi[];
+  onMove?: (cardId: string, stageId: string) => void;
   onOpen?: () => void;
 };
 
@@ -36,9 +39,9 @@ export function KanbanCard({ card, stages, onMove, onOpen }: KanbanCardProps) {
           type="button"
           onClick={onOpen}
           className="min-w-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-violet-300/60 rounded-lg"
-          aria-label={`Open candidate ${card.name}`}
+          aria-label={`Open application ${card.title}`}
         >
-          <div className="truncate text-sm font-medium">{card.name}</div>
+          <div className="truncate text-sm font-medium">{card.title}</div>
           <div className="mt-1 flex flex-wrap gap-2">
             {card.tags.slice(0, 2).map((t) => (
               <TagChip key={t} className="bg-white/[0.03]">
@@ -49,7 +52,7 @@ export function KanbanCard({ card, stages, onMove, onOpen }: KanbanCardProps) {
         </button>
 
         <div className="flex items-center gap-2">
-          <ScorePill score={card.score} />
+          {typeof card.score === "number" ? <ScorePill score={card.score} /> : null}
           {onMove ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -63,15 +66,16 @@ export function KanbanCard({ card, stages, onMove, onOpen }: KanbanCardProps) {
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                {stages
-                  .slice()
-                  .sort((a, b) => a.sort_order - b.sort_order)
-                  .map((s) => (
-                    <DropdownMenuItem
-                      key={s.key}
-                      onClick={() => onMove(card.id, s.key)}
-                    >
+                <DropdownMenuContent align="end" className="w-44">
+                  {stages
+                    .slice()
+                    .sort((a, b) => a.sort_order - b.sort_order)
+                    .filter((s) => !String(s.id).startsWith("__"))
+                    .map((s) => (
+                      <DropdownMenuItem
+                        key={s.id}
+                        onClick={() => onMove(card.id, s.id)}
+                      >
                       Move to {s.name}
                     </DropdownMenuItem>
                   ))}
@@ -85,4 +89,3 @@ export function KanbanCard({ card, stages, onMove, onOpen }: KanbanCardProps) {
     </div>
   );
 }
-

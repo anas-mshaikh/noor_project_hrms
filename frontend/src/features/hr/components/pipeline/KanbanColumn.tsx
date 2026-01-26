@@ -2,15 +2,18 @@
 
 import * as React from "react";
 
-import type { HrPipelineCard, HrPipelineStage } from "@/features/hr/mock/types";
 import { GlassCard } from "@/features/hr/components/cards/GlassCard";
 import { KanbanCard } from "@/features/hr/components/pipeline/KanbanCard";
+import type {
+  PipelineCardUi,
+  PipelineStageUi,
+} from "@/features/hr/components/pipeline/types";
 
 type KanbanColumnProps = {
-  stage: HrPipelineStage;
-  cards: HrPipelineCard[];
-  stages: HrPipelineStage[];
-  onMove?: (cardId: string, stageKey: HrPipelineStage["key"]) => void;
+  stage: PipelineStageUi;
+  cards: PipelineCardUi[];
+  stages: PipelineStageUi[];
+  onMove?: (cardId: string, stageId: string) => void;
   onOpenCandidate?: (cardId: string) => void;
 };
 
@@ -50,4 +53,3 @@ export function KanbanColumn({
     </GlassCard>
   );
 }
-

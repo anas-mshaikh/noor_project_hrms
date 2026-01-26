@@ -1,13 +1,22 @@
 import { apiJson, apiForm } from "@/lib/api";
 import type {
+  ApplicationCreateRequest,
+  ApplicationOut,
+  ApplicationUpdateRequest,
   BatchStatusOut,
+  CreateApplicationsFromRunRequest,
+  CreateApplicationsResponse,
   EnqueueOpeningEmbeddingsRequest,
   EnqueueOpeningEmbeddingsResponse,
+  NoteCreateRequest,
+  NoteOut,
   OpeningIndexStatusOut,
   OpeningCreateRequest,
   OpeningOut,
   OpeningUpdateRequest,
   ParsedResumeArtifact,
+  PipelineStageOut,
+  PipelineStageUpdateRequest,
   ResumeOut,
   ScreeningEnqueueResponse,
   ScreeningExplanationOut,
@@ -242,4 +251,132 @@ export async function recomputeSingleExplanation(
       ...init,
     }
   );
+}
+
+// ------------------------------------------------------------
+// HR Phase 5: ATS (Pipeline + Applications + Notes)
+// ------------------------------------------------------------
+
+export async function listPipelineStages(
+  openingId: UUID,
+  init?: RequestInit
+): Promise<PipelineStageOut[]> {
+  return apiJson<PipelineStageOut[]>(
+    `/api/v1/openings/${openingId}/pipeline-stages`,
+    init
+  );
+}
+
+export async function updatePipelineStage(
+  openingId: UUID,
+  stageId: UUID,
+  payload: PipelineStageUpdateRequest,
+  init?: RequestInit
+): Promise<PipelineStageOut> {
+  return apiJson<PipelineStageOut>(
+    `/api/v1/openings/${openingId}/pipeline-stages/${stageId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload ?? {}),
+      ...init,
+    }
+  );
+}
+
+export async function createApplicationsFromRun(
+  runId: UUID,
+  payload: CreateApplicationsFromRunRequest,
+  init?: RequestInit
+): Promise<CreateApplicationsResponse> {
+  return apiJson<CreateApplicationsResponse>(
+    `/api/v1/screening-runs/${runId}/applications`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload ?? {}),
+      ...init,
+    }
+  );
+}
+
+export async function createApplication(
+  openingId: UUID,
+  payload: ApplicationCreateRequest,
+  init?: RequestInit
+): Promise<ApplicationOut> {
+  return apiJson<ApplicationOut>(`/api/v1/openings/${openingId}/applications`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {}),
+    ...init,
+  });
+}
+
+export async function listApplications(
+  openingId: UUID,
+  args?: { stageId?: UUID | null; status?: string | null },
+  init?: RequestInit
+): Promise<ApplicationOut[]> {
+  const qs = new URLSearchParams();
+  if (args?.stageId) qs.set("stage_id", String(args.stageId));
+  if (args?.status) qs.set("status", String(args.status));
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiJson<ApplicationOut[]>(
+    `/api/v1/openings/${openingId}/applications${suffix}`,
+    init
+  );
+}
+
+export async function updateApplication(
+  applicationId: UUID,
+  payload: ApplicationUpdateRequest,
+  init?: RequestInit
+): Promise<ApplicationOut> {
+  return apiJson<ApplicationOut>(`/api/v1/applications/${applicationId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload ?? {}),
+    ...init,
+  });
+}
+
+export async function rejectApplication(
+  applicationId: UUID,
+  init?: RequestInit
+): Promise<ApplicationOut> {
+  return apiJson<ApplicationOut>(
+    `/api/v1/applications/${applicationId}/reject`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+      ...init,
+    }
+  );
+}
+
+export async function hireApplication(
+  applicationId: UUID,
+  init?: RequestInit
+): Promise<ApplicationOut> {
+  return apiJson<ApplicationOut>(`/api/v1/applications/${applicationId}/hire`, {
+    method: "POST",
+    body: JSON.stringify({}),
+    ...init,
+  });
+}
+
+export async function listApplicationNotes(
+  applicationId: UUID,
+  init?: RequestInit
+): Promise<NoteOut[]> {
+  return apiJson<NoteOut[]>(`/api/v1/applications/${applicationId}/notes`, init);
+}
+
+export async function createApplicationNote(
+  applicationId: UUID,
+  payload: NoteCreateRequest,
+  init?: RequestInit
+): Promise<NoteOut> {
+  return apiJson<NoteOut>(`/api/v1/applications/${applicationId}/notes`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {}),
+    ...init,
+  });
 }

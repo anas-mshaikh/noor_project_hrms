@@ -21,22 +21,24 @@ import { ResumeDropzone } from "@/features/hr/components/openings/ResumeDropzone
 import { BatchProgress, type BatchProgressItem } from "@/features/hr/components/openings/BatchProgress";
 import { ParsedResumeSheet } from "@/features/hr/components/openings/ParsedResumeSheet";
 import { KanbanBoard } from "@/features/hr/components/pipeline/KanbanBoard";
+import { ApplicationDrawer } from "@/features/hr/components/pipeline/ApplicationDrawer";
 import { RunStatusPill } from "@/features/hr/components/runs/RunStatusPill";
 import { useMockLoading } from "@/features/hr/hooks/useMockLoading";
 import { useReducedMotion } from "@/features/hr/hooks/useReducedMotion";
 import { useOpeningIndexStatus } from "@/features/hr/hooks/useOpeningIndexStatus";
+import { usePipelineStages } from "@/features/hr/hooks/usePipelineStages";
+import { useApplications } from "@/features/hr/hooks/useApplications";
 import { staggerContainer, staggerItem } from "@/features/hr/lib/motion";
 import {
   getRunResults,
-  HR_PIPELINE_CARDS,
-  HR_PIPELINE_STAGES,
   HR_RUNS,
 } from "@/features/hr/mock/data";
 import type { HrOpening } from "@/features/hr/mock/types";
 import { useOpening } from "@/features/hr/hooks/useOpening";
 import { useResumes } from "@/features/hr/hooks/useResumes";
 import { useBatchPoll } from "@/features/hr/hooks/useBatchPoll";
-import type { ResumeOut, UUID } from "@/lib/types";
+import type { PipelineCardUi, PipelineStageUi } from "@/features/hr/components/pipeline/types";
+import type { ApplicationOut, ResumeOut, UUID } from "@/lib/types";
 import {
   createScreeningRun,
   enqueueOpeningEmbeddings,
@@ -192,6 +194,47 @@ export default function HROpeningDetailPage(_props: PageProps) {
 
   const { list: resumesQ, upload: uploadMutation } = useResumes(openingId);
   const indexQ = useOpeningIndexStatus(openingId);
+
+  // ATS / Pipeline (Phase 5): stages + applications for this opening.
+  const stagesQ = usePipelineStages(openingId);
+  const appsQ = useApplications(openingId);
+  const [selectedAppId, setSelectedAppId] = React.useState<UUID | null>(null);
+  const [appDrawerOpen, setAppDrawerOpen] = React.useState(false);
+  const selectedApplication = React.useMemo(() => {
+    if (!selectedAppId) return null;
+    return (appsQ.list.data ?? []).find((a) => a.id === selectedAppId) ?? null;
+  }, [appsQ.list.data, selectedAppId]);
+
+  const pipelineStagesUi: PipelineStageUi[] = React.useMemo(() => {
+    const stages = (stagesQ.data ?? []).map((s) => ({
+      id: s.id,
+      name: s.name,
+      sort_order: s.sort_order,
+      is_terminal: s.is_terminal,
+    }));
+    const hasUnassigned = (appsQ.list.data ?? []).some((a) => !a.stage_id);
+    return hasUnassigned
+      ? [
+          { id: "__unassigned__", name: "Unassigned", sort_order: -1, is_terminal: false },
+          ...stages,
+        ]
+      : stages;
+  }, [stagesQ.data, appsQ.list.data]);
+
+  const pipelineCardsUi: PipelineCardUi[] = React.useMemo(() => {
+    return (appsQ.list.data ?? []).map((a) => ({
+      id: a.id,
+      stageId: a.stage_id ?? "__unassigned__",
+      title: a.resume.original_filename,
+      tags: [
+        a.resume.status,
+        a.status === "ACTIVE" ? "Active" : a.status,
+        a.source_run_id ? "From run" : "Manual",
+      ].filter(Boolean),
+      application: a,
+    }));
+  }, [appsQ.list.data]);
+
   const enqueueEmbed = useMutation({
     mutationFn: () => enqueueOpeningEmbeddings(openingId as UUID, { force: false }),
     onSuccess: (resp) => {
@@ -228,6 +271,15 @@ export default function HROpeningDetailPage(_props: PageProps) {
     // Refresh resume list once batch is done.
     resumesQ.refetch();
   }, [batchQ.done]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
+    if (!openingQ.data) return;
+    try {
+      localStorage.setItem(`hr:lastOpening:${openingQ.data.store_id}`, openingQ.data.id);
+    } catch {
+      // ignore
+    }
+  }, [openingQ.data]);
 
   return (
     <HrPageShell>
@@ -610,7 +662,115 @@ export default function HROpeningDetailPage(_props: PageProps) {
         </TabsContent>
 
         <TabsContent value="pipeline" className="mt-4 space-y-6">
-          <KanbanBoard stages={HR_PIPELINE_STAGES} cards={HR_PIPELINE_CARDS} />
+          {stagesQ.isError ? (
+            <EmptyStateCard
+              title="Could not load pipeline"
+              description={
+                stagesQ.error instanceof Error
+                  ? stagesQ.error.message
+                  : "Unknown error"
+              }
+              icon={Sparkles}
+              actions={
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                  onClick={() => {
+                    stagesQ.refetch();
+                    appsQ.list.refetch();
+                  }}
+                >
+                  Retry
+                </Button>
+              }
+            />
+          ) : (stagesQ.data?.length ?? 0) === 0 && !stagesQ.isPending ? (
+            <EmptyStateCard
+              title="No pipeline stages found"
+              description="This opening has no stages yet. Try refreshing or recreate the opening defaults."
+              icon={Sparkles}
+              actions={
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                  onClick={() => stagesQ.refetch()}
+                >
+                  Retry
+                </Button>
+              }
+            />
+          ) : (
+            <>
+              <KanbanBoard
+                stages={pipelineStagesUi}
+                cards={pipelineCardsUi}
+                onMove={(cardId, stageId) => {
+                  appsQ.moveStage.mutate(
+                    { applicationId: cardId as UUID, stageId: stageId as UUID },
+                    {
+                      onSuccess: () => toast("Moved"),
+                      onError: (err) =>
+                        toast("Could not move", {
+                          description:
+                            err instanceof Error ? err.message : "Unknown error",
+                        }),
+                    }
+                  );
+                }}
+                onOpenCandidate={(cardId) => {
+                  setSelectedAppId(cardId as UUID);
+                  setAppDrawerOpen(true);
+                }}
+              />
+
+              <ApplicationDrawer
+                open={appDrawerOpen}
+                onOpenChange={setAppDrawerOpen}
+                application={selectedApplication as ApplicationOut | null}
+                stages={stagesQ.data ?? []}
+                onMoveStage={(applicationId, stageId) => {
+                  appsQ.moveStage.mutate(
+                    { applicationId, stageId },
+                    {
+                      onSuccess: () => toast("Moved"),
+                      onError: (err) =>
+                        toast("Could not move", {
+                          description:
+                            err instanceof Error ? err.message : "Unknown error",
+                        }),
+                    }
+                  );
+                }}
+                onReject={(applicationId) => {
+                  appsQ.reject.mutate(applicationId, {
+                    onSuccess: () => toast("Rejected"),
+                    onError: (err) =>
+                      toast("Could not reject", {
+                        description:
+                          err instanceof Error ? err.message : "Unknown error",
+                      }),
+                  });
+                }}
+                onHire={(applicationId) => {
+                  appsQ.hire.mutate(applicationId, {
+                    onSuccess: () => toast("Marked as hired"),
+                    onError: (err) =>
+                      toast("Could not hire", {
+                        description:
+                          err instanceof Error ? err.message : "Unknown error",
+                      }),
+                  });
+                }}
+                busy={
+                  appsQ.moveStage.isPending ||
+                  appsQ.reject.isPending ||
+                  appsQ.hire.isPending
+                }
+              />
+            </>
+          )}
         </TabsContent>
       </Tabs>
     </HrPageShell>

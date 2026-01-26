@@ -2,13 +2,13 @@
 
 import * as React from "react";
 
-import type { HrPipelineCard, HrPipelineStage } from "@/features/hr/mock/types";
 import { KanbanColumn } from "@/features/hr/components/pipeline/KanbanColumn";
+import type { PipelineCardUi, PipelineStageUi } from "@/features/hr/components/pipeline/types";
 
 type KanbanBoardProps = {
-  stages: HrPipelineStage[];
-  cards: HrPipelineCard[];
-  onMove?: (cardId: string, stageKey: HrPipelineStage["key"]) => void;
+  stages: PipelineStageUi[];
+  cards: PipelineCardUi[];
+  onMove?: (cardId: string, stageId: string) => void;
   onOpenCandidate?: (cardId: string) => void;
 };
 
@@ -25,9 +25,9 @@ export function KanbanBoard({
         .sort((a, b) => a.sort_order - b.sort_order)
         .map((stage) => (
           <KanbanColumn
-            key={stage.key}
+            key={stage.id}
             stage={stage}
-            cards={cards.filter((c) => c.stage === stage.key)}
+            cards={cards.filter((c) => c.stageId === stage.id)}
             stages={stages}
             onMove={onMove}
             onOpenCandidate={onOpenCandidate}
@@ -36,4 +36,3 @@ export function KanbanBoard({
     </div>
   );
 }
-

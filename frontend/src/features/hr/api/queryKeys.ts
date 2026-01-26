@@ -22,4 +22,9 @@ export const hrQueryKeys = {
     ["hr", "screening-results", runId, page, pageSize] as const,
   screeningExplanation: (runId: UUID | null, resumeId: UUID | null) =>
     ["hr", "screening-explanation", runId, resumeId] as const,
+  pipelineStages: (openingId: UUID | null) =>
+    ["hr", "pipeline-stages", openingId] as const,
+  applications: (openingId: UUID | null) => ["hr", "applications", openingId] as const,
+  applicationNotes: (applicationId: UUID | null) =>
+    ["hr", "application-notes", applicationId] as const,
 };

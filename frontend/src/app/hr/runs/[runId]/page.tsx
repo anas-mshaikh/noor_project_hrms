@@ -24,7 +24,11 @@ import { useScreeningRun } from "@/features/hr/hooks/useScreeningRun";
 import { useScreeningResults } from "@/features/hr/hooks/useScreeningResults";
 import { useExplainActions } from "@/features/hr/hooks/useExplainActions";
 import { hrQueryKeys } from "@/features/hr/api/queryKeys";
-import { cancelScreeningRun, retryScreeningRun } from "@/features/hr/api/hr";
+import {
+  cancelScreeningRun,
+  createApplicationsFromRun,
+  retryScreeningRun,
+} from "@/features/hr/api/hr";
 import { toScorePercent } from "@/features/hr/lib/scoring";
 import type { ScreeningResultRowOut, UUID } from "@/lib/types";
 
@@ -80,6 +84,30 @@ export default function HRRunDetailPage() {
     },
     onError: (err) => {
       toast("Could not retry run", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    },
+  });
+
+  const addToPipelineMut = useMutation({
+    mutationFn: async () => {
+      if (!runId) throw new Error("Missing run id");
+      if (!run) throw new Error("Run not loaded yet");
+      if (run.status !== "DONE") throw new Error("Run is not done yet");
+      return createApplicationsFromRun(runId, { top_n: 10, stage_name: "Screened" });
+    },
+    onSuccess: (resp) => {
+      toast("Added to pipeline", {
+        description: `${resp.created_count} created, ${resp.skipped_count} skipped`,
+      });
+      if (run?.opening_id) {
+        queryClient.invalidateQueries({
+          queryKey: hrQueryKeys.applications(run.opening_id),
+        });
+      }
+    },
+    onError: (err) => {
+      toast("Could not add to pipeline", {
         description: err instanceof Error ? err.message : "Unknown error",
       });
     },
@@ -420,7 +448,8 @@ export default function HRRunDetailPage() {
               <Button
                 type="button"
                 className="rounded-2xl bg-white/[0.06] hover:bg-white/[0.09]"
-                onClick={() => toast("Coming soon", { description: "Add top to pipeline" })}
+                onClick={() => addToPipelineMut.mutate()}
+                disabled={!run || run.status !== "DONE" || addToPipelineMut.isPending}
               >
                 Add top 10 to pipeline
               </Button>

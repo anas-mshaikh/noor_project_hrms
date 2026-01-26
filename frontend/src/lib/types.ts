@@ -279,3 +279,73 @@ export type ScreeningEnqueueResponse = {
   enqueued: boolean;
   rq_job_id: string | null;
 };
+
+// ----- HR (ATS / Pipeline) -----
+
+export type PipelineStageOut = {
+  id: UUID;
+  opening_id: UUID;
+  name: string;
+  sort_order: number;
+  is_terminal: boolean;
+  created_at: string;
+};
+
+export type PipelineStageUpdateRequest = {
+  name?: string | null;
+  sort_order?: number | null;
+  is_terminal?: boolean | null;
+};
+
+export type ResumeMetaOut = {
+  id: UUID;
+  original_filename: string;
+  status: string;
+  error: string | null;
+};
+
+export type ApplicationOut = {
+  id: UUID;
+  opening_id: UUID;
+  store_id: UUID;
+  resume_id: UUID;
+  stage_id: UUID | null;
+  status: "ACTIVE" | "REJECTED" | "HIRED" | string;
+  source_run_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+  resume: ResumeMetaOut;
+};
+
+export type CreateApplicationsFromRunRequest = {
+  resume_ids?: UUID[] | null;
+  top_n?: number | null;
+  stage_name?: string | null;
+};
+
+export type CreateApplicationsResponse = {
+  created_count: number;
+  skipped_count: number;
+  application_ids: UUID[];
+};
+
+export type ApplicationCreateRequest = {
+  resume_id: UUID;
+  stage_name?: string | null;
+};
+
+export type ApplicationUpdateRequest = {
+  stage_id?: UUID | null;
+  stage_name?: string | null;
+};
+
+export type NoteCreateRequest = {
+  note: string;
+};
+
+export type NoteOut = {
+  id: UUID;
+  application_id: UUID;
+  note: string;
+  created_at: string;
+};
