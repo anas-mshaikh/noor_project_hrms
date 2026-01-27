@@ -10,6 +10,14 @@ engine = create_engine(
     settings.database_url,
     echo=settings.sqlalchemy_echo,
     pool_pre_ping=True,
+    # Prefer explicit schemas on SQLAlchemy models, but keep a safe search_path
+    # to protect any legacy raw SQL (or extension objects) that may rely on it.
+    connect_args={
+        "options": (
+            "-csearch_path="
+            "core,vision,attendance,hr,mobile,face,imports,analytics,public"
+        )
+    },
 )
 
 

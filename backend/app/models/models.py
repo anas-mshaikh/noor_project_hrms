@@ -13,6 +13,7 @@ from app.db.base import Base
 
 class Organization(Base):
     __tablename__ = "organizations"
+    __table_args__ = {"schema": "core"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -29,13 +30,14 @@ class Organization(Base):
 
 class Store(Base):
     __tablename__ = "stores"
+    __table_args__ = {"schema": "core"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     org_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.organizations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -75,13 +77,14 @@ class Store(Base):
 
 class Camera(Base):
     __tablename__ = "cameras"
+    __table_args__ = {"schema": "vision"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     store_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -109,6 +112,7 @@ class Employee(Base):
             "store_id", "employee_code", name="uq_employees_store_employee_code"
         ),
         sa.Index("ix_employees_store_active", "store_id", "is_active"),
+        {"schema": "core"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -116,7 +120,7 @@ class Employee(Base):
     )
     store_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -157,13 +161,14 @@ class Employee(Base):
 
 class EmployeeFace(Base):
     __tablename__ = "employee_faces"
+    __table_args__ = {"schema": "face"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("employees.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.employees.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -209,6 +214,7 @@ class MobileAccount(Base):
         # Common query patterns: list active users for a store, or lookup by employee_id.
         sa.Index("ix_mobile_accounts_store_active", "store_id", "active"),
         sa.Index("ix_mobile_accounts_employee_id", "employee_id"),
+        {"schema": "mobile"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -217,19 +223,19 @@ class MobileAccount(Base):
 
     org_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.organizations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     store_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("employees.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.employees.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -264,6 +270,7 @@ class MobileAccount(Base):
 
 class Video(Base):
     __tablename__ = "videos"
+    __table_args__ = {"schema": "vision"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -271,13 +278,13 @@ class Video(Base):
 
     store_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     camera_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("cameras.id", ondelete="CASCADE"),
+        sa.ForeignKey("vision.cameras.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -314,6 +321,7 @@ class Job(Base):
             "status in ('PENDING','RUNNING','POSTPROCESSING','DONE','FAILED','CANCELED')",
             name="ck_jobs_status",
         ),
+        {"schema": "vision"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -322,7 +330,7 @@ class Job(Base):
 
     video_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("videos.id", ondelete="CASCADE"),
+        sa.ForeignKey("vision.videos.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -377,6 +385,7 @@ class Track(Base):
             "assigned_type in ('employee','visitor','unknown')",
             name="ck_tracks_assigned_type",
         ),
+        {"schema": "vision"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -385,7 +394,7 @@ class Track(Base):
 
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("jobs.id", ondelete="CASCADE"),
+        sa.ForeignKey("vision.jobs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -408,7 +417,7 @@ class Track(Base):
     )
     employee_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("employees.id", ondelete="SET NULL"),
+        sa.ForeignKey("core.employees.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -434,6 +443,7 @@ class Event(Base):
         ),
         sa.Index("ix_events_job_id_ts", "job_id", "ts"),
         sa.Index("ix_events_employee_id_ts", "employee_id", "ts"),
+        {"schema": "vision"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -442,7 +452,7 @@ class Event(Base):
 
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("jobs.id", ondelete="CASCADE"),
+        sa.ForeignKey("vision.jobs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -456,7 +466,7 @@ class Event(Base):
 
     employee_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("employees.id", ondelete="SET NULL"),
+        sa.ForeignKey("core.employees.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -491,6 +501,7 @@ class AttendanceDaily(Base):
             "employee_id",
             name="uq_attendance_store_date_employee",
         ),
+        {"schema": "attendance"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -499,7 +510,7 @@ class AttendanceDaily(Base):
 
     store_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -507,7 +518,7 @@ class AttendanceDaily(Base):
 
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("employees.id", ondelete="RESTRICT"),
+        sa.ForeignKey("core.employees.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
@@ -542,6 +553,7 @@ class MetricsHourly(Base):
     __tablename__ = "metrics_hourly"
     __table_args__ = (
         sa.UniqueConstraint("job_id", "hour_start_ts", name="uq_metrics_job_hour"),
+        {"schema": "vision"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -550,7 +562,7 @@ class MetricsHourly(Base):
 
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("jobs.id", ondelete="CASCADE"),
+        sa.ForeignKey("vision.jobs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -579,6 +591,7 @@ class Artifact(Base):
     __tablename__ = "artifacts"
     __table_args__ = (
         sa.CheckConstraint("type in ('csv','pdf','json')", name="ck_artifacts_type"),
+        {"schema": "vision"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -587,7 +600,7 @@ class Artifact(Base):
 
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("jobs.id", ondelete="CASCADE"),
+        sa.ForeignKey("vision.jobs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -629,6 +642,7 @@ class Dataset(Base):
             "sync_status in ('DISABLED','PENDING','SYNCED','FAILED')",
             name="ck_datasets_sync_status",
         ),
+        {"schema": "imports"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -638,7 +652,7 @@ class Dataset(Base):
     month_key: Mapped[str] = mapped_column(sa.String(16), nullable=False, index=True)
     store_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -676,26 +690,28 @@ class MonthState(Base):
     """
 
     __tablename__ = "month_state"
+    __table_args__ = {"schema": "imports"}
 
     month_key: Mapped[str] = mapped_column(sa.String(16), primary_key=True)
     published_dataset_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("datasets.id", ondelete="SET NULL"),
+        sa.ForeignKey("imports.datasets.id", ondelete="SET NULL"),
         nullable=True,
     )
 
 
 class PosSummary(Base):
     __tablename__ = "pos_summary"
+    __table_args__ = {"schema": "analytics"}
 
     dataset_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("datasets.id", ondelete="CASCADE"),
+        sa.ForeignKey("imports.datasets.id", ondelete="CASCADE"),
         primary_key=True,
     )
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("employees.id", ondelete="RESTRICT"),
+        sa.ForeignKey("core.employees.id", ondelete="RESTRICT"),
         primary_key=True,
     )
 
@@ -710,15 +726,16 @@ class PosSummary(Base):
 
 class AttendanceSummary(Base):
     __tablename__ = "attendance_summary"
+    __table_args__ = {"schema": "attendance"}
 
     dataset_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("datasets.id", ondelete="CASCADE"),
+        sa.ForeignKey("imports.datasets.id", ondelete="CASCADE"),
         primary_key=True,
     )
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("employees.id", ondelete="RESTRICT"),
+        sa.ForeignKey("core.employees.id", ondelete="RESTRICT"),
         primary_key=True,
     )
 
@@ -746,12 +763,13 @@ class HROpening(Base):
     """
 
     __tablename__ = "hr_openings"
+    __table_args__ = {"schema": "hr"}
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     store_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -809,18 +827,19 @@ class HRResumeBatch(Base):
     """
 
     __tablename__ = "hr_resume_batches"
+    __table_args__ = {"schema": "hr"}
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     opening_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_openings.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_openings.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     store_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -848,25 +867,26 @@ class HRResume(Base):
     """
 
     __tablename__ = "hr_resumes"
+    __table_args__ = {"schema": "hr"}
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
     opening_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_openings.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_openings.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     store_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     batch_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_resume_batches.id", ondelete="SET NULL"),
+        sa.ForeignKey("hr.hr_resume_batches.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -944,6 +964,7 @@ class HRResumeView(Base):
         sa.UniqueConstraint(
             "resume_id", "view_type", name="uq_hr_resume_views_resume_type"
         ),
+        {"schema": "hr"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -951,7 +972,7 @@ class HRResumeView(Base):
     )
     resume_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_resumes.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_resumes.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1002,19 +1023,20 @@ class HRScreeningRun(Base):
     """
 
     __tablename__ = "hr_screening_runs"
+    __table_args__ = {"schema": "hr"}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     opening_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_openings.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_openings.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     store_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1075,16 +1097,17 @@ class HRScreeningResult(Base):
     __tablename__ = "hr_screening_results"
     __table_args__ = (
         sa.Index("ix_hr_screening_results_run_rank", "run_id", "rank"),
+        {"schema": "hr"},
     )
 
     run_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_screening_runs.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_screening_runs.id", ondelete="CASCADE"),
         primary_key=True,
     )
     resume_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_resumes.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_resumes.id", ondelete="CASCADE"),
         primary_key=True,
     )
 
@@ -1129,16 +1152,17 @@ class HRScreeningExplanation(Base):
     __tablename__ = "hr_screening_explanations"
     __table_args__ = (
         sa.Index("ix_hr_screening_explanations_run_created_at", "run_id", "created_at"),
+        {"schema": "hr"},
     )
 
     run_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_screening_runs.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_screening_runs.id", ondelete="CASCADE"),
         primary_key=True,
     )
     resume_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_resumes.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_resumes.id", ondelete="CASCADE"),
         primary_key=True,
     )
 
@@ -1184,6 +1208,7 @@ class HRPipelineStage(Base):
             "opening_id", "name", name="uq_hr_pipeline_stages_opening_name"
         ),
         sa.Index("ix_hr_pipeline_stages_opening_sort", "opening_id", "sort_order"),
+        {"schema": "hr"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1191,7 +1216,7 @@ class HRPipelineStage(Base):
     )
     opening_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_openings.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_openings.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1233,6 +1258,7 @@ class HRApplication(Base):
         sa.Index("ix_hr_applications_stage_id", "stage_id"),
         sa.Index("ix_hr_applications_store_id", "store_id"),
         sa.Index("ix_hr_applications_status", "status"),
+        {"schema": "hr"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1241,18 +1267,18 @@ class HRApplication(Base):
 
     opening_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_openings.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_openings.id", ondelete="CASCADE"),
         nullable=False,
     )
     store_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     resume_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_resumes.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_resumes.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1260,7 +1286,7 @@ class HRApplication(Base):
     # Phase 6: once a HIRED application is converted, link it to the canonical Employee row.
     employee_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("employees.id", ondelete="SET NULL"),
+        sa.ForeignKey("core.employees.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -1271,7 +1297,7 @@ class HRApplication(Base):
 
     stage_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_pipeline_stages.id", ondelete="SET NULL"),
+        sa.ForeignKey("hr.hr_pipeline_stages.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -1282,7 +1308,7 @@ class HRApplication(Base):
 
     source_run_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_screening_runs.id", ondelete="SET NULL"),
+        sa.ForeignKey("hr.hr_screening_runs.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -1330,6 +1356,7 @@ class HRApplicationNote(Base):
             "application_id",
             "created_at",
         ),
+        {"schema": "hr"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1337,7 +1364,7 @@ class HRApplicationNote(Base):
     )
     application_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_applications.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_applications.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1368,6 +1395,7 @@ class HROnboardingPlan(Base):
         sa.Index("ix_hr_onboarding_plans_employee_id", "employee_id"),
         sa.Index("ix_hr_onboarding_plans_store_id", "store_id"),
         sa.Index("ix_hr_onboarding_plans_status", "status"),
+        {"schema": "hr"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1375,19 +1403,19 @@ class HROnboardingPlan(Base):
     )
     store_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("employees.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.employees.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     application_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_applications.id", ondelete="SET NULL"),
+        sa.ForeignKey("hr.hr_applications.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -1435,6 +1463,7 @@ class HROnboardingTask(Base):
     __table_args__ = (
         sa.Index("ix_hr_onboarding_tasks_plan_sort", "plan_id", "sort_order"),
         sa.Index("ix_hr_onboarding_tasks_plan_status", "plan_id", "status"),
+        {"schema": "hr"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1442,7 +1471,7 @@ class HROnboardingTask(Base):
     )
     plan_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_onboarding_plans.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_onboarding_plans.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1500,6 +1529,7 @@ class HREmployeeDocument(Base):
         sa.Index("ix_hr_employee_documents_employee_id", "employee_id"),
         sa.Index("ix_hr_employee_documents_plan_id", "plan_id"),
         sa.Index("ix_hr_employee_documents_doc_type", "doc_type"),
+        {"schema": "hr"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1507,13 +1537,13 @@ class HREmployeeDocument(Base):
     )
     plan_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("hr_onboarding_plans.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr.hr_onboarding_plans.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("employees.id", ondelete="CASCADE"),
+        sa.ForeignKey("core.employees.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

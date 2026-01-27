@@ -23,16 +23,35 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_schemas=True,
+        version_table_schema="public",
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def run_migrations_online() -> None:
-    connectable = create_engine(settings.database_url, poolclass=pool.NullPool)
+    connectable = create_engine(
+        settings.database_url,
+        poolclass=pool.NullPool,
+        connect_args={
+            "options": (
+                "-csearch_path="
+                "core,vision,attendance,hr,mobile,face,imports,analytics,public"
+            )
+        },
+    )
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata, compare_type=True
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+            include_schemas=True,
+            version_table_schema="public",
+            # `alembic_version` is managed by Alembic and should never be autogen'd.
+            include_object=lambda obj, name, type_, reflected, compare_to: not (
+                type_ == "table" and name == "alembic_version"
+            ),
         )
         with context.begin_transaction():
             context.run_migrations()
