@@ -37,7 +37,7 @@ def run_migrations_online() -> None:
         connect_args={
             "options": (
                 "-csearch_path="
-                "core,vision,attendance,hr,mobile,face,imports,analytics,public"
+                "core,vision,attendance,hr,mobile,face,imports,analytics,skills,work,public"
             )
         },
     )

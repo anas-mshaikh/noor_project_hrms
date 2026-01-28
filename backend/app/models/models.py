@@ -73,6 +73,8 @@ class Store(Base):
     hr_applications: Mapped[list["HRApplication"]] = relationship(
         back_populates="store"
     )
+    # Work module (Phase 1): operational tasks (store-scoped).
+    work_tasks: Mapped[list["WorkTask"]] = relationship(back_populates="store")
 
 
 class Camera(Base):
@@ -155,6 +157,12 @@ class Employee(Base):
     )
     # HR module (Phase 6): onboarding plans created from HIRED ATS applications.
     onboarding_plans: Mapped[list["HROnboardingPlan"]] = relationship(
+        back_populates="employee"
+    )
+    # Skills module (Phase 1): employee skill proficiency.
+    skills: Mapped[list["EmployeeSkill"]] = relationship(back_populates="employee")
+    # Work module (Phase 1): assignment log for operational tasks.
+    task_assignments: Mapped[list["TaskAssignment"]] = relationship(
         back_populates="employee"
     )
 
@@ -1569,3 +1577,228 @@ class HREmployeeDocument(Base):
 
     plan: Mapped["HROnboardingPlan"] = relationship(back_populates="documents")
     employee: Mapped["Employee"] = relationship()
+
+
+# -----------------------------------------------------------------------------
+# Skills + Work modules (Auto Task Assignment - Phase 1)
+# -----------------------------------------------------------------------------
+
+
+class SkillTaxonomy(Base):
+    """
+    Master list of skills.
+
+    This is intentionally placed in the `skills` schema so HR/attendance/video
+    domains can reference skills without coupling to their tables.
+    """
+
+    __tablename__ = "skill_taxonomy"
+    __table_args__ = (
+        sa.UniqueConstraint("code", name="uq_skill_taxonomy_code"),
+        {"schema": "skills"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    code: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    category: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+
+    employee_skills: Mapped[list["EmployeeSkill"]] = relationship(
+        back_populates="skill", cascade="all, delete-orphan"
+    )
+    task_requirements: Mapped[list["TaskRequiredSkill"]] = relationship(
+        back_populates="skill", cascade="all, delete-orphan"
+    )
+
+
+class EmployeeSkill(Base):
+    """
+    Employee → skill mapping with proficiency.
+
+    Notes:
+    - `proficiency` is a human-interpretable 1–5 scale.
+    - `confidence` allows weighting skills from different sources (manual/training/etc).
+    """
+
+    __tablename__ = "employee_skills"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "proficiency >= 1 AND proficiency <= 5",
+            name="ck_employee_skills_proficiency_1_5",
+        ),
+        sa.Index("ix_employee_skills_employee_id", "employee_id"),
+        sa.Index("ix_employee_skills_skill_id", "skill_id"),
+        {"schema": "skills"},
+    )
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("core.employees.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("skills.skill_taxonomy.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    proficiency: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    confidence: Mapped[float] = mapped_column(
+        sa.Float, nullable=False, server_default=sa.text("1.0")
+    )
+    source: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+    employee: Mapped["Employee"] = relationship(back_populates="skills")
+    skill: Mapped["SkillTaxonomy"] = relationship(back_populates="employee_skills")
+
+
+class WorkTask(Base):
+    """
+    Operational task, scoped to a store.
+
+    Status values (Phase 1):
+      - pending
+      - assigned
+      - in_progress
+      - done
+    """
+
+    __tablename__ = "tasks"
+    __table_args__ = (
+        sa.Index("ix_work_tasks_store_status", "store_id", "status"),
+        {"schema": "work"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    task_type: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+
+    # 1 = highest
+    priority: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default=sa.text("3")
+    )
+
+    status: Mapped[str] = mapped_column(
+        sa.String(32), nullable=False, server_default="pending", index=True
+    )
+
+    window_start: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    window_end: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+
+    store: Mapped["Store"] = relationship(back_populates="work_tasks")
+    required_skills: Mapped[list["TaskRequiredSkill"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan"
+    )
+    assignments: Mapped[list["TaskAssignment"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan"
+    )
+
+
+class TaskRequiredSkill(Base):
+    __tablename__ = "task_required_skills"
+    __table_args__ = {"schema": "work"}
+
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("work.tasks.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("skills.skill_taxonomy.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    min_proficiency: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default=sa.text("1")
+    )
+    required: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.true()
+    )
+
+    task: Mapped["WorkTask"] = relationship(back_populates="required_skills")
+    skill: Mapped["SkillTaxonomy"] = relationship(back_populates="task_requirements")
+
+
+class TaskAssignment(Base):
+    """
+    Task assignment decision log.
+
+    IMPORTANT:
+    - This table is append-only: reassignment creates a NEW row.
+    - `assigned_by` tracks whether the assignment came from the deterministic
+      auto-assigner or an explicit manager override.
+    """
+
+    __tablename__ = "task_assignments"
+    __table_args__ = (
+        sa.Index("ix_task_assignments_task_id", "task_id"),
+        sa.Index("ix_task_assignments_employee_id", "employee_id"),
+        {"schema": "work"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("work.tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("core.employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    assigned_by: Mapped[str] = mapped_column(
+        sa.String(32), nullable=False, server_default="auto"
+    )
+    score: Mapped[float] = mapped_column(sa.Float, nullable=False)
+
+    assigned_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+    task: Mapped["WorkTask"] = relationship(back_populates="assignments")
+    employee: Mapped["Employee"] = relationship(back_populates="task_assignments")

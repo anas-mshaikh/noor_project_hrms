@@ -13,6 +13,7 @@ from app.api.v1.openings import router as openings_router
 from app.api.v1.screening_runs import router as screening_runs_router
 from app.api.v1.ats import router as ats_router
 from app.api.v1.onboarding import router as onboarding_router
+from app.api.v1.tasks import router as tasks_router
 from app.face_system.api import router as face_router
 from app.mobile.accounts_router import router as mobile_accounts_router
 from app.mobile.router import router as mobile_router
@@ -32,6 +33,7 @@ api_router.include_router(openings_router)
 api_router.include_router(screening_runs_router)
 api_router.include_router(ats_router)
 api_router.include_router(onboarding_router)
+api_router.include_router(tasks_router)
 api_router.include_router(face_router)
 api_router.include_router(mobile_router)
 api_router.include_router(mobile_accounts_router)

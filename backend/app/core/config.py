@@ -119,6 +119,20 @@ class Settings(BaseSettings):
     gemini_max_top_n: int = 20
 
     # -------------------------
+    # Work module (Phase 1): Auto Task Assignment
+    # -------------------------
+    # Queue name for operational assignment jobs.
+    work_queue_name: str = "work"
+    # Scoring knobs (deterministic, explainable).
+    # - Higher penalty discourages overloading employees with many active tasks.
+    work_active_assignment_penalty: float = 0.25
+    # - Presence bonus nudges assignment toward employees who have punched in.
+    work_presence_bonus: float = 0.0
+    # - Unknown penalty nudges away from employees with no attendance record for the day.
+    #   Keep 0.0 if attendance isn't reliably populated yet.
+    work_unknown_presence_penalty: float = 0.0
+
+    # -------------------------
     # Phase 2: Admin imports (Excel)
     # -------------------------
     # Raw uploaded XLSX files are stored here (dataset_id is part of the filename).

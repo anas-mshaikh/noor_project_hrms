@@ -26,7 +26,12 @@ from app.models.models import (
     MobileAccount,
     Organization,
     PosSummary,
+    SkillTaxonomy,
     Store,
+    TaskAssignment,
+    TaskRequiredSkill,
     Track,
     Video,
+    WorkTask,
+    EmployeeSkill,
 )

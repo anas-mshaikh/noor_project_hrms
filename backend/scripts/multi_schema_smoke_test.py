@@ -24,7 +24,7 @@ import sys
 from sqlalchemy import create_engine, text
 
 
-SEARCH_PATH = "core,vision,attendance,hr,mobile,face,imports,analytics,public"
+SEARCH_PATH = "core,vision,attendance,hr,mobile,face,imports,analytics,skills,work,public"
 
 
 def main() -> int:
@@ -84,6 +84,13 @@ def main() -> int:
         "hr.hr_employee_documents",
         # mobile
         "mobile.mobile_accounts",
+        # skills
+        "skills.skill_taxonomy",
+        "skills.employee_skills",
+        # work
+        "work.tasks",
+        "work.task_required_skills",
+        "work.task_assignments",
         # alembic
         "public.alembic_version",
     ]
@@ -116,6 +123,15 @@ def main() -> int:
             LIMIT 1
             """,
         ),
+        (
+            "work.task_assignments -> core.employees",
+            """
+            SELECT a.id, e.id
+            FROM work.task_assignments a
+            JOIN core.employees e ON e.id = a.employee_id
+            LIMIT 1
+            """,
+        ),
     ]
 
     failures: list[str] = []
@@ -144,4 +160,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
