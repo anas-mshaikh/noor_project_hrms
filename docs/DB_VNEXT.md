@@ -31,6 +31,8 @@ Alembic migrations added DB vNext foundation objects:
   - Reconciles drifted dev DB volumes where `iam.users.email` was missing (forward-only fix)
 - `backend/alembic/versions/88e00e12d1a9_db_vnext_0008_reconcile_hr_core_persons_email.py`
   - Reconciles drifted dev DB volumes where `hr_core.persons.email` was missing (forward-only fix)
+- `backend/alembic/versions/78a23d4f40ba_db_vnext_0009_module_tenant_id_rbac_ready.py`
+  - Adds `tenant_id` to key module/business tables (analytics, face, HR module tables, vision pipeline) for simpler tenant filtering and future RLS
 
 ## Canonical masters (authoritative source of truth)
 

@@ -503,17 +503,30 @@ def main() -> int:
 
             # Face: verify employee_faces.employee_id references hr_core.employees.
             if _table_exists(conn, "face", "employee_faces"):
-                conn.execute(
-                    text(
-                        """
-                        INSERT INTO face.employee_faces (id, employee_id, embedding, model_version)
-                        VALUES (
-                          :id, :employee_id, array_fill(0::real, ARRAY[512])::vector, 'smoke'
-                        )
-                        """
-                    ),
-                    {"id": uuid4(), "employee_id": employee_id},
-                )
+                if _column_exists(conn, "face", "employee_faces", "tenant_id"):
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO face.employee_faces (id, tenant_id, employee_id, embedding, model_version)
+                            VALUES (
+                              :id, :tenant_id, :employee_id, array_fill(0::real, ARRAY[512])::vector, 'smoke'
+                            )
+                            """
+                        ),
+                        {"id": uuid4(), "tenant_id": tenant_id, "employee_id": employee_id},
+                    )
+                else:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO face.employee_faces (id, employee_id, embedding, model_version)
+                            VALUES (
+                              :id, :employee_id, array_fill(0::real, ARRAY[512])::vector, 'smoke'
+                            )
+                            """
+                        ),
+                        {"id": uuid4(), "employee_id": employee_id},
+                    )
             else:
                 _warn("face.employee_faces not found; skipping face rewiring check")
 
