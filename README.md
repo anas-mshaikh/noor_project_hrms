@@ -26,6 +26,31 @@ Notes:
 - Persistent data and outputs live under `backend/data/` (mounted into containers).
 - Models live under `backend/models/` (mounted into containers).
 
+## DB vNext (enterprise foundation)
+
+DB vNext introduces enterprise-ready HRMS foundation schemas (`tenancy`, `iam`, `hr_core`, `workflow`, `dms`) in the **same** Postgres database.
+
+- Details: `docs/DB_VNEXT.md`
+- Smoke test: `python3 backend/scripts/db_vnext_smoke_test.py`
+  - In Docker Compose, this also runs automatically via the `db_vnext_smoke` service.
+
+### Safety backup / restore (dev)
+
+Backup (schema + data) using the Docker `db` container (no local Postgres tools required):
+
+```bash
+mkdir -p backups
+docker compose exec -T db pg_dump -U attendance -d attendance --format=custom --file /tmp/attendance.dump
+docker compose cp db:/tmp/attendance.dump ./backups/attendance.dump
+```
+
+Restore (OVERWRITES the database):
+
+```bash
+docker compose cp ./backups/attendance.dump db:/tmp/attendance.dump
+docker compose exec -T db pg_restore -U attendance -d attendance --clean --if-exists /tmp/attendance.dump
+```
+
 ## Phase 2 Admin Import (Excel)
 
 Frontend page:
