@@ -101,3 +101,44 @@ Routes:
 
 Org chart ordering is deterministic (sorted by name).
 
+## IAM (users + roles)
+
+### Users
+
+- `POST   /api/v1/iam/users`
+- `GET    /api/v1/iam/users?limit=&offset=&q=&status=`
+- `GET    /api/v1/iam/users/{user_id}`
+- `PATCH  /api/v1/iam/users/{user_id}`
+
+Authorization:
+- Create/update requires: `ADMIN` or `HR_ADMIN`
+- List/read requires: `ADMIN` or `HR_ADMIN` or `HR_MANAGER`
+
+Notes:
+- IAM is tenant-scoped: list/get/update only operate inside the active tenant.
+- `POST /api/v1/iam/users` assigns a default `EMPLOYEE` role in the active scope so the user can log in.
+
+### Role assignments
+
+- `POST   /api/v1/iam/users/{user_id}/roles`
+- `GET    /api/v1/iam/users/{user_id}/roles`
+- `DELETE /api/v1/iam/users/{user_id}/roles?role_code=...&company_id=...&branch_id=...`
+
+Role assignment scope model (`iam.user_roles`):
+- `(tenant_id)` → applies to all companies/branches in tenant
+- `(tenant_id, company_id)` → applies to all branches under that company
+- `(tenant_id, company_id, branch_id)` → applies to that branch only
+
+### Catalog
+
+- `GET /api/v1/iam/roles`
+- `GET /api/v1/iam/permissions`
+
+## Scope header hardening
+
+Headers:
+- `X-Company-Id`
+- `X-Branch-Id`
+
+These headers are validated against the caller’s `iam.user_roles` and cannot be spoofed.
+If a requested scope is not covered, the API returns `403` with error code `iam.scope.forbidden` (and includes `trace_id`).

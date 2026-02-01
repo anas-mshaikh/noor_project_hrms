@@ -87,14 +87,17 @@ class AuthService:
         now = _now()
         token_hash = _hash_refresh_token(refresh_token)
         rt = repo.get_refresh_token_by_hash(db, token_hash=token_hash)
-        if rt is None or rt.revoked_at is not None:
+        if rt is None:
             raise AppError(code="invalid_refresh_token", message="Invalid refresh token", status_code=401)
-        if rt.expires_at <= now:
-            raise AppError(code="refresh_token_expired", message="Refresh token expired", status_code=401)
 
         user = repo.get_user_by_id(db, user_id=rt.user_id)
         if user is None or user.status != "ACTIVE" or user.deleted_at is not None:
             raise AppError(code="unauthorized", message="User is disabled", status_code=401)
+
+        if rt.revoked_at is not None:
+            raise AppError(code="invalid_refresh_token", message="Invalid refresh token", status_code=401)
+        if rt.expires_at <= now:
+            raise AppError(code="refresh_token_expired", message="Refresh token expired", status_code=401)
 
         # Rotate refresh token: revoke old, insert new.
         repo.revoke_refresh_token(db, token_id=rt.id, now=now)
