@@ -32,6 +32,17 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     sqlalchemy_echo: bool = False
 
+    # -------------------------
+    # Auth / Security (Enterprise API core)
+    # -------------------------
+    # IMPORTANT: override these in production.
+    auth_jwt_secret_key: str = "dev-jwt-secret-change-me"
+    auth_jwt_algorithm: str = "HS256"
+    auth_access_token_ttl_minutes: int = 15
+    auth_refresh_token_ttl_days: int = 30
+    # Used to hash refresh tokens: sha256(raw_refresh_token + pepper).
+    auth_refresh_token_pepper: str = "dev-refresh-pepper-change-me"
+
     # Everything uploaded/generated goes under this folder.
     # DB stores paths relative to this directory.
     data_dir: str = "./data"

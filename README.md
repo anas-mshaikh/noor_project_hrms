@@ -32,7 +32,7 @@ DB vNext introduces enterprise-ready HRMS foundation schemas (`tenancy`, `iam`, 
 
 - Details: `docs/DB_VNEXT.md`
 - Smoke test: `python3 backend/scripts/db_vnext_smoke_test.py`
-  - In Docker Compose, this also runs automatically via the `db_vnext_smoke` service.
+  - In Docker Compose, this also runs automatically via the `tests` service.
 
 ### Safety backup / restore (dev)
 

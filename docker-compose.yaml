@@ -47,16 +47,18 @@ services:
     command: ["alembic", "upgrade", "head"]
     restart: "no"
 
-  db_vnext_smoke:
-    # Runs DB vNext smoke test after migrations, then exits.
+  tests:
+    # Runs DB vNext smoke + all backend tests after migrations, then exits.
     build:
       context: ./backend
     env_file:
       - ./backend/.env.docker
+    environment:
+      PYTHONPATH: "/app"
     depends_on:
       migrate:
         condition: service_completed_successfully
-    command: ["python", "scripts/db_vnext_smoke_test.py"]
+    command: ["python", "scripts/run_all_tests.py"]
     restart: "no"
 
   backend:
@@ -71,7 +73,7 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      db_vnext_smoke:
+      tests:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
@@ -88,7 +90,7 @@ services:
       - ./backend/secrets/firebase-service-account.json:/app/secrets/firebase-service-account.json:ro
 
     depends_on:
-      db_vnext_smoke:
+      tests:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
@@ -105,7 +107,7 @@ services:
       - ./backend/models:/app/models
       - ./backend/secrets:/app/secrets:ro
     depends_on:
-      db_vnext_smoke:
+      tests:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
@@ -122,7 +124,7 @@ services:
       - ./backend/models:/app/models
       - ./backend/secrets:/app/secrets:ro
     depends_on:
-      db_vnext_smoke:
+      tests:
         condition: service_completed_successfully
       redis:
         condition: service_healthy

@@ -12,6 +12,7 @@ This seed is optional for production deployments; it is intended for dev/demo.
 
 from __future__ import annotations
 
+import os
 import uuid
 
 import sqlalchemy as sa
@@ -34,6 +35,24 @@ UUID = postgresql.UUID(as_uuid=True)
 
 
 def upgrade() -> None:
+    # Demo seed is optional and should not run in production-like environments.
+    # Note: Alembic migrations are usually deterministic; this opt-in gate exists
+    # only because this migration inserts demo data (not DDL).
+    seed_enabled = os.getenv("DB_VNEXT_SEED_DEMO_TENANT", "").strip().lower() in {"1", "true", "yes", "y"}
+    if not seed_enabled:
+        return
+
+    conn = op.get_bind()
+    already_seeded = (
+        conn.execute(
+            sa.text("SELECT 1 FROM tenancy.tenants WHERE id = :id"),
+            {"id": uuid.UUID(DEMO_TENANT_ID)},
+        ).first()
+        is not None
+    )
+    if already_seeded:
+        return
+
     # NOTE: psycopg (and other DBAPIs) may reject multiple SQL statements when
     # parameters are bound (prepared statements). Keep statements single.
     op.execute(

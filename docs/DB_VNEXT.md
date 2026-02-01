@@ -20,7 +20,7 @@ Alembic migrations added DB vNext foundation objects:
 - `backend/alembic/versions/fc4c56b52118_db_vnext_0002_seed_defaults.py`
   - Seeds base roles + permissions + request types
 - `backend/alembic/versions/aca6f7cb881b_db_vnext_0003_seed_demo_tenant.py`
-  - Seeds a small demo tenant/company/branch and demo document types
+  - Opt-in demo seed (env var: `DB_VNEXT_SEED_DEMO_TENANT=1`): demo tenant/company/branch + demo document types
 - `backend/alembic/versions/b3f7a9d2c4e1_db_vnext_0004_drop_legacy_identity.py`
   - Drops legacy identity duplicates (e.g. `core.*` masters) after asserting vNext tables exist
 - `backend/alembic/versions/c4e1b3f7a9d2_db_vnext_0005_rewire_module_fks.py`
@@ -33,6 +33,8 @@ Alembic migrations added DB vNext foundation objects:
   - Reconciles drifted dev DB volumes where `hr_core.persons.email` was missing (forward-only fix)
 - `backend/alembic/versions/78a23d4f40ba_db_vnext_0009_module_tenant_id_rbac_ready.py`
   - Adds `tenant_id` to key module/business tables (analytics, face, HR module tables, vision pipeline) for simpler tenant filtering and future RLS
+- `backend/alembic/versions/85a23039697f_iam_refresh_tokens.py`
+  - Adds `iam.refresh_tokens` for JWT refresh token storage (used by `/api/v1/auth/*`)
 
 ## Canonical masters (authoritative source of truth)
 
@@ -70,6 +72,8 @@ docker compose up --build
 
 Note: after the hard-cutover migrations (0004+), downgrade is intentionally **not supported** (legacy tables are deleted). Use a full reset (`docker compose down -v`) to return to a clean state.
 
+After a full reset, create the first tenant/admin via `POST /api/v1/bootstrap` (see `docs/API_CORE.md`).
+
 ## How to run migrations
 
 In Docker Compose, migrations run automatically via the `migrate` service.
@@ -92,13 +96,15 @@ The DB vNext smoke test:
 - Optionally validates rewired module FKs by inserting into `attendance.attendance_daily` and `face.employee_faces`
 - Verifies key indexes exist
 
+Note: the smoke test runs inside a transaction and rolls back at the end, so it does not leave demo data behind.
+
 Run:
 
 ```bash
 python3 backend/scripts/db_vnext_smoke_test.py
 ```
 
-In Docker Compose, this runs automatically after migrations as the `db_vnext_smoke` service.
+In Docker Compose, this runs automatically after migrations as part of the `tests` service.
 
 ## ER overview (high level)
 

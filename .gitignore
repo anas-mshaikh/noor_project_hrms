@@ -27,3 +27,4 @@ mobile-application/node_modules/
 docs/*.mov
 docs/test/
 mobile-application/android/
+backend/legacy_test_scripts/
