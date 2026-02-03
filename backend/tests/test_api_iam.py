@@ -6,30 +6,14 @@ import uuid
 import pytest
 from sqlalchemy import create_engine, text
 
+from tests.helpers.app import make_app
+from tests.helpers.seed import cleanup
+
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("DATABASE_URL"),
     reason="DATABASE_URL not set; skipping API integration tests",
 )
-
-
-def _make_app():
-    from fastapi import FastAPI
-
-    from app.auth.router import router as auth_router
-    from app.core.errors import install_exception_handlers
-    from app.core.middleware.trace import TraceIdMiddleware
-    from app.domains.iam.router import router as iam_router
-    from app.domains.tenancy.router import router as tenancy_router
-
-    app = FastAPI()
-    app.add_middleware(TraceIdMiddleware)
-    install_exception_handlers(app)
-    app.include_router(auth_router, prefix="/api/v1")
-    app.include_router(tenancy_router, prefix="/api/v1")
-    app.include_router(iam_router, prefix="/api/v1")
-    return app
-
 
 def _assert_fresh_db(engine) -> None:
     with engine.connect() as conn:
@@ -41,17 +25,6 @@ def _assert_fresh_db(engine) -> None:
             pytest.skip("IAM integration tests require a fresh DB (no tenants). Reset DB volume to run.")
 
 
-def _cleanup(engine, *, tenant_id: str | None, user_ids: list[str]) -> None:
-    # Delete tenant first (cascades to tenancy + user_roles). Users are global in iam, so delete explicitly.
-    if tenant_id is not None:
-        with engine.begin() as conn:
-            conn.execute(text("DELETE FROM tenancy.tenants WHERE id = :id"), {"id": tenant_id})
-    if user_ids:
-        with engine.begin() as conn:
-            for uid in user_ids:
-                conn.execute(text("DELETE FROM iam.users WHERE id = :id"), {"id": uid})
-
-
 def test_bootstrap_then_create_user_and_login() -> None:
     db_url = os.environ["DATABASE_URL"]
     engine = create_engine(db_url, pool_pre_ping=True)
@@ -59,7 +32,7 @@ def test_bootstrap_then_create_user_and_login() -> None:
 
     from fastapi.testclient import TestClient
 
-    client = TestClient(_make_app())
+    client = TestClient(make_app("app.auth.router", "app.domains.tenancy.router", "app.domains.iam.router"))
 
     admin_email = f"admin+{uuid.uuid4().hex[:8]}@example.com"
     hr_email = f"hr+{uuid.uuid4().hex[:8]}@example.com"
@@ -101,7 +74,7 @@ def test_bootstrap_then_create_user_and_login() -> None:
         assert login.status_code == 200, login.text
         assert login.json()["ok"] is True
     finally:
-        _cleanup(engine, tenant_id=tenant_id, user_ids=created_users)
+        cleanup(engine, tenant_id=tenant_id, user_ids=created_users)
 
 
 def test_assign_role_scoped_and_enforced_scope_headers() -> None:
@@ -111,7 +84,7 @@ def test_assign_role_scoped_and_enforced_scope_headers() -> None:
 
     from fastapi.testclient import TestClient
 
-    client = TestClient(_make_app())
+    client = TestClient(make_app("app.auth.router", "app.domains.tenancy.router", "app.domains.iam.router"))
 
     admin_email = f"admin+{uuid.uuid4().hex[:8]}@example.com"
     hr_email = f"hr+{uuid.uuid4().hex[:8]}@example.com"
@@ -195,7 +168,7 @@ def test_assign_role_scoped_and_enforced_scope_headers() -> None:
         assert body["ok"] is False
         assert body["error"]["code"] == "iam.scope.forbidden"
     finally:
-        _cleanup(engine, tenant_id=tenant_id, user_ids=created_users)
+        cleanup(engine, tenant_id=tenant_id, user_ids=created_users)
 
 
 def test_disable_user_blocks_login_and_refresh() -> None:
@@ -205,7 +178,7 @@ def test_disable_user_blocks_login_and_refresh() -> None:
 
     from fastapi.testclient import TestClient
 
-    client = TestClient(_make_app())
+    client = TestClient(make_app("app.auth.router", "app.domains.tenancy.router", "app.domains.iam.router"))
 
     admin_email = f"admin+{uuid.uuid4().hex[:8]}@example.com"
     hr_email = f"hr+{uuid.uuid4().hex[:8]}@example.com"
@@ -263,4 +236,4 @@ def test_disable_user_blocks_login_and_refresh() -> None:
         assert refresh2.json()["ok"] is False
         assert refresh2.json()["error"]["code"] == "unauthorized"
     finally:
-        _cleanup(engine, tenant_id=tenant_id, user_ids=created_users)
+        cleanup(engine, tenant_id=tenant_id, user_ids=created_users)

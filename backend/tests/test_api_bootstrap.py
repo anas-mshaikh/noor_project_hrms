@@ -5,25 +5,14 @@ import os
 import pytest
 from sqlalchemy import create_engine, text
 
+from tests.helpers.app import make_app
+from tests.helpers.seed import cleanup
+
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("DATABASE_URL"),
     reason="DATABASE_URL not set; skipping API integration tests",
 )
-
-
-def _make_app():
-    from fastapi import FastAPI
-
-    from app.core.errors import install_exception_handlers
-    from app.core.middleware.trace import TraceIdMiddleware
-    from app.domains.tenancy.router import router as tenancy_router
-
-    app = FastAPI()
-    app.add_middleware(TraceIdMiddleware)
-    install_exception_handlers(app)
-    app.include_router(tenancy_router, prefix="/api/v1")
-    return app
 
 
 def test_bootstrap_happy_path() -> None:
@@ -40,7 +29,7 @@ def test_bootstrap_happy_path() -> None:
 
     from fastapi.testclient import TestClient
 
-    client = TestClient(_make_app())
+    client = TestClient(make_app("app.domains.tenancy.router"))
 
     payload = {
         "tenant_name": "Bootstrap Tenant",
@@ -102,9 +91,4 @@ def test_bootstrap_happy_path() -> None:
             assert rt is not None
     finally:
         # Keep bootstrap test safe to re-run if it executed.
-        if tenant_id is not None:
-            with engine.begin() as conn:
-                conn.execute(text("DELETE FROM tenancy.tenants WHERE id = :id"), {"id": tenant_id})
-        if user_id is not None:
-            with engine.begin() as conn:
-                conn.execute(text("DELETE FROM iam.users WHERE id = :id"), {"id": user_id})
+        cleanup(engine, tenant_id=tenant_id, user_ids=[user_id] if user_id is not None else [])
