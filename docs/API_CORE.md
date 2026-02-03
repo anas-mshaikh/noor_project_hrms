@@ -142,3 +142,66 @@ Headers:
 
 These headers are validated against the caller’s `iam.user_roles` and cannot be spoofed.
 If a requested scope is not covered, the API returns `403` with error code `iam.scope.forbidden` (and includes `trace_id`).
+
+## HR Core (Step 4)
+
+DB vNext is the **system of record** for employee master data:
+- `hr_core.persons` (person master)
+- `hr_core.employees` (employee master)
+- `hr_core.employee_employment` (effective-dated employment history)
+- `hr_core.employee_user_links` (1:1 link between IAM user and employee)
+
+### Employment history model
+
+- Employment assignments are **effective-dated** rows (`start_date`, `end_date`).
+- A row is considered **current** when `end_date IS NULL`.
+- Current row selection is deterministic:
+  - prefer `end_date IS NULL AND is_primary = TRUE`
+  - fallback: `end_date IS NULL ORDER BY start_date DESC LIMIT 1`
+
+### Manager hierarchy rules
+
+- Manager is stored on the **current employment row** (`manager_employee_id`).
+- Manager assignments are validated to be **cycle-free** using a recursive query over the current manager chain.
+
+### HR endpoints (`/api/v1/hr/*`)
+
+Authorization:
+- Read: `ADMIN`, `HR_ADMIN`, `HR_MANAGER`
+- Write: `ADMIN`, `HR_ADMIN`
+
+Routes:
+- `POST   /api/v1/hr/employees` (create person + employee + current employment)
+- `GET    /api/v1/hr/employees?q=&status=&branch_id=&org_unit_id=&limit=&offset=`
+- `GET    /api/v1/hr/employees/{employee_id}`
+- `PATCH  /api/v1/hr/employees/{employee_id}` (person fields + employee status/dates)
+- `POST   /api/v1/hr/employees/{employee_id}/employment` (transfer / manager change)
+- `GET    /api/v1/hr/employees/{employee_id}/employment` (history)
+- `POST   /api/v1/hr/employees/{employee_id}/link-user` (link IAM user to employee)
+
+### ESS endpoints (`/api/v1/ess/*`)
+
+Employee self-service requires the IAM user to be linked via `hr_core.employee_user_links`.
+If not linked, the API returns `409` with code `ess.not_linked`.
+
+Routes:
+- `GET   /api/v1/ess/me/profile`
+- `PATCH /api/v1/ess/me/profile` (safe fields only: `email`, `phone`, `address`)
+
+### MSS endpoints (`/api/v1/mss/*`)
+
+Manager self-service requires:
+- role: `MANAGER` (or `HR_MANAGER`, `HR_ADMIN`, `ADMIN`)
+- employee linkage via `hr_core.employee_user_links`
+
+Team computation rules:
+- Team membership is derived from **current employment rows only** (`end_date IS NULL`, primary row preferred).
+- Direct reports: current employment where `manager_employee_id = <actor_employee_id>`.
+- Indirect reports: recursive traversal down the current manager graph.
+
+Routes:
+- `GET /api/v1/mss/team?depth=1|all&q=&status=&branch_id=&org_unit_id=&limit=&offset=`
+- `GET /api/v1/mss/team/{employee_id}` (restricted profile; only if employee is in your subtree)
+
+Field exposure:
+- MSS does **not** return DOB, nationality, or address.
