@@ -11,7 +11,7 @@ from app.shared.types import Scope
 
 
 def _parse_uuid_header(headers: dict[str, str], name: str, *, error_code: str) -> UUID | None:
-    raw = headers.get(name)
+    raw = headers.get(name) or headers.get(name.lower())
     if not raw:
         return None
     try:

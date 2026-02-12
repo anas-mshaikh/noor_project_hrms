@@ -118,7 +118,7 @@ def test_hr_employment_change_and_cycle_prevention() -> None:
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "start_date": str(date(2026, 2, 1)),
-                "branch_id": seed["branch_id"],
+                "branch_id": tenant["branch_id"],
                 "manager_employee_id": b_id,
             },
         )

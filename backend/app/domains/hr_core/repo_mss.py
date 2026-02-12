@@ -119,7 +119,7 @@ def list_team_directory(
 
     sql = sa.text(
         f"""
-        WITH current_employment AS (
+        WITH RECURSIVE current_employment AS (
           SELECT
             ee.employee_id,
             ee.manager_employee_id,
@@ -187,7 +187,7 @@ def list_team_directory(
 
     count_sql = sa.text(
         f"""
-        WITH current_employment AS (
+        WITH RECURSIVE current_employment AS (
           SELECT
             ee.employee_id,
             ee.manager_employee_id,
@@ -231,7 +231,7 @@ def is_in_manager_subtree(
     row = db.execute(
         sa.text(
             """
-            WITH current_employment AS (
+            WITH RECURSIVE current_employment AS (
               SELECT
                 ee.employee_id,
                 ee.manager_employee_id,

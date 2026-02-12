@@ -73,6 +73,7 @@ class TenancyService:
 
         # Create tenant/company/branch
         repo.insert_tenant(db, tenant_id=tenant_id, name=tenant_name)
+        db.flush()
         repo.insert_company(
             db,
             company_id=company_id,
@@ -82,6 +83,7 @@ class TenancyService:
             currency_code=currency_code,
             timezone=timezone_name,
         )
+        db.flush()
         repo.insert_branch(
             db,
             branch_id=branch_id,
@@ -92,6 +94,7 @@ class TenancyService:
             timezone=timezone_name,
             address={},
         )
+        db.flush()
 
         # Create admin user
         user = UserModel(
@@ -103,6 +106,9 @@ class TenancyService:
             last_login_at=now,
         )
         db.add(user)
+        # SessionLocal uses autoflush=False; flush now so dependent rows
+        # (user_roles, refresh_tokens) cannot race this insert at commit time.
+        db.flush()
 
         # Assign ADMIN role scoped to tenant/company/branch.
         admin_role_id = db.execute(
@@ -330,4 +336,3 @@ class TenancyService:
         )
         db.commit()
         return g
-

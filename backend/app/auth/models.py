@@ -59,11 +59,31 @@ class UserRole(Base):
         primary_key=True,
         server_default=sa.text("gen_random_uuid()"),
     )
-    user_id: Mapped[UUID] = mapped_column(postgresql.UUID(as_uuid=True), nullable=False)
-    tenant_id: Mapped[UUID] = mapped_column(postgresql.UUID(as_uuid=True), nullable=False)
-    company_id: Mapped[UUID | None] = mapped_column(postgresql.UUID(as_uuid=True), nullable=True)
-    branch_id: Mapped[UUID | None] = mapped_column(postgresql.UUID(as_uuid=True), nullable=True)
-    role_id: Mapped[UUID] = mapped_column(postgresql.UUID(as_uuid=True), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        sa.ForeignKey("iam.users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    tenant_id: Mapped[UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    company_id: Mapped[UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.companies.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    branch_id: Mapped[UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    role_id: Mapped[UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        sa.ForeignKey("iam.roles.id", ondelete="CASCADE"),
+        nullable=False,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
@@ -79,7 +99,11 @@ class RefreshToken(Base):
         primary_key=True,
         server_default=sa.text("gen_random_uuid()"),
     )
-    user_id: Mapped[UUID] = mapped_column(postgresql.UUID(as_uuid=True), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        sa.ForeignKey("iam.users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     token_hash: Mapped[str] = mapped_column(sa.Text(), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
@@ -88,4 +112,3 @@ class RefreshToken(Base):
     )
     ip: Mapped[str | None] = mapped_column(sa.Text(), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(sa.Text(), nullable=True)
-

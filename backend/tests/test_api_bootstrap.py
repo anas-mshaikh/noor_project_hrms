@@ -38,7 +38,7 @@ def test_bootstrap_happy_path() -> None:
         "branch_code": "HQ",
         "timezone": "Asia/Riyadh",
         "currency_code": "SAR",
-        "admin_email": "admin@bootstrap.test",
+        "admin_email": "admin@bootstrap.example.com",
         "admin_password": "StrongPass123",
     }
 
