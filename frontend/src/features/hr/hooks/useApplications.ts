@@ -17,25 +17,26 @@ type MoveArgs = { applicationId: UUID; stageId: UUID };
  * Fetch applications for an opening and provide mutations for common actions.
  *
  * Backend:
- * - GET   /api/v1/openings/{opening_id}/applications
- * - PATCH /api/v1/applications/{application_id}
- * - POST  /api/v1/applications/{application_id}/reject
- * - POST  /api/v1/applications/{application_id}/hire
+ * - GET   /api/v1/branches/{branch_id}/openings/{opening_id}/applications
+ * - PATCH /api/v1/branches/{branch_id}/applications/{application_id}
+ * - POST  /api/v1/branches/{branch_id}/applications/{application_id}/reject
+ * - POST  /api/v1/branches/{branch_id}/applications/{application_id}/hire
  */
-export function useApplications(openingId: UUID | null) {
+export function useApplications(branchId: UUID | null, openingId: UUID | null) {
   const queryClient = useQueryClient();
-  const key = hrQueryKeys.applications(openingId);
+  const key = hrQueryKeys.applications(branchId, openingId);
 
   const list = useQuery<ApplicationOut[]>({
     queryKey: key,
-    enabled: Boolean(openingId),
-    queryFn: ({ signal }) => listApplications(openingId as UUID, undefined, { signal }),
+    enabled: Boolean(branchId && openingId),
+    queryFn: ({ signal }) =>
+      listApplications(branchId as UUID, openingId as UUID, undefined, { signal }),
   });
 
   const moveStage = useMutation({
     mutationFn: async (args: MoveArgs) => {
       const payload: ApplicationUpdateRequest = { stage_id: args.stageId };
-      return updateApplication(args.applicationId, payload);
+      return updateApplication(branchId as UUID, args.applicationId, payload);
     },
     onMutate: async (args) => {
       await queryClient.cancelQueries({ queryKey: key });
@@ -69,7 +70,7 @@ export function useApplications(openingId: UUID | null) {
   });
 
   const reject = useMutation({
-    mutationFn: (applicationId: UUID) => rejectApplication(applicationId),
+    mutationFn: (applicationId: UUID) => rejectApplication(branchId as UUID, applicationId),
     onSuccess: (updated) => {
       const current = queryClient.getQueryData<ApplicationOut[]>(key);
       if (!current) return;
@@ -82,7 +83,7 @@ export function useApplications(openingId: UUID | null) {
   });
 
   const hire = useMutation({
-    mutationFn: (applicationId: UUID) => hireApplication(applicationId),
+    mutationFn: (applicationId: UUID) => hireApplication(branchId as UUID, applicationId),
     onSuccess: (updated) => {
       const current = queryClient.getQueryData<ApplicationOut[]>(key);
       if (!current) return;

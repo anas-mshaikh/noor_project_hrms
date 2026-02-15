@@ -98,9 +98,9 @@ class FaceStorageConfig:
     File-based training library.
 
     Directory structure (preferred):
-      <face_dir>/<store_id>/<employee_id>/*.jpg
+      <face_dir>/<tenant_id>/<branch_id>/<employee_id>/*.jpg
 
-    The face_system ONLY reads from the store-scoped directory above
+    The face_system ONLY reads from the branch-scoped directory above
     (no legacy fallbacks) to keep behavior deterministic.
     """
 

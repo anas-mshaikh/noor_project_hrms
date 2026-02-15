@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -22,15 +23,14 @@ from app.models.models import (
     Event,
     Job,
     MetricsHourly,
-    Store,
     Track,
     Video,
 )
 from app.worker.artifacts import write_job_artifacts
 from app.worker.rollup import (
     get_related_job_ids,
-    get_store_day_context,
-    recompute_attendance_for_store_day,
+    get_branch_day_context,
+    recompute_attendance_for_branch_day,
     recompute_metrics_hourly_for_job,
 )
 from app.worker.zones import ZoneConfig, validate_zone_config
@@ -99,9 +99,20 @@ def process_video_job(job_id: str) -> None:
         if video is None:
             raise RuntimeError("Video not found for job")
 
-        store = db.get(Store, video.store_id)
-        if store is None:
-            raise RuntimeError("Store not found for video")
+        branch_tz_row = db.execute(
+            sa.text(
+                """
+                SELECT timezone
+                FROM tenancy.branches
+                WHERE id = :branch_id
+                  AND tenant_id = :tenant_id
+                """
+            ),
+            {"tenant_id": video.tenant_id, "branch_id": video.branch_id},
+        ).first()
+        if branch_tz_row is None:
+            raise RuntimeError("Branch not found for video")
+        branch_timezone = str(branch_tz_row[0] or "UTC")
 
         camera = db.get(Camera, video.camera_id)
         if camera is None:
@@ -182,7 +193,7 @@ def process_video_job(job_id: str) -> None:
             job_id=job_uuid,
             video=video,
             zone_cfg=zone_cfg,
-            store_timezone=store.timezone,
+            store_timezone=branch_timezone,
             cfg=pipeline_cfg,
             on_progress=on_progress,
             should_cancel=should_cancel,
@@ -195,17 +206,18 @@ def process_video_job(job_id: str) -> None:
 
         _set_job(db, job, status="POSTPROCESSING", progress=95)
 
-        # Derive metrics and attendance for this store/day using all DONE jobs
-        store_id, business_date = get_store_day_context(db, job_id=job_uuid)
+        # Derive metrics and attendance for this branch/day using all DONE jobs
+        tenant_id, branch_id, business_date = get_branch_day_context(db, job_id=job_uuid)
         related_job_ids = get_related_job_ids(
-            db, store_id=store_id, business_date=business_date
+            db, tenant_id=tenant_id, branch_id=branch_id, business_date=business_date
         )
         all_job_ids = sorted(set(related_job_ids + [job_uuid]))
 
         recompute_metrics_hourly_for_job(db, job_id=job_uuid)
-        recompute_attendance_for_store_day(
+        recompute_attendance_for_branch_day(
             db,
-            store_id=store_id,
+            tenant_id=tenant_id,
+            branch_id=branch_id,
             business_date=business_date,
             job_ids=all_job_ids,
         )

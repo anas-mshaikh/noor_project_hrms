@@ -162,8 +162,8 @@ def build_mobile_stats(
     *,
     month_key: str,
     dataset_id: uuid.UUID,
-    store_id: uuid.UUID,
-    org_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    branch_id: uuid.UUID,
     rows: list[MobileRow],
 ) -> list[MonthlyEmployeeStatsV1]:
     ranked_rows = rank_rows(rows)
@@ -175,8 +175,8 @@ def build_mobile_stats(
             MonthlyEmployeeStatsV1(
                 month_key=month_key,
                 published_dataset_id=str(dataset_id),
-                store_id=str(store_id),
-                org_id=str(org_id),
+                tenant_id=str(tenant_id),
+                branch_id=str(branch_id),
                 employee_id=str(row.employee_id),
                 employee_code=row.employee_code,
                 name=row.name,
@@ -206,16 +206,16 @@ def build_mobile_payload(
     *,
     month_key: str,
     dataset_id: uuid.UUID,
-    store_id: uuid.UUID,
-    org_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    branch_id: uuid.UUID,
 ) -> tuple[list[MonthlyEmployeeStatsV1], LeaderboardDocV1, dict[str, LeaderboardDocV1]]:
-    rows = fetch_monthly_rows(db, dataset_id)
+    rows = fetch_monthly_rows(db, tenant_id=tenant_id, branch_id=branch_id, dataset_id=dataset_id)
     ranked_rows = rank_rows(rows)
     stats = build_mobile_stats(
         month_key=month_key,
         dataset_id=dataset_id,
-        store_id=store_id,
-        org_id=org_id,
+        tenant_id=tenant_id,
+        branch_id=branch_id,
         rows=rows,
     )
     overall, departments = build_leaderboards(
@@ -231,30 +231,30 @@ def sync_mobile_for_dataset(
     *,
     dataset: Dataset,
     month_key: str,
-    store_id: uuid.UUID,
-    org_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    branch_id: uuid.UUID,
     dry_run: bool = False,
 ) -> tuple[int, int]:
     stats, overall, departments = build_mobile_payload(
         db,
         month_key=month_key,
         dataset_id=dataset.id,
-        store_id=store_id,
-        org_id=org_id,
+        tenant_id=tenant_id,
+        branch_id=branch_id,
     )
     logger.info(
-        "mobile sync: month=%s dataset=%s store=%s employees=%s",
+        "mobile sync: month=%s dataset=%s branch=%s employees=%s",
         month_key,
         dataset.id,
-        store_id,
+        branch_id,
         len(stats),
     )
     if settings.mobile_sync_enabled:
         firestore_sync.sync_month(
             month_key=month_key,
             dataset_id=dataset.id,
-            store_id=store_id,
-            org_id=org_id,
+            tenant_id=tenant_id,
+            branch_id=branch_id,
             stats=stats,
             overall=overall,
             departments=departments,
@@ -268,22 +268,22 @@ def preview_mobile_payload(
     *,
     month_key: str,
     dataset_id: uuid.UUID,
-    store_id: uuid.UUID,
-    org_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    branch_id: uuid.UUID,
     limit: int = 20,
 ) -> MobileSyncPreviewOut:
-    rows = fetch_monthly_rows(db, dataset_id)
+    rows = fetch_monthly_rows(db, tenant_id=tenant_id, branch_id=branch_id, dataset_id=dataset_id)
     stats = build_mobile_stats(
         month_key=month_key,
         dataset_id=dataset_id,
-        store_id=store_id,
-        org_id=org_id,
+        tenant_id=tenant_id,
+        branch_id=branch_id,
         rows=rows,
     )
     return MobileSyncPreviewOut(
         month_key=month_key,
-        store_id=str(store_id),
-        org_id=str(org_id),
+        tenant_id=str(tenant_id),
+        branch_id=str(branch_id),
         published_dataset_id=str(dataset_id),
         employees=stats[:limit],
     )
@@ -294,16 +294,16 @@ def preview_leaderboards(
     *,
     month_key: str,
     dataset_id: uuid.UUID,
-    store_id: uuid.UUID,
-    org_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    branch_id: uuid.UUID,
 ) -> MobileLeaderboardPreviewOut:
-    rows = fetch_monthly_rows(db, dataset_id)
+    rows = fetch_monthly_rows(db, tenant_id=tenant_id, branch_id=branch_id, dataset_id=dataset_id)
     ranked_rows = rank_rows(rows)
     overall, departments = build_leaderboards(ranked_rows, month_key=month_key)
     return MobileLeaderboardPreviewOut(
         month_key=month_key,
-        store_id=str(store_id),
-        org_id=str(org_id),
+        tenant_id=str(tenant_id),
+        branch_id=str(branch_id),
         published_dataset_id=str(dataset_id),
         overall=overall,
         departments=departments,

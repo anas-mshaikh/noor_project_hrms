@@ -11,12 +11,14 @@
  */
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Bell, CircleHelp, Menu, UserCircle2 } from "lucide-react";
 
 import { MODULES, getActiveModule } from "@/config/navigation";
+import { useAuth } from "@/lib/auth";
+import { useSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -104,9 +106,16 @@ function TopBarIconButton({
 
 export function TopBar() {
   const pathname = usePathname();
+  const router = useRouter();
   const activeModule = getActiveModule(pathname);
 
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const accessToken = useAuth((s) => s.accessToken);
+  const refreshToken = useAuth((s) => s.refreshToken);
+  const userEmail = useAuth((s) => s.user?.email);
+  const clearAuth = useAuth((s) => s.clear);
+  const resetSelection = useSelection((s) => s.reset);
 
   return (
     <header className="sticky top-0 z-40 border-b border-white/10 bg-white/[0.03] backdrop-blur-xl">
@@ -150,7 +159,13 @@ export function TopBar() {
         <div className="ml-auto flex items-center gap-2">
           <TopBarIconButton
             label="Notifications"
-            onClick={() => toast("Coming soon", { description: "Notifications panel" })}
+            onClick={() =>
+              toast("Coming soon", {
+                description: accessToken
+                  ? "Notifications panel"
+                  : "Sign in to view notifications",
+              })
+            }
           >
             <Bell className="h-5 w-5" />
           </TopBarIconButton>
@@ -182,7 +197,16 @@ export function TopBar() {
               align="end"
               className="w-56 border-white/10 bg-white/[0.06] text-foreground shadow-lg backdrop-blur-xl"
             >
-              <DropdownMenuLabel>Account</DropdownMenuLabel>
+              <DropdownMenuLabel>
+                {userEmail ? (
+                  <div className="truncate">
+                    <div className="text-xs text-muted-foreground">Signed in as</div>
+                    <div className="truncate">{userEmail}</div>
+                  </div>
+                ) : (
+                  "Account"
+                )}
+              </DropdownMenuLabel>
               <DropdownMenuSeparator className="bg-white/10" />
               <DropdownMenuItem
                 onSelect={(e) => {
@@ -196,15 +220,26 @@ export function TopBar() {
                 <Link href="/settings">Settings</Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-white/10" />
-              <DropdownMenuItem
-                variant="destructive"
-                onSelect={(e) => {
-                  e.preventDefault();
-                  toast("Coming soon", { description: "Sign out" });
-                }}
-              >
-                Sign out
-              </DropdownMenuItem>
+              {accessToken ? (
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    // Best-effort: clear local session. (Backend refresh token revocation can be added later.)
+                    void refreshToken;
+                    clearAuth();
+                    resetSelection();
+                    router.push("/login");
+                    toast("Signed out");
+                  }}
+                >
+                  Sign out
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem asChild>
+                  <Link href="/login">Sign in</Link>
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -212,4 +247,3 @@ export function TopBar() {
     </header>
   );
 }
-

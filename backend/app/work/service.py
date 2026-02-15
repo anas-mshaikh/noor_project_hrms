@@ -24,7 +24,6 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.models import (
     AttendanceDaily,
-    Employee,
     EmployeeSkill,
     TaskAssignment,
     TaskRequiredSkill,
@@ -67,18 +66,20 @@ class AutoTaskAssigner:
     # Public API
     # ------------------------------------------------------------------
 
-    def assign_pending_tasks_for_store(
-        self, *, store_id: UUID, business_date: date
+    def assign_pending_tasks_for_branch(
+        self, *, tenant_id: UUID, branch_id: UUID, business_date: date
     ) -> dict[str, int]:
         """
-        Attempt to assign all pending tasks for a store for the given business date.
+        Attempt to assign all pending tasks for a branch for the given business date.
 
         Idempotency:
         - We only consider tasks in status='pending'.
         - Once assigned, we set status='assigned', so re-running won't duplicate.
         """
 
-        tasks = self._get_pending_tasks_for_date(store_id=store_id, business_date=business_date)
+        tasks = self._get_pending_tasks_for_date(
+            tenant_id=tenant_id, branch_id=branch_id, business_date=business_date
+        )
 
         assigned = 0
         skipped = 0
@@ -101,7 +102,12 @@ class AutoTaskAssigner:
                 skipped += 1
                 continue
 
-            assignment = self.assign_task(task_id=task.id, business_date=business_date)
+            assignment = self.assign_task(
+                tenant_id=tenant_id,
+                branch_id=branch_id,
+                task_id=task.id,
+                business_date=business_date,
+            )
             if assignment is None:
                 no_eligible += 1
                 continue
@@ -114,14 +120,24 @@ class AutoTaskAssigner:
             "no_eligible": no_eligible,
         }
 
-    def assign_task(self, *, task_id: UUID, business_date: date) -> TaskAssignment | None:
+    def assign_task(
+        self, *, tenant_id: UUID, branch_id: UUID, task_id: UUID, business_date: date
+    ) -> TaskAssignment | None:
         """
         Attempt to assign a single task.
 
         Returns the created TaskAssignment row, or None if no eligible employees exist.
         """
 
-        task = self.db.get(WorkTask, task_id)
+        task = (
+            self.db.query(WorkTask)
+            .filter(
+                WorkTask.id == task_id,
+                WorkTask.tenant_id == tenant_id,
+                WorkTask.branch_id == branch_id,
+            )
+            .one_or_none()
+        )
         if task is None:
             raise ValueError("task not found")
 
@@ -135,7 +151,8 @@ class AutoTaskAssigner:
         )
 
         candidates = self._score_candidates(
-            store_id=task.store_id,
+            tenant_id=tenant_id,
+            branch_id=branch_id,
             business_date=business_date,
             required_skills=required_skills,
         )
@@ -168,10 +185,10 @@ class AutoTaskAssigner:
     # ------------------------------------------------------------------
 
     def _get_pending_tasks_for_date(
-        self, *, store_id: UUID, business_date: date
+        self, *, tenant_id: UUID, branch_id: UUID, business_date: date
     ) -> list[WorkTask]:
         """
-        Fetch pending tasks for a store + date.
+        Fetch pending tasks for a branch + date.
 
         We treat the "effective date" as:
         - window_start date if provided
@@ -189,7 +206,10 @@ class AutoTaskAssigner:
         # NOTE: We avoid complex timezone logic in Phase 1; everything is UTC.
         q = (
             self.db.query(WorkTask)
-            .filter(WorkTask.store_id == store_id)
+            .filter(
+                WorkTask.tenant_id == tenant_id,
+                WorkTask.branch_id == branch_id,
+            )
             .filter(WorkTask.status == "pending")
             .filter(
                 sa.or_(
@@ -207,7 +227,8 @@ class AutoTaskAssigner:
     def _score_candidates(
         self,
         *,
-        store_id: UUID,
+        tenant_id: UUID,
+        branch_id: UUID,
         business_date: date,
         required_skills: list[TaskRequiredSkill],
     ) -> list[CandidateScore]:
@@ -215,16 +236,50 @@ class AutoTaskAssigner:
         Build and score the candidate pool for one task.
         """
 
-        employees: list[Employee] = (
-            self.db.query(Employee)
-            .filter(Employee.store_id == store_id)
-            .filter(Employee.is_active.is_(True))
-            .all()
-        )
-        if not employees:
+        employee_rows = self.db.execute(
+            sa.text(
+                """
+                WITH current_employment AS (
+                  SELECT
+                    ee.employee_id,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY ee.employee_id
+                      ORDER BY ee.is_primary DESC NULLS LAST, ee.start_date DESC, ee.id DESC
+                    ) AS rn
+                  FROM hr_core.employee_employment ee
+                  WHERE ee.tenant_id = :tenant_id
+                    AND ee.branch_id = :branch_id
+                    AND ee.end_date IS NULL
+                ),
+                ce AS (
+                  SELECT employee_id FROM current_employment WHERE rn = 1
+                )
+                SELECT
+                  e.id AS employee_id,
+                  e.employee_code AS employee_code,
+                  p.first_name AS first_name,
+                  p.last_name AS last_name
+                FROM hr_core.employees e
+                JOIN hr_core.persons p ON p.id = e.person_id
+                JOIN ce ON ce.employee_id = e.id
+                WHERE e.tenant_id = :tenant_id
+                  AND e.status = 'ACTIVE'
+                ORDER BY e.employee_code ASC, e.id ASC
+                """
+            ),
+            {"tenant_id": tenant_id, "branch_id": branch_id},
+        ).all()
+        if not employee_rows:
             return []
 
-        employee_ids = [e.id for e in employees]
+        employee_ids = [r.employee_id for r in employee_rows]
+        employee_meta = {
+            r.employee_id: {
+                "employee_code": r.employee_code,
+                "employee_name": f"{r.first_name} {r.last_name}".strip(),
+            }
+            for r in employee_rows
+        }
 
         # Availability via attendance:
         # - If there is an attendance row and punch_in is NULL -> treat as absent (exclude).
@@ -233,7 +288,10 @@ class AutoTaskAssigner:
             r.employee_id: r
             for r in (
                 self.db.query(AttendanceDaily)
-                .filter(AttendanceDaily.store_id == store_id)
+                .filter(
+                    AttendanceDaily.tenant_id == tenant_id,
+                    AttendanceDaily.branch_id == branch_id,
+                )
                 .filter(AttendanceDaily.business_date == business_date)
                 .filter(AttendanceDaily.employee_id.in_(employee_ids))
                 .all()
@@ -247,7 +305,10 @@ class AutoTaskAssigner:
         active_counts = dict(
             self.db.query(TaskAssignment.employee_id, sa.func.count(TaskAssignment.id))
             .join(WorkTask, WorkTask.id == TaskAssignment.task_id)
-            .filter(WorkTask.store_id == store_id)
+            .filter(
+                WorkTask.tenant_id == tenant_id,
+                WorkTask.branch_id == branch_id,
+            )
             .filter(WorkTask.status.in_(active_statuses))
             .filter(TaskAssignment.completed_at.is_(None))
             .group_by(TaskAssignment.employee_id)
@@ -270,8 +331,8 @@ class AutoTaskAssigner:
             skills_by_employee.setdefault(row.employee_id, {})[row.skill_id] = row
 
         scored: list[CandidateScore] = []
-        for e in employees:
-            attendance = attendance_by_employee.get(e.id)
+        for employee_id in employee_ids:
+            attendance = attendance_by_employee.get(employee_id)
             # Exclude explicit absences (attendance row exists but no punch-in).
             if attendance is not None and attendance.punch_in is None:
                 continue
@@ -284,14 +345,14 @@ class AutoTaskAssigner:
             if attendance is not None:
                 is_present = attendance.punch_in is not None
 
-            emp_skills = skills_by_employee.get(e.id, {})
+            emp_skills = skills_by_employee.get(employee_id, {})
 
             # Eligibility: satisfy ALL required skills.
             if not self._meets_required_skills(emp_skills, required_skills):
                 continue
 
             base_skill_score = self._base_skill_score(emp_skills, required_skills)
-            penalty = float(active_counts.get(e.id, 0)) * float(
+            penalty = float(active_counts.get(employee_id, 0)) * float(
                 getattr(settings, "work_active_assignment_penalty", 0.25)
             )
             presence_bonus = (
@@ -307,14 +368,15 @@ class AutoTaskAssigner:
 
             score = float(base_skill_score + presence_bonus - unknown_penalty - penalty)
 
+            meta = employee_meta.get(employee_id) or {}
             scored.append(
                 CandidateScore(
-                    employee_id=e.id,
-                    employee_code=e.employee_code,
-                    employee_name=e.name,
+                    employee_id=employee_id,
+                    employee_code=str(meta.get("employee_code") or employee_id),
+                    employee_name=str(meta.get("employee_name") or ""),
                     score=score,
                     base_skill_score=base_skill_score,
-                    active_assignment_count=int(active_counts.get(e.id, 0) or 0),
+                    active_assignment_count=int(active_counts.get(employee_id, 0) or 0),
                     is_present=is_present,
                 )
             )

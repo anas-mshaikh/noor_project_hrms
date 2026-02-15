@@ -6,10 +6,9 @@ export default function SettingsOrgPage() {
       title="Organization"
       subtitle="Company profile. (UI scaffold)"
       primaryTitle="Profile"
-      primaryBody="Edit org details, branding, and store metadata."
+      primaryBody="Edit tenant/company profile details and branch metadata."
       secondaryTitle="Coming soon"
-      secondaryBody="This will be wired to /api/v1/organizations once final fields are set."
+      secondaryBody="This will be wired to /api/v1/tenancy/companies and /api/v1/tenancy/branches once final fields are set."
     />
   );
 }
-

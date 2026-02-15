@@ -5,7 +5,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from app.auth.deps import require_roles
+from app.auth.deps import require_permission
+from app.auth.permissions import TENANCY_READ, TENANCY_WRITE
 from app.auth.schemas import ScopeOut, TokenResponse, UserOut
 from app.core.errors import AppError
 from app.core.responses import ok
@@ -28,8 +29,6 @@ from app.shared.types import AuthContext
 
 router = APIRouter(tags=["tenancy"])
 _svc = TenancyService()
-
-_TENANCY_ADMIN_ROLES = ["ADMIN", "HR_ADMIN", "HR_MANAGER"]
 
 
 @router.post("/bootstrap")
@@ -71,7 +70,7 @@ def bootstrap(payload: BootstrapRequest, request: Request, db: Session = Depends
 
 @router.get("/tenancy/companies")
 def list_companies(
-    ctx: AuthContext = Depends(require_roles(_TENANCY_ADMIN_ROLES)),
+    ctx: AuthContext = Depends(require_permission(TENANCY_READ)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     companies = _svc.list_companies(db, tenant_id=ctx.scope.tenant_id)
@@ -94,7 +93,7 @@ def list_companies(
 @router.post("/tenancy/companies")
 def create_company(
     payload: CompanyCreate,
-    ctx: AuthContext = Depends(require_roles(_TENANCY_ADMIN_ROLES)),
+    ctx: AuthContext = Depends(require_permission(TENANCY_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     c = _svc.create_company(
@@ -121,7 +120,7 @@ def create_company(
 @router.get("/tenancy/branches")
 def list_branches(
     company_id: UUID | None = None,
-    ctx: AuthContext = Depends(require_roles(_TENANCY_ADMIN_ROLES)),
+    ctx: AuthContext = Depends(require_permission(TENANCY_READ)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     branches = _svc.list_branches(db, tenant_id=ctx.scope.tenant_id, company_id=company_id)
@@ -145,7 +144,7 @@ def list_branches(
 @router.post("/tenancy/branches")
 def create_branch(
     payload: BranchCreate,
-    ctx: AuthContext = Depends(require_roles(_TENANCY_ADMIN_ROLES)),
+    ctx: AuthContext = Depends(require_permission(TENANCY_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     b = _svc.create_branch(
@@ -175,7 +174,7 @@ def create_branch(
 def list_org_units(
     company_id: UUID,
     branch_id: UUID | None = None,
-    ctx: AuthContext = Depends(require_roles(_TENANCY_ADMIN_ROLES)),
+    ctx: AuthContext = Depends(require_permission(TENANCY_READ)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     units = _svc.list_org_units(
@@ -203,7 +202,7 @@ def list_org_units(
 @router.post("/tenancy/org-units")
 def create_org_unit(
     payload: OrgUnitCreate,
-    ctx: AuthContext = Depends(require_roles(_TENANCY_ADMIN_ROLES)),
+    ctx: AuthContext = Depends(require_permission(TENANCY_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     u = _svc.create_org_unit(
@@ -232,7 +231,7 @@ def create_org_unit(
 def org_chart(
     company_id: UUID,
     branch_id: UUID | None = None,
-    ctx: AuthContext = Depends(require_roles(_TENANCY_ADMIN_ROLES)),
+    ctx: AuthContext = Depends(require_permission(TENANCY_READ)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     tree = _svc.build_org_chart(
@@ -254,7 +253,7 @@ def _require_company_id(ctx: AuthContext, company_id: UUID | None) -> UUID:
 @router.get("/tenancy/job-titles")
 def list_job_titles(
     company_id: UUID | None = None,
-    ctx: AuthContext = Depends(require_roles(_TENANCY_ADMIN_ROLES)),
+    ctx: AuthContext = Depends(require_permission(TENANCY_READ)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     cid = _require_company_id(ctx, company_id)
@@ -265,7 +264,7 @@ def list_job_titles(
 @router.post("/tenancy/job-titles")
 def create_job_title(
     payload: JobTitleCreate,
-    ctx: AuthContext = Depends(require_roles(_TENANCY_ADMIN_ROLES)),
+    ctx: AuthContext = Depends(require_permission(TENANCY_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     jt = _svc.create_job_title(
@@ -280,7 +279,7 @@ def create_job_title(
 @router.get("/tenancy/grades")
 def list_grades(
     company_id: UUID | None = None,
-    ctx: AuthContext = Depends(require_roles(_TENANCY_ADMIN_ROLES)),
+    ctx: AuthContext = Depends(require_permission(TENANCY_READ)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     cid = _require_company_id(ctx, company_id)
@@ -296,7 +295,7 @@ def list_grades(
 @router.post("/tenancy/grades")
 def create_grade(
     payload: GradeCreate,
-    ctx: AuthContext = Depends(require_roles(_TENANCY_ADMIN_ROLES)),
+    ctx: AuthContext = Depends(require_permission(TENANCY_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     g = _svc.create_grade(
@@ -307,4 +306,3 @@ def create_grade(
         level=payload.level,
     )
     return ok(GradeOut(id=g.id, tenant_id=g.tenant_id, company_id=g.company_id, name=g.name, level=g.level).model_dump())
-

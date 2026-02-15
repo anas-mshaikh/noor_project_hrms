@@ -14,14 +14,19 @@ from sqlalchemy.orm import Session
 from app.models.models import MobileAccount
 
 
-def get_mobile_account_by_employee(db: Session, store_id: UUID, employee_id: UUID) -> MobileAccount | None:
+def get_mobile_account_by_employee(
+    db: Session, *, tenant_id: UUID, branch_id: UUID, employee_id: UUID
+) -> MobileAccount | None:
     return (
         db.query(MobileAccount)
-        .filter(MobileAccount.store_id == store_id, MobileAccount.employee_id == employee_id)
+        .filter(
+            MobileAccount.tenant_id == tenant_id,
+            MobileAccount.branch_id == branch_id,
+            MobileAccount.employee_id == employee_id,
+        )
         .one_or_none()
     )
 
 
 def get_mobile_account_by_uid(db: Session, firebase_uid: str) -> MobileAccount | None:
     return db.query(MobileAccount).filter(MobileAccount.firebase_uid == firebase_uid).one_or_none()
-

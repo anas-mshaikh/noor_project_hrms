@@ -9,6 +9,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { StorePicker } from "@/components/StorePicker";
 import { HrPageShell } from "@/features/hr/components/layout/HrPageShell";
 import { HrHeader } from "@/features/hr/components/layout/HrHeader";
 import { PanelCard } from "@/features/hr/components/cards/PanelCard";
@@ -30,6 +31,7 @@ import {
   retryScreeningRun,
 } from "@/features/hr/api/hr";
 import { toScorePercent } from "@/features/hr/lib/scoring";
+import { useSelection } from "@/lib/selection";
 import type { ScreeningResultRowOut, UUID } from "@/lib/types";
 
 export default function HRRunDetailPage() {
@@ -42,7 +44,9 @@ export default function HRRunDetailPage() {
   const routeParams = useParams() as { runId?: string };
   const runId = (routeParams.runId ?? null) as UUID | null;
 
-  const runQ = useScreeningRun(runId);
+  const branchId = useSelection((s) => (s.branchId as UUID | undefined) ?? null);
+
+  const runQ = useScreeningRun(branchId, runId);
   const run = runQ.data;
 
   const [query, setQuery] = React.useState("");
@@ -55,18 +59,18 @@ export default function HRRunDetailPage() {
   const [page, setPage] = React.useState(1);
   const pageSize = 50;
 
-  const resultsQ = useScreeningResults(runId, {
+  const resultsQ = useScreeningResults(branchId, runId, {
     enabled: run?.status === "DONE",
     page,
     pageSize,
   });
 
-  const explain = useExplainActions(runId);
+  const explain = useExplainActions(branchId, runId);
 
   const cancelMut = useMutation({
-    mutationFn: () => cancelScreeningRun(runId as UUID),
+    mutationFn: () => cancelScreeningRun(branchId as UUID, runId as UUID),
     onSuccess: (updated) => {
-      queryClient.setQueryData(hrQueryKeys.screeningRun(runId), updated);
+      queryClient.setQueryData(hrQueryKeys.screeningRun(branchId, runId), updated);
       toast("Run cancelled");
     },
     onError: (err) => {
@@ -77,7 +81,7 @@ export default function HRRunDetailPage() {
   });
 
   const retryMut = useMutation({
-    mutationFn: () => retryScreeningRun(runId as UUID),
+    mutationFn: () => retryScreeningRun(branchId as UUID, runId as UUID),
     onSuccess: (newRun) => {
       toast("Retry started", { description: `run_id: ${newRun.id}` });
       router.push(`/hr/runs/${newRun.id}`);
@@ -92,9 +96,10 @@ export default function HRRunDetailPage() {
   const addToPipelineMut = useMutation({
     mutationFn: async () => {
       if (!runId) throw new Error("Missing run id");
+      if (!branchId) throw new Error("Select a branch first");
       if (!run) throw new Error("Run not loaded yet");
       if (run.status !== "DONE") throw new Error("Run is not done yet");
-      return createApplicationsFromRun(runId, { top_n: 10, stage_name: "Screened" });
+      return createApplicationsFromRun(branchId, runId, { top_n: 10, stage_name: "Screened" });
     },
     onSuccess: (resp) => {
       toast("Added to pipeline", {
@@ -102,7 +107,7 @@ export default function HRRunDetailPage() {
       });
       if (run?.opening_id) {
         queryClient.invalidateQueries({
-          queryKey: hrQueryKeys.applications(run.opening_id),
+          queryKey: hrQueryKeys.applications(branchId, run.opening_id),
         });
       }
     },
@@ -122,6 +127,22 @@ export default function HRRunDetailPage() {
             title="Loading run…"
             description="Preparing route context."
             icon={Sparkles}
+          />
+        </div>
+      </HrPageShell>
+    );
+  }
+
+  if (!branchId) {
+    return (
+      <HrPageShell>
+        <HrHeader title="Screening Run" subtitle="Select a branch…" />
+        <div className="mt-6">
+          <EmptyStateCard
+            title="Select a branch to continue"
+            description="Runs are branch-scoped. Pick a branch to view this run."
+            icon={Sparkles}
+            actions={<div className="w-full max-w-xl"><StorePicker /></div>}
           />
         </div>
       </HrPageShell>

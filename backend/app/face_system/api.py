@@ -20,8 +20,11 @@ from uuid import UUID
 import numpy as np
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
+from app.auth.deps import require_permission
+from app.auth.permissions import FACE_LIBRARY_READ, FACE_LIBRARY_WRITE, FACE_RECOGNIZE
 from app.db.session import get_db
 from app.face_system.config import FaceSystemConfig
 from app.face_system.aligners.opencv_lbf import FaceSystemModelError as FaceAlignerModelError
@@ -32,7 +35,7 @@ from app.face_system.embedders.insightface_arcface import (
 from app.face_system.recognizer import FaceSystemError
 from app.face_system.runtime_processor import get_runtime_processor
 from app.face_system.storage import FaceLibraryStorage, StoredFaceImage
-from app.models.models import Employee
+from app.shared.types import AuthContext
 
 router = APIRouter(prefix="", tags=["face"])
 
@@ -73,38 +76,96 @@ class EmployeeFacesOut(BaseModel):
 
 
 class FaceLibraryOut(BaseModel):
-    store_id: UUID
+    tenant_id: UUID
+    branch_id: UUID
     employees: list[EmployeeFacesOut]
 
+def _require_company_id(db: Session, *, tenant_id: UUID, branch_id: UUID) -> UUID:
+    row = db.execute(
+        sa.text(
+            """
+            SELECT company_id
+            FROM tenancy.branches
+            WHERE id = :branch_id
+              AND tenant_id = :tenant_id
+            """
+        ),
+        {"tenant_id": tenant_id, "branch_id": branch_id},
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Branch not found")
+    return row[0]
 
-@router.get("/stores/{store_id}/faces", response_model=FaceLibraryOut)
-def list_faces(store_id: UUID, db: Session = Depends(get_db)) -> FaceLibraryOut:
+
+@router.get("/branches/{branch_id}/faces", response_model=FaceLibraryOut)
+def list_faces(
+    branch_id: UUID,
+    ctx: AuthContext = Depends(require_permission(FACE_LIBRARY_READ)),
+    db: Session = Depends(get_db),
+) -> FaceLibraryOut:
     """
-    List training images per employee for a store.
+    List training images per employee for a branch.
     """
     cfg = FaceSystemConfig.from_settings()
     storage = FaceLibraryStorage(cfg.storage)
 
-    emps = (
-        db.query(Employee)
-        .filter(Employee.store_id == store_id, Employee.is_active.is_(True))
-        .order_by(Employee.employee_code.asc())
-        .all()
-    )
+    company_id = _require_company_id(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id)
+    rows = db.execute(
+        sa.text(
+            """
+            WITH current_employment AS (
+              SELECT
+                ee.employee_id,
+                ee.branch_id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY ee.employee_id
+                  ORDER BY ee.is_primary DESC NULLS LAST, ee.start_date DESC, ee.id DESC
+                ) AS rn
+              FROM hr_core.employee_employment ee
+              WHERE ee.tenant_id = :tenant_id
+                AND ee.company_id = :company_id
+                AND ee.end_date IS NULL
+            ),
+            ce AS (
+              SELECT employee_id, branch_id
+              FROM current_employment
+              WHERE rn = 1
+            )
+            SELECT
+              e.id AS employee_id,
+              e.employee_code AS employee_code,
+              p.first_name AS first_name,
+              p.last_name AS last_name
+            FROM ce
+            JOIN hr_core.employees e ON e.id = ce.employee_id
+            JOIN hr_core.persons p ON p.id = e.person_id
+            WHERE e.tenant_id = :tenant_id
+              AND e.company_id = :company_id
+              AND ce.branch_id = :branch_id
+              AND e.status = 'ACTIVE'
+            ORDER BY e.employee_code ASC, e.id ASC
+            """
+        ),
+        {"tenant_id": ctx.scope.tenant_id, "company_id": company_id, "branch_id": branch_id},
+    ).all()
 
     out_emps: list[EmployeeFacesOut] = []
-    for e in emps:
-        imgs = storage.list_employee_images(store_id=store_id, employee_id=e.id)
+    for r in rows:
+        emp_id = r.employee_id
+        imgs = storage.list_employee_images(
+            tenant_id=ctx.scope.tenant_id, branch_id=branch_id, employee_id=emp_id
+        )
+        full_name = f"{r.first_name} {r.last_name}".strip()
         out_emps.append(
             EmployeeFacesOut(
-                employee_id=e.id,
-                employee_code=e.employee_code,
-                employee_name=e.name,
+                employee_id=emp_id,
+                employee_code=r.employee_code,
+                employee_name=full_name,
                 images=[FaceImageOut(filename=i.filename, rel_path=i.rel_path) for i in imgs],
             )
         )
 
-    return FaceLibraryOut(store_id=store_id, employees=out_emps)
+    return FaceLibraryOut(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, employees=out_emps)
 
 
 class FaceRegisterResponse(BaseModel):
@@ -112,10 +173,12 @@ class FaceRegisterResponse(BaseModel):
     stored: FaceImageOut
 
 
-@router.post("/employees/{employee_id}/faces/register", response_model=FaceRegisterResponse)
+@router.post("/branches/{branch_id}/employees/{employee_id}/faces/register", response_model=FaceRegisterResponse)
 def register_face(
+    branch_id: UUID,
     employee_id: UUID,
     file: UploadFile = File(...),
+    ctx: AuthContext = Depends(require_permission(FACE_LIBRARY_WRITE)),
     db: Session = Depends(get_db),
 ) -> FaceRegisterResponse:
     """
@@ -124,19 +187,43 @@ def register_face(
     Behavior:
     - Detect best face in the uploaded image
     - Crop the face
-    - Save to <FACE_DIR>/<store_id>/<employee_id>/<timestamp>.jpg
+    - Save to <FACE_DIR>/<tenant_id>/<branch_id>/<employee_id>/<timestamp>.jpg
     - Clear prototypes (they will rebuild on next recognition)
     """
-    emp = db.get(Employee, employee_id)
-    if emp is None:
-        raise HTTPException(status_code=404, detail="employee not found")
+    company_id = _require_company_id(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id)
+    # Ensure employee exists in-tenant/company and has an active employment in this branch.
+    row = db.execute(
+        sa.text(
+            """
+            SELECT 1
+            FROM hr_core.employees e
+            JOIN hr_core.employee_employment ee ON ee.employee_id = e.id
+            WHERE e.id = :employee_id
+              AND e.tenant_id = :tenant_id
+              AND e.company_id = :company_id
+              AND ee.tenant_id = :tenant_id
+              AND ee.company_id = :company_id
+              AND ee.branch_id = :branch_id
+              AND ee.end_date IS NULL
+            LIMIT 1
+            """
+        ),
+        {
+            "employee_id": employee_id,
+            "tenant_id": ctx.scope.tenant_id,
+            "company_id": company_id,
+            "branch_id": branch_id,
+        },
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="employee not found for branch")
 
     cfg = FaceSystemConfig.from_settings()
     storage = FaceLibraryStorage(cfg.storage)
 
     # Use the same detector as runtime (for consistent crops).
     try:
-        proc = get_runtime_processor(store_id=emp.store_id, camera_id=None)
+        proc = get_runtime_processor(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, camera_id=None)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -156,8 +243,9 @@ def register_face(
         raise HTTPException(status_code=400, detail="invalid face crop")
 
     stored = storage.save_face_crop(
-        store_id=emp.store_id,
-        employee_id=emp.id,
+        tenant_id=ctx.scope.tenant_id,
+        branch_id=branch_id,
+        employee_id=employee_id,
         face_crop_bgr=face_crop,
         ext=Path(file.filename or "face.jpg").suffix or ".jpg",
     )
@@ -166,7 +254,7 @@ def register_face(
     proc.recognizer.clear()
 
     return FaceRegisterResponse(
-        employee_id=emp.id,
+        employee_id=employee_id,
         stored=FaceImageOut(filename=stored.filename, rel_path=stored.rel_path),
     )
 
@@ -178,17 +266,18 @@ class FaceRecognizeRequestOut(BaseModel):
     top_k: list[dict[str, Any]]
 
 
-@router.post("/stores/{store_id}/faces/recognize", response_model=FaceRecognizeRequestOut)
+@router.post("/branches/{branch_id}/faces/recognize", response_model=FaceRecognizeRequestOut)
 def recognize_face(
-    store_id: UUID,
+    branch_id: UUID,
     file: UploadFile = File(...),
     top_k: int = 5,
+    ctx: AuthContext = Depends(require_permission(FACE_RECOGNIZE)),
 ) -> FaceRecognizeRequestOut:
     """
-    Recognize a face image against current store prototypes.
+    Recognize a face image against current branch prototypes.
     """
     try:
-        proc = get_runtime_processor(store_id=store_id, camera_id=None)
+        proc = get_runtime_processor(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, camera_id=None)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -220,39 +309,47 @@ def recognize_face(
 
 
 class FaceClearResponse(BaseModel):
-    store_id: UUID
+    tenant_id: UUID
+    branch_id: UUID
     cleared: bool
 
 
-@router.post("/stores/{store_id}/faces/clear", response_model=FaceClearResponse)
-def clear_prototypes(store_id: UUID) -> FaceClearResponse:
+@router.post("/branches/{branch_id}/faces/clear", response_model=FaceClearResponse)
+def clear_prototypes(
+    branch_id: UUID,
+    ctx: AuthContext = Depends(require_permission(FACE_LIBRARY_WRITE)),
+) -> FaceClearResponse:
     """
     Clear in-memory prototypes for a store.
     """
     try:
-        proc = get_runtime_processor(store_id=store_id, camera_id=None)
+        proc = get_runtime_processor(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, camera_id=None)
         proc.recognizer.clear()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    return FaceClearResponse(store_id=store_id, cleared=True)
+    return FaceClearResponse(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, cleared=True)
 
 
 class FaceRebuildResponse(BaseModel):
-    store_id: UUID
+    tenant_id: UUID
+    branch_id: UUID
     started: bool
 
 
-@router.post("/stores/{store_id}/faces/rebuild", response_model=FaceRebuildResponse)
-def rebuild_prototypes(store_id: UUID) -> FaceRebuildResponse:
+@router.post("/branches/{branch_id}/faces/rebuild", response_model=FaceRebuildResponse)
+def rebuild_prototypes(
+    branch_id: UUID,
+    ctx: AuthContext = Depends(require_permission(FACE_LIBRARY_WRITE)),
+) -> FaceRebuildResponse:
     """
     Trigger an async prototype rebuild for a store.
     """
     try:
-        proc = get_runtime_processor(store_id=store_id, camera_id=None)
+        proc = get_runtime_processor(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, camera_id=None)
         proc.recognizer.trigger_rebuild_async()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    return FaceRebuildResponse(store_id=store_id, started=True)
+    return FaceRebuildResponse(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, started=True)
 
 
 class FaceDeleteResponse(BaseModel):
@@ -261,34 +358,62 @@ class FaceDeleteResponse(BaseModel):
 
 
 @router.delete(
-    "/employees/{employee_id}/faces/{filename}",
+    "/branches/{branch_id}/employees/{employee_id}/faces/{filename}",
     response_model=FaceDeleteResponse,
 )
 def delete_training_image(
+    branch_id: UUID,
     employee_id: UUID,
     filename: str,
+    ctx: AuthContext = Depends(require_permission(FACE_LIBRARY_WRITE)),
     db: Session = Depends(get_db),
 ) -> FaceDeleteResponse:
     """
     Delete one training image for an employee.
     """
-    emp = db.get(Employee, employee_id)
-    if emp is None:
-        raise HTTPException(status_code=404, detail="employee not found")
+    company_id = _require_company_id(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id)
+    row = db.execute(
+        sa.text(
+            """
+            SELECT 1
+            FROM hr_core.employees e
+            JOIN hr_core.employee_employment ee ON ee.employee_id = e.id
+            WHERE e.id = :employee_id
+              AND e.tenant_id = :tenant_id
+              AND e.company_id = :company_id
+              AND ee.tenant_id = :tenant_id
+              AND ee.company_id = :company_id
+              AND ee.branch_id = :branch_id
+              AND ee.end_date IS NULL
+            LIMIT 1
+            """
+        ),
+        {
+            "employee_id": employee_id,
+            "tenant_id": ctx.scope.tenant_id,
+            "company_id": company_id,
+            "branch_id": branch_id,
+        },
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="employee not found for branch")
 
     cfg = FaceSystemConfig.from_settings()
     storage = FaceLibraryStorage(cfg.storage)
 
     deleted = storage.delete_employee_image(
-        store_id=emp.store_id, employee_id=emp.id, filename=filename
+        tenant_id=ctx.scope.tenant_id,
+        branch_id=branch_id,
+        employee_id=employee_id,
+        filename=filename,
     )
 
     # Clear prototypes so next recognition rebuilds without the deleted image.
     try:
-        proc = get_runtime_processor(store_id=emp.store_id, camera_id=None)
+        proc = get_runtime_processor(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, camera_id=None)
         proc.recognizer.clear()
     except Exception:
         # Deletion should succeed even if the face system can't initialize (missing models).
         pass
 
-    return FaceDeleteResponse(employee_id=emp.id, deleted=bool(deleted))
+    return FaceDeleteResponse(employee_id=employee_id, deleted=bool(deleted))

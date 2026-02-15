@@ -18,8 +18,8 @@ def sync_month(
     *,
     month_key: str,
     dataset_id: UUID,
-    store_id: UUID,
-    org_id: UUID,
+    tenant_id: UUID,
+    branch_id: UUID,
     stats: list[MonthlyEmployeeStatsV1],
     overall: LeaderboardDocV1,
     departments: dict[str, LeaderboardDocV1],
@@ -29,19 +29,19 @@ def sync_month(
     Write mobile-ready docs to Firestore.
 
     Target structure:
-      orgs/{orgId}/stores/{storeId}/months/{YYYY-MM}/employees/{employee_code}
-      orgs/{orgId}/stores/{storeId}/months/{YYYY-MM}/leaderboards/overall
-      orgs/{orgId}/stores/{storeId}/months/{YYYY-MM}/leaderboards/dept-{departmentKey}
-      orgs/{orgId}/stores/{storeId}/months/{YYYY-MM} (metadata)
+      tenants/{tenantId}/branches/{branchId}/months/{YYYY-MM}/employees/{employee_code}
+      tenants/{tenantId}/branches/{branchId}/months/{YYYY-MM}/leaderboards/overall
+      tenants/{tenantId}/branches/{branchId}/months/{YYYY-MM}/leaderboards/dept-{departmentKey}
+      tenants/{tenantId}/branches/{branchId}/months/{YYYY-MM} (metadata)
     """
     synced_at = datetime.now(timezone.utc)
 
     if dry_run:
         logger.info(
-            "mobile sync dry-run: month=%s store=%s org=%s employees=%s departments=%s",
+            "mobile sync dry-run: month=%s tenant=%s branch=%s employees=%s departments=%s",
             month_key,
-            store_id,
-            org_id,
+            tenant_id,
+            branch_id,
             len(stats),
             len(departments),
         )
@@ -50,10 +50,10 @@ def sync_month(
     client = get_firestore_client()
 
     base = (
-        client.collection("orgs")
-        .document(str(org_id))
-        .collection("stores")
-        .document(str(store_id))
+        client.collection("tenants")
+        .document(str(tenant_id))
+        .collection("branches")
+        .document(str(branch_id))
         .collection("months")
         .document(month_key)
     )
@@ -86,10 +86,10 @@ def sync_month(
         leaderboards.document(f"dept-{dept_key}").set(doc.model_dump())
 
     logger.info(
-        "mobile sync done: month=%s store=%s org=%s employees=%s departments=%s",
+        "mobile sync done: month=%s tenant=%s branch=%s employees=%s departments=%s",
         month_key,
-        store_id,
-        org_id,
+        tenant_id,
+        branch_id,
         len(stats),
         len(departments),
     )

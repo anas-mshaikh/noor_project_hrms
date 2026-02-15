@@ -38,7 +38,7 @@ export function SidebarRail() {
     process.env.NEXT_PUBLIC_SHOW_DEBUG_IDS === "true" ||
     process.env.NODE_ENV === "development";
 
-  const storeId = useSelection((s) => s.storeId);
+  const branchId = useSelection((s) => s.branchId);
   const cameraId = useSelection((s) => s.cameraId);
 
   return (
@@ -139,7 +139,7 @@ export function SidebarRail() {
                   Context
                 </SheetTitle>
                 <div className="text-xs text-muted-foreground">
-                  Select organization, store, and camera.
+                  Select tenant, company, branch, and camera.
                 </div>
               </SheetHeader>
               <div className="px-4 pb-6">
@@ -147,7 +147,7 @@ export function SidebarRail() {
                   <StorePicker />
                   {showDebugIds ? (
                     <div className="mt-2 text-[11px] text-muted-foreground">
-                      {storeId ? `store_id: ${storeId}` : "Select a store"}
+                      {branchId ? `branch_id: ${branchId}` : "Select a branch"}
                       {cameraId ? ` • camera_id: ${cameraId}` : ""}
                     </div>
                   ) : null}
@@ -160,4 +160,3 @@ export function SidebarRail() {
     </aside>
   );
 }
-

@@ -11,10 +11,14 @@ logger = logging.getLogger("app.http")
 
 class TraceIdMiddleware:
     """
-    Adds a request-scoped trace_id and emits a single structured log line per request.
+    Adds a request-scoped correlation_id and emits a single structured log line per request.
 
-    - trace_id is stored on request.state.trace_id
-    - response header: X-Trace-Id
+    - correlation_id is stored on request.state.correlation_id
+    - response header: X-Correlation-Id
+
+    Backwards compatibility:
+    - If the client sends X-Trace-Id, we treat it as the correlation id.
+    - We also store the value on request.state.trace_id for legacy code paths.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -28,8 +32,13 @@ class TraceIdMiddleware:
         # Starlette stores request.state on scope["state"] (a dict-like).
         state = scope.setdefault("state", {})
         req_headers = dict(scope.get("headers") or [])
-        trace_id = (req_headers.get(b"x-trace-id") or uuid4().hex.encode()).decode()
-        state["trace_id"] = trace_id
+        correlation_id = (
+            req_headers.get(b"x-correlation-id")
+            or req_headers.get(b"x-trace-id")
+            or uuid4().hex.encode()
+        ).decode()
+        state["correlation_id"] = correlation_id
+        state["trace_id"] = correlation_id  # legacy alias
 
         start = time.perf_counter()
         status_code = 500
@@ -39,7 +48,9 @@ class TraceIdMiddleware:
             if message["type"] == "http.response.start":
                 status_code = int(message["status"])
                 headers = list(message.get("headers") or [])
-                headers.append((b"x-trace-id", trace_id.encode()))
+                headers.append((b"x-correlation-id", correlation_id.encode()))
+                # Legacy header for older clients/tools.
+                headers.append((b"x-trace-id", correlation_id.encode()))
                 message["headers"] = headers
             await send(message)
 
@@ -55,12 +66,12 @@ class TraceIdMiddleware:
             branch_id = getattr(scope_obj, "branch_id", None) if scope_obj is not None else None
 
             logger.info(
-                "request method=%s path=%s status=%s duration_ms=%.2f trace_id=%s user_id=%s tenant_id=%s company_id=%s branch_id=%s",
+                "request method=%s path=%s status=%s duration_ms=%.2f correlation_id=%s user_id=%s tenant_id=%s company_id=%s branch_id=%s",
                 scope.get("method"),
                 scope.get("path"),
                 status_code,
                 duration_ms,
-                trace_id,
+                correlation_id,
                 user_id,
                 tenant_id,
                 company_id,

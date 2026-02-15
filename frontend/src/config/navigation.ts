@@ -103,7 +103,7 @@ const attendanceModule: ModuleDef = {
       id: "setup",
       href: "/setup",
       title: "Setup",
-      description: "Orgs, stores, cameras",
+      description: "Tenancy, branches, cameras",
       icon: Settings,
       match: "exact",
     },
@@ -341,4 +341,3 @@ export function getActiveModule(pathname: string): ModuleDef {
   // Prefer explicit modules, fall back to Attendance for everything else.
   return MODULES.find((m) => m.isActive(pathname)) ?? attendanceModule;
 }
-

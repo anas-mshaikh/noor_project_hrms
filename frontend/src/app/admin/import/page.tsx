@@ -3,21 +3,22 @@
 /**
  * /admin/import
  *
- * Phase 2 Admin Import:
+ * Phase 2 Admin Import (branch-scoped):
  * - Upload XLSX (POS + Attendance sheets)
  * - Backend validates/parses and writes to Postgres
- * - Optional publish step triggers Firebase sync (if enabled on backend)
+ * - Optional publish triggers Firebase sync (if enabled on backend)
  *
- * This page is protected by a minimal dev-only admin gate:
- * - ADMIN_PASSWORD (Next.js env)
- * - httpOnly cookie set by /api/admin/login
+ * Backend endpoints used:
+ * - POST /api/v1/branches/{branch_id}/imports
+ * - POST /api/v1/branches/{branch_id}/imports/{dataset_id}/publish
  */
 
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 
 import { apiForm, apiJson } from "@/lib/api";
 import { useSelection } from "@/lib/selection";
+import { StorePicker } from "@/components/StorePicker";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -30,8 +31,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-
-type AdminMe = { is_admin: boolean };
 
 type ImportErrorOut = { sheet: string; row: number; message: string };
 type ImportTopSaleOut = { employee_code: string; name: string; net_sales: number | null };
@@ -51,58 +50,8 @@ type PublishResponse = {
 };
 
 export default function AdminImportPage() {
-  const qc = useQueryClient();
+  const branchId = useSelection((s) => s.branchId);
 
-  const meQ = useQuery({
-    queryKey: ["adminMe"],
-    queryFn: async () => {
-      const res = await fetch("/api/admin/me", { cache: "no-store" });
-      if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as AdminMe;
-    },
-    refetchOnWindowFocus: false,
-  });
-
-  // ----------------------------
-  // Login
-  // ----------------------------
-  const [password, setPassword] = useState("");
-
-  const loginM = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-      const text = await res.text();
-      if (!res.ok) throw new Error(text);
-      return text;
-    },
-    onSuccess: async () => {
-      setPassword("");
-      await qc.invalidateQueries({ queryKey: ["adminMe"] });
-    },
-  });
-
-  const logoutM = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/admin/logout", { method: "POST" });
-      const text = await res.text();
-      if (!res.ok) throw new Error(text);
-      return text;
-    },
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["adminMe"] });
-    },
-  });
-
-  const isAdmin = Boolean(meQ.data?.is_admin);
-
-  // ----------------------------
-  // Import
-  // ----------------------------
-  const selection = useSelection();
   const defaultMonthKey = useMemo(() => {
     // YYYY-MM (local browser time)
     return new Date().toISOString().slice(0, 7);
@@ -116,15 +65,15 @@ export default function AdminImportPage() {
 
   const uploadM = useMutation({
     mutationFn: async () => {
+      if (!branchId) throw new Error("Select a branch first.");
       if (!xlsxFile) throw new Error("Select an .xlsx file first.");
 
       const form = new FormData();
       form.append("file", xlsxFile, xlsxFile.name);
       if (monthKey.trim()) form.append("month_key", monthKey.trim());
       if (uploadedBy.trim()) form.append("uploaded_by", uploadedBy.trim());
-      if (selection.storeId) form.append("store_id", selection.storeId);
 
-      return apiForm<ImportResponse>("/api/v1/imports", form, { method: "POST" });
+      return apiForm<ImportResponse>(`/api/v1/branches/${branchId}/imports`, form, { method: "POST" });
     },
     onSuccess: (res) => {
       setLastImport(res);
@@ -134,81 +83,44 @@ export default function AdminImportPage() {
 
   const publishM = useMutation({
     mutationFn: async () => {
+      if (!branchId) throw new Error("Select a branch first.");
       const ds = lastImport?.dataset_id;
       if (!ds) throw new Error("Upload a dataset first.");
-      return apiJson<PublishResponse>(`/api/v1/imports/${ds}/publish`, { method: "POST" });
+      return apiJson<PublishResponse>(`/api/v1/branches/${branchId}/imports/${ds}/publish`, { method: "POST" });
     },
     onSuccess: (res) => setLastPublish(res),
   });
 
-  if (meQ.isLoading) {
+  if (!branchId) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>Admin Import</CardTitle>
-          <CardDescription>Checking admin session…</CardDescription>
+          <CardDescription>Select a branch first.</CardDescription>
         </CardHeader>
+        <CardContent>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            <StorePicker />
+          </div>
+        </CardContent>
       </Card>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="max-w-xl space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Admin Login</CardTitle>
-            <CardDescription>
-              Enter the dev admin password to access imports.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="adminPassword">Admin password</Label>
-              <Input
-                id="adminPassword"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button onClick={() => loginM.mutate()} disabled={loginM.isPending}>
-                {loginM.isPending ? "Signing in…" : "Sign in"}
-              </Button>
-              {loginM.error ? (
-                <div className="text-sm text-destructive">
-                  {String(loginM.error)}
-                </div>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Admin Import</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Upload a monthly XLSX (POS + Attendance). Postgres is the source of truth; publish optionally syncs to Firebase.
-          </p>
-        </div>
-        <Button variant="outline" onClick={() => logoutM.mutate()} disabled={logoutM.isPending}>
-          Sign out
-        </Button>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Admin Import</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Upload a monthly XLSX (POS + Attendance). Postgres is the source of truth; publish optionally syncs to Firebase.
+        </p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Upload XLSX</CardTitle>
           <CardDescription>
-            The importer scans the first 30 rows to find headers, stops at TOTAL or blank rows.
+            The importer scans the first 30 rows to find headers and stops at TOTAL/blank rows.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -223,13 +135,13 @@ export default function AdminImportPage() {
                 id="uploadedBy"
                 value={uploadedBy}
                 onChange={(e) => setUploadedBy(e.target.value)}
-                placeholder="e.g. Store Manager"
+                placeholder="admin@company.com"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="xlsx">Excel file (.xlsx)</Label>
+              <Label htmlFor="xlsxFile">XLSX file</Label>
               <Input
-                id="xlsx"
+                id="xlsxFile"
                 type="file"
                 accept=".xlsx"
                 onChange={(e) => setXlsxFile(e.target.files?.[0] ?? null)}
@@ -239,120 +151,100 @@ export default function AdminImportPage() {
 
           <div className="flex flex-wrap items-center gap-2">
             <Button onClick={() => uploadM.mutate()} disabled={uploadM.isPending}>
-              {uploadM.isPending ? "Uploading…" : "Upload & Validate"}
+              {uploadM.isPending ? "Uploading…" : "Upload"}
             </Button>
-            {uploadM.error ? (
-              <div className="text-sm text-destructive">{String(uploadM.error)}</div>
+            {uploadM.isError ? (
+              <div className="text-sm text-destructive">
+                {uploadM.error instanceof Error ? uploadM.error.message : String(uploadM.error)}
+              </div>
             ) : null}
           </div>
-
-          {lastImport ? (
-            <div className="space-y-3 rounded-md border p-3">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="font-medium">dataset_id:</span>
-                <code className="rounded bg-muted px-1 py-0.5">{lastImport.dataset_id}</code>
-                <Badge variant="secondary">{lastImport.status}</Badge>
-                <Badge variant="outline">{lastImport.sync_status}</Badge>
-              </div>
-
-              <div className="grid gap-2 text-sm md:grid-cols-3">
-                <div>
-                  <div className="text-muted-foreground">Employees</div>
-                  <div className="font-medium">{lastImport.counts.employees}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">POS rows</div>
-                  <div className="font-medium">{lastImport.counts.pos_rows}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Attendance rows</div>
-                  <div className="font-medium">{lastImport.counts.attendance_rows}</div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  onClick={() => publishM.mutate()}
-                  disabled={publishM.isPending || lastImport.status !== "READY"}
-                >
-                  {publishM.isPending ? "Publishing…" : "Publish"}
-                </Button>
-                {publishM.error ? (
-                  <div className="text-sm text-destructive">{String(publishM.error)}</div>
-                ) : null}
-                {lastPublish ? (
-                  <div className="text-sm text-muted-foreground">
-                    Published {lastPublish.month_key} • sync:{" "}
-                    <span className="font-medium">{lastPublish.sync_status}</span>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
         </CardContent>
       </Card>
 
-      {/* Preview */}
       {lastImport ? (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Preview: Top Sales</CardTitle>
-              <CardDescription>Top 10 by net sales (from POS sheet).</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {lastImport.preview.topSales.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No preview rows.</div>
-              ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Last Import</CardTitle>
+            <CardDescription>dataset_id: {lastImport.dataset_id}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="secondary">{lastImport.status}</Badge>
+              <Badge variant="outline">sync: {lastImport.sync_status}</Badge>
+              <Badge variant="outline">month: {lastImport.month_key}</Badge>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <Card className="border-white/10 bg-white/[0.02]">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground">Employees</div>
+                  <div className="mt-1 text-xl font-semibold">{lastImport.counts.employees}</div>
+                </CardContent>
+              </Card>
+              <Card className="border-white/10 bg-white/[0.02]">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground">POS rows</div>
+                  <div className="mt-1 text-xl font-semibold">{lastImport.counts.pos_rows}</div>
+                </CardContent>
+              </Card>
+              <Card className="border-white/10 bg-white/[0.02]">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground">Attendance rows</div>
+                  <div className="mt-1 text-xl font-semibold">{lastImport.counts.attendance_rows}</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => publishM.mutate()}
+                disabled={publishM.isPending}
+              >
+                {publishM.isPending ? "Publishing…" : "Publish"}
+              </Button>
+              {publishM.isError ? (
+                <div className="text-sm text-destructive">
+                  {publishM.error instanceof Error ? publishM.error.message : String(publishM.error)}
+                </div>
+              ) : null}
+              {lastPublish ? (
+                <div className="text-sm text-muted-foreground">
+                  published_dataset_id:{" "}
+                  <span className="font-mono text-xs">{lastPublish.published_dataset_id}</span>
+                </div>
+              ) : null}
+            </div>
+
+            {(lastImport.preview.errors ?? []).length ? (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-2">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Employee</TableHead>
-                      <TableHead className="text-right">Net Sales</TableHead>
+                      <TableHead>Sheet</TableHead>
+                      <TableHead>Row</TableHead>
+                      <TableHead>Error</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {lastImport.preview.topSales.map((r) => (
-                      <TableRow key={r.employee_code}>
-                        <TableCell>
-                          <div className="font-medium">{r.name}</div>
-                          <div className="text-xs text-muted-foreground">{r.employee_code}</div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {typeof r.net_sales === "number" ? r.net_sales.toFixed(2) : "—"}
-                        </TableCell>
+                    {lastImport.preview.errors.slice(0, 20).map((e, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="font-mono text-xs">{e.sheet}</TableCell>
+                        <TableCell className="font-mono text-xs">{e.row}</TableCell>
+                        <TableCell className="text-sm">{e.message}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
-              )}
-            </CardContent>
-          </Card>
-
-          {lastImport.preview.errors.length > 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Validation Errors</CardTitle>
-                <CardDescription>
-                  Row-level issues found during parsing (best-effort; minor issues don’t stop the import).
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {lastImport.preview.errors.map((e, idx) => (
-                    <div key={`${e.sheet}-${e.row}-${idx}`} className="rounded border p-2 text-sm">
-                      <div className="font-medium">
-                        {e.sheet} • row {e.row}
-                      </div>
-                      <div className="text-muted-foreground">{e.message}</div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
-        </div>
+              </div>
+            ) : (
+              <div className="text-sm text-muted-foreground">No validation errors reported.</div>
+            )}
+          </CardContent>
+        </Card>
       ) : null}
     </div>
   );
 }
+

@@ -30,7 +30,8 @@ def recognize_track_face(
     frame_bgr: np.ndarray,
     person_bbox_xyxy: tuple[float, float, float, float],
     track_id: str,
-    store_id: UUID,
+    tenant_id: UUID,
+    branch_id: UUID,
     camera_id: UUID | None,
     ts: datetime,
 ):
@@ -46,7 +47,8 @@ def recognize_track_face(
         frame_bgr=frame_bgr,
         person_bbox_xyxy=person_bbox_xyxy,
         track_id=track_id,
-        store_id=store_id,
+        tenant_id=tenant_id,
+        branch_id=branch_id,
         camera_id=camera_id,
         ts=ts,
     )

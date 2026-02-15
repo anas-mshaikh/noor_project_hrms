@@ -30,3 +30,7 @@ class AuthContext:
     status: str
     roles: tuple[str, ...]
     scope: Scope
+    # Permission codes effective for the active scope (tenant/company/branch).
+    permissions: frozenset[str] = frozenset()
+    # Request correlation id (from X-Correlation-Id / generated in middleware).
+    correlation_id: str | None = None

@@ -22,6 +22,7 @@ import { useParsedResume } from "@/features/hr/hooks/useParsedResume";
 import { useExplainActions } from "@/features/hr/hooks/useExplainActions";
 import { useScreeningExplanation } from "@/features/hr/hooks/useScreeningExplanation";
 import { toScorePercent } from "@/features/hr/lib/scoring";
+import { useSelection } from "@/lib/selection";
 
 type RunResultDrawerProps = {
   open: boolean;
@@ -75,14 +76,16 @@ export function RunResultDrawer({
   const [showDev, setShowDev] = React.useState(false);
   const [pollExplain, setPollExplain] = React.useState(false);
 
-  const resumeId = (result?.resume_id ?? null) as UUID | null;
-  const parsedQ = useParsedResume(resumeId, open);
+  const branchId = useSelection((s) => (s.branchId as UUID | undefined) ?? null);
 
-  const explainQ = useScreeningExplanation(runId, resumeId, {
+  const resumeId = (result?.resume_id ?? null) as UUID | null;
+  const parsedQ = useParsedResume(branchId, resumeId, open);
+
+  const explainQ = useScreeningExplanation(branchId, runId, resumeId, {
     enabled: open && Boolean(resumeId),
     pollIntervalMs: pollExplain ? 2000 : undefined,
   });
-  const explain = useExplainActions(runId);
+  const explain = useExplainActions(branchId, runId);
 
   const explainStatus = parseStatusCode(explainQ.error);
   const parsedStatus = parseStatusCode(parsedQ.error);

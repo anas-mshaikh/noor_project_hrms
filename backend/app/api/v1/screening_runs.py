@@ -20,6 +20,8 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.auth.deps import require_permission
+from app.auth.permissions import HR_RECRUITING_READ, HR_RECRUITING_WRITE
 from app.core.config import settings
 from app.db.session import get_db
 from app.hr.queue import get_hr_queue
@@ -31,6 +33,7 @@ from app.models.models import (
     HRScreeningResult,
     HRScreeningRun,
 )
+from app.shared.types import AuthContext
 
 
 router = APIRouter(tags=["hr"])
@@ -61,7 +64,9 @@ class ScreeningRunCreateRequest(BaseModel):
 class ScreeningRunOut(BaseModel):
     id: UUID
     opening_id: UUID
-    store_id: UUID
+    tenant_id: UUID
+    company_id: UUID
+    branch_id: UUID
     status: str
     config_json: dict
     model_versions_json: dict
@@ -123,7 +128,9 @@ def _run_out(run: HRScreeningRun) -> ScreeningRunOut:
     return ScreeningRunOut(
         id=run.id,
         opening_id=run.opening_id,
-        store_id=run.store_id,
+        tenant_id=run.tenant_id,
+        company_id=run.company_id,
+        branch_id=run.branch_id,
         status=run.status,
         config_json=run.config_json or {},
         model_versions_json=run.model_versions_json or {},
@@ -137,8 +144,33 @@ def _run_out(run: HRScreeningRun) -> ScreeningRunOut:
     )
 
 
-def _require_run(db: Session, run_id: UUID) -> HRScreeningRun:
-    run = db.get(HRScreeningRun, run_id)
+def _require_opening(
+    db: Session, *, tenant_id: UUID, branch_id: UUID, opening_id: UUID
+) -> HROpening:
+    opening = (
+        db.query(HROpening)
+        .filter(
+            HROpening.id == opening_id,
+            HROpening.tenant_id == tenant_id,
+            HROpening.branch_id == branch_id,
+        )
+        .first()
+    )
+    if opening is None:
+        raise HTTPException(status_code=404, detail="Opening not found")
+    return opening
+
+
+def _require_run(db: Session, *, tenant_id: UUID, branch_id: UUID, run_id: UUID) -> HRScreeningRun:
+    run = (
+        db.query(HRScreeningRun)
+        .filter(
+            HRScreeningRun.id == run_id,
+            HRScreeningRun.tenant_id == tenant_id,
+            HRScreeningRun.branch_id == branch_id,
+        )
+        .first()
+    )
     if run is None:
         raise HTTPException(status_code=404, detail="ScreeningRun not found")
     return run
@@ -163,13 +195,15 @@ def _require_gemini_configured() -> None:
 
 
 @router.post(
-    "/openings/{opening_id}/screening-runs",
+    "/branches/{branch_id}/openings/{opening_id}/screening-runs",
     response_model=ScreeningRunOut,
     status_code=status.HTTP_201_CREATED,
 )
 def create_screening_run(
+    branch_id: UUID,
     opening_id: UUID,
     body: ScreeningRunCreateRequest = Body(default_factory=ScreeningRunCreateRequest),
+    ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
 ) -> ScreeningRunOut:
     """
@@ -178,9 +212,7 @@ def create_screening_run(
     This mirrors the "create job + enqueue" pattern used by the CCTV pipeline,
     but uses separate tables/endpoints for HR.
     """
-    opening = db.get(HROpening, opening_id)
-    if opening is None:
-        raise HTTPException(status_code=404, detail="Opening not found")
+    opening = _require_opening(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, opening_id=opening_id)
 
     # Build the effective config (fill defaults from Settings).
     config_json = {
@@ -199,7 +231,9 @@ def create_screening_run(
     run = HRScreeningRun(
         id=uuid4(),
         opening_id=opening.id,
-        store_id=opening.store_id,
+        tenant_id=opening.tenant_id,
+        company_id=opening.company_id,
+        branch_id=opening.branch_id,
         status="QUEUED",
         config_json=config_json,
         model_versions_json=model_versions_json,
@@ -232,14 +266,24 @@ def create_screening_run(
         return _run_out(run)
 
 
-@router.get("/screening-runs/{run_id}", response_model=ScreeningRunOut)
-def get_screening_run(run_id: UUID, db: Session = Depends(get_db)) -> ScreeningRunOut:
-    run = _require_run(db, run_id)
+@router.get("/branches/{branch_id}/screening-runs/{run_id}", response_model=ScreeningRunOut)
+def get_screening_run(
+    branch_id: UUID,
+    run_id: UUID,
+    ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
+    db: Session = Depends(get_db),
+) -> ScreeningRunOut:
+    run = _require_run(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, run_id=run_id)
     return _run_out(run)
 
 
-@router.post("/screening-runs/{run_id}/cancel", response_model=ScreeningRunOut)
-def cancel_screening_run(run_id: UUID, db: Session = Depends(get_db)) -> ScreeningRunOut:
+@router.post("/branches/{branch_id}/screening-runs/{run_id}/cancel", response_model=ScreeningRunOut)
+def cancel_screening_run(
+    branch_id: UUID,
+    run_id: UUID,
+    ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
+    db: Session = Depends(get_db),
+) -> ScreeningRunOut:
     """
     Cancel a ScreeningRun.
 
@@ -247,7 +291,7 @@ def cancel_screening_run(run_id: UUID, db: Session = Depends(get_db)) -> Screeni
     - If the job is already running, the worker will check DB state and stop at the next checkpoint.
     - If the job is queued, it may still start briefly and exit immediately.
     """
-    run = _require_run(db, run_id)
+    run = _require_run(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, run_id=run_id)
 
     if run.status in {"DONE", "FAILED"}:
         return _run_out(run)
@@ -261,25 +305,30 @@ def cancel_screening_run(run_id: UUID, db: Session = Depends(get_db)) -> Screeni
 
 
 @router.post(
-    "/screening-runs/{run_id}/retry",
+    "/branches/{branch_id}/screening-runs/{run_id}/retry",
     response_model=ScreeningRunOut,
     status_code=status.HTTP_201_CREATED,
 )
-def retry_screening_run(run_id: UUID, db: Session = Depends(get_db)) -> ScreeningRunOut:
+def retry_screening_run(
+    branch_id: UUID,
+    run_id: UUID,
+    ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
+    db: Session = Depends(get_db),
+) -> ScreeningRunOut:
     """
     Retry a ScreeningRun by creating a NEW run with the same config.
 
     We do this to preserve audit history (the old run remains immutable).
     """
-    old = _require_run(db, run_id)
-    opening = db.get(HROpening, old.opening_id)
-    if opening is None:
-        raise HTTPException(status_code=404, detail="Opening not found")
+    old = _require_run(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, run_id=run_id)
+    opening = _require_opening(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, opening_id=old.opening_id)
 
     new_run = HRScreeningRun(
         id=uuid4(),
         opening_id=old.opening_id,
-        store_id=old.store_id,
+        tenant_id=old.tenant_id,
+        company_id=old.company_id,
+        branch_id=old.branch_id,
         status="QUEUED",
         config_json=old.config_json or {},
         model_versions_json={
@@ -320,14 +369,16 @@ def retry_screening_run(run_id: UUID, db: Session = Depends(get_db)) -> Screenin
 # -------------------------
 
 
-@router.get("/screening-runs/{run_id}/results", response_model=ScreeningResultsPageOut)
+@router.get("/branches/{branch_id}/screening-runs/{run_id}/results", response_model=ScreeningResultsPageOut)
 def list_screening_results(
+    branch_id: UUID,
     run_id: UUID,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
 ) -> ScreeningResultsPageOut:
-    run = _require_run(db, run_id)
+    run = _require_run(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, run_id=run_id)
 
     if run.status != "DONE":
         raise HTTPException(
@@ -341,7 +392,7 @@ def list_screening_results(
 
     total = (
         db.query(HRScreeningResult.resume_id)
-        .filter(HRScreeningResult.run_id == run_id)
+        .filter(HRScreeningResult.run_id == run_id, HRScreeningResult.tenant_id == ctx.scope.tenant_id)
         .count()
     )
 
@@ -349,7 +400,7 @@ def list_screening_results(
     rows = (
         db.query(HRScreeningResult, HRResume)
         .join(HRResume, HRResume.id == HRScreeningResult.resume_id)
-        .filter(HRScreeningResult.run_id == run_id)
+        .filter(HRScreeningResult.run_id == run_id, HRScreeningResult.tenant_id == ctx.scope.tenant_id)
         .order_by(HRScreeningResult.rank.asc())
         .offset(offset)
         .limit(page_size)
@@ -388,18 +439,22 @@ def list_screening_results(
 
 
 @router.get(
-    "/screening-runs/{run_id}/results/{resume_id}/explanation",
+    "/branches/{branch_id}/screening-runs/{run_id}/results/{resume_id}/explanation",
     response_model=ScreeningExplanationOut,
 )
 def get_screening_explanation(
-    run_id: UUID, resume_id: UUID, db: Session = Depends(get_db)
+    branch_id: UUID,
+    run_id: UUID,
+    resume_id: UUID,
+    ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
+    db: Session = Depends(get_db),
 ) -> ScreeningExplanationOut:
     """
     Fetch the stored explanation for one result row.
 
     Returns 404 if explanations haven't been generated yet for this candidate.
     """
-    run = _require_run(db, run_id)
+    run = _require_run(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, run_id=run_id)
     if run.status != "DONE":
         raise HTTPException(
             status_code=409,
@@ -411,6 +466,7 @@ def get_screening_explanation(
         .filter(
             HRScreeningExplanation.run_id == run_id,
             HRScreeningExplanation.resume_id == resume_id,
+            HRScreeningExplanation.tenant_id == ctx.scope.tenant_id,
         )
         .first()
     )
@@ -429,13 +485,15 @@ def get_screening_explanation(
 
 
 @router.post(
-    "/screening-runs/{run_id}/explanations",
+    "/branches/{branch_id}/screening-runs/{run_id}/explanations",
     response_model=ScreeningEnqueueResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 def enqueue_run_explanations(
+    branch_id: UUID,
     run_id: UUID,
     body: ScreeningExplainRunRequest = Body(default_factory=ScreeningExplainRunRequest),
+    ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
 ) -> ScreeningEnqueueResponse:
     """
@@ -444,7 +502,7 @@ def enqueue_run_explanations(
     This endpoint NEVER blocks on LLM calls; it only enqueues an RQ job.
     """
     _require_gemini_configured()
-    run = _require_run(db, run_id)
+    run = _require_run(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, run_id=run_id)
     if run.status != "DONE":
         raise HTTPException(
             status_code=409,
@@ -465,14 +523,16 @@ def enqueue_run_explanations(
 
 
 @router.post(
-    "/screening-runs/{run_id}/results/{resume_id}/explanation/recompute",
+    "/branches/{branch_id}/screening-runs/{run_id}/results/{resume_id}/explanation/recompute",
     response_model=ScreeningEnqueueResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 def enqueue_single_explanation(
+    branch_id: UUID,
     run_id: UUID,
     resume_id: UUID,
     body: ScreeningExplainOneRequest = Body(default_factory=ScreeningExplainOneRequest),
+    ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
 ) -> ScreeningEnqueueResponse:
     """
@@ -482,7 +542,7 @@ def enqueue_single_explanation(
       { "force": true }  # overwrite existing explanation if present
     """
     _require_gemini_configured()
-    run = _require_run(db, run_id)
+    run = _require_run(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, run_id=run_id)
     if run.status != "DONE":
         raise HTTPException(
             status_code=409,
@@ -492,7 +552,11 @@ def enqueue_single_explanation(
     # Ensure the resume exists for this run (avoid generating explanations for unrelated resumes).
     exists = (
         db.query(HRScreeningResult.resume_id)
-        .filter(HRScreeningResult.run_id == run_id, HRScreeningResult.resume_id == resume_id)
+        .filter(
+            HRScreeningResult.run_id == run_id,
+            HRScreeningResult.resume_id == resume_id,
+            HRScreeningResult.tenant_id == ctx.scope.tenant_id,
+        )
         .first()
     )
     if exists is None:

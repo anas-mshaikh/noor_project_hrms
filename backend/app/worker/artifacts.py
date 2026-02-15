@@ -25,7 +25,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.models import Artifact, AttendanceDaily, Employee, Event, Job, Track, Video
+from app.models.models import Artifact, Event, Job, Track, Video
 from app.worker.reliability import Tracklet, group_stitched_tracklets, iter_session_groups
 
 
@@ -132,26 +132,66 @@ def write_job_artifacts(
     attendance_path = exports_dir / "attendance.csv"
 
     # Left join attendance so absentees show up too (same as results endpoint).
-    rows = (
-        db.query(Employee, AttendanceDaily)
-        .outerjoin(
-            AttendanceDaily,
-            sa.and_(
-                AttendanceDaily.employee_id == Employee.id,
-                AttendanceDaily.store_id == video.store_id,
-                AttendanceDaily.business_date == video.business_date,
+    rows = db.execute(
+        sa.text(
+            """
+            WITH current_employment AS (
+              SELECT
+                ee.employee_id,
+                ee.branch_id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY ee.employee_id
+                  ORDER BY ee.is_primary DESC NULLS LAST, ee.start_date DESC, ee.id DESC
+                ) AS rn
+              FROM hr_core.employee_employment ee
+              WHERE ee.tenant_id = :tenant_id
+                AND ee.end_date IS NULL
             ),
-        )
-        .filter(Employee.store_id == video.store_id)
-        .order_by(Employee.employee_code.asc())
-        .all()
-    )
+            ce AS (
+              SELECT * FROM current_employment WHERE rn = 1
+            ),
+            employees AS (
+              SELECT
+                e.id AS employee_id,
+                e.employee_code AS employee_code,
+                (p.first_name || ' ' || p.last_name) AS employee_name
+              FROM ce
+              JOIN hr_core.employees e ON e.id = ce.employee_id
+              JOIN hr_core.persons p ON p.id = e.person_id
+              WHERE ce.branch_id = :branch_id
+                AND e.tenant_id = :tenant_id
+                AND e.status = 'ACTIVE'
+            )
+            SELECT
+              employees.employee_id,
+              employees.employee_code,
+              employees.employee_name,
+              ad.punch_in,
+              ad.punch_out,
+              ad.total_minutes,
+              ad.anomalies_json
+            FROM employees
+            LEFT JOIN attendance.attendance_daily ad
+              ON ad.tenant_id = :tenant_id
+             AND ad.branch_id = :branch_id
+             AND ad.business_date = :business_date
+             AND ad.employee_id = employees.employee_id
+            ORDER BY employees.employee_code, employees.employee_id
+            """
+        ),
+        {
+            "tenant_id": video.tenant_id,
+            "branch_id": video.branch_id,
+            "business_date": video.business_date,
+        },
+    ).all()
 
     with attendance_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
             fieldnames=[
-                "store_id",
+                "tenant_id",
+                "branch_id",
                 "business_date",
                 "employee_id",
                 "employee_code",
@@ -164,27 +204,20 @@ def write_job_artifacts(
         )
         writer.writeheader()
 
-        for emp, att in rows:
-            if att is None:
-                anomalies = {"absent": True}
-                punch_in = ""
-                punch_out = ""
-                total_minutes = 0
-            else:
-                anomalies = att.anomalies_json or {}
-                punch_in = att.punch_in.isoformat() if att.punch_in else ""
-                punch_out = att.punch_out.isoformat() if att.punch_out else ""
-                total_minutes = (
-                    "" if att.total_minutes is None else int(att.total_minutes)
-                )
+        for r in rows:
+            punch_in = r.punch_in.isoformat() if r.punch_in else ""
+            punch_out = r.punch_out.isoformat() if r.punch_out else ""
+            total_minutes = "" if r.total_minutes is None else int(r.total_minutes)
+            anomalies = r.anomalies_json or {"absent": True}
 
             writer.writerow(
                 {
-                    "store_id": str(video.store_id),
+                    "tenant_id": str(video.tenant_id),
+                    "branch_id": str(video.branch_id),
                     "business_date": video.business_date.isoformat(),
-                    "employee_id": str(emp.id),
-                    "employee_code": emp.employee_code,
-                    "employee_name": emp.name,
+                    "employee_id": str(r.employee_id),
+                    "employee_code": str(r.employee_code),
+                    "employee_name": str(r.employee_name or "").strip(),
                     "punch_in": punch_in,
                     "punch_out": punch_out,
                     "total_minutes": total_minutes,
@@ -302,7 +335,8 @@ def write_job_artifacts(
     report = {
         "job_id": str(job.id),
         "video_id": str(video.id),
-        "store_id": str(video.store_id),
+        "tenant_id": str(video.tenant_id),
+        "branch_id": str(video.branch_id),
         "camera_id": str(video.camera_id),
         "business_date": video.business_date.isoformat(),
         "generated_at": _utcnow_iso(),

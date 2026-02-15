@@ -10,13 +10,13 @@ import { hrQueryKeys } from "@/features/hr/api/queryKeys";
  * Fetch pipeline stages for an opening (ATS).
  *
  * Backend:
- * - GET /api/v1/openings/{opening_id}/pipeline-stages
+ * - GET /api/v1/branches/{branch_id}/openings/{opening_id}/pipeline-stages
  */
-export function usePipelineStages(openingId: UUID | null) {
+export function usePipelineStages(branchId: UUID | null, openingId: UUID | null) {
   return useQuery<PipelineStageOut[]>({
-    queryKey: hrQueryKeys.pipelineStages(openingId),
-    enabled: Boolean(openingId),
-    queryFn: ({ signal }) => listPipelineStages(openingId as UUID, { signal }),
+    queryKey: hrQueryKeys.pipelineStages(branchId, openingId),
+    enabled: Boolean(branchId && openingId),
+    queryFn: ({ signal }) =>
+      listPipelineStages(branchId as UUID, openingId as UUID, { signal }),
   });
 }
-

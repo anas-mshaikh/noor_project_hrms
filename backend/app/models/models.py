@@ -11,72 +11,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class Organization(Base):
-    __tablename__ = "organizations"
-    __table_args__ = {"schema": "core"}
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True),
-        server_default=sa.func.now(),
-        nullable=False,
-    )
-
-    stores: Mapped[list["Store"]] = relationship(back_populates="organization")
-
-
-class Store(Base):
-    __tablename__ = "stores"
-    __table_args__ = {"schema": "core"}
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    org_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        sa.ForeignKey("core.organizations.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
-    timezone: Mapped[str] = mapped_column(
-        sa.String(64), nullable=False, server_default="UTC"
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True),
-        server_default=sa.func.now(),
-        nullable=False,
-    )
-
-    organization: Mapped[Organization] = relationship(back_populates="stores")
-    cameras: Mapped[list["Camera"]] = relationship(back_populates="store")
-    employees: Mapped[list["Employee"]] = relationship(back_populates="store")
-    # Mobile login bootstrap mapping (Postgres source-of-truth, Firestore derived).
-    mobile_accounts: Mapped[list["MobileAccount"]] = relationship(
-        back_populates="store"
-    )
-    videos: Mapped[list["Video"]] = relationship(back_populates="store")
-    attendance_daily: Mapped[list["AttendanceDaily"]] = relationship(
-        back_populates="store"
-    )
-    # HR module (Phase 1): openings + resumes (store-scoped).
-    hr_openings: Mapped[list["HROpening"]] = relationship(back_populates="store")
-    # HR module (Phase 3): ScreeningRun runs (store-scoped).
-    hr_screening_runs: Mapped[list["HRScreeningRun"]] = relationship(
-        back_populates="store"
-    )
-    # HR module (Phase 5): ATS applications (store-scoped).
-    # This is optional, but makes it easy to list/filter applications by store.
-    hr_applications: Mapped[list["HRApplication"]] = relationship(
-        back_populates="store"
-    )
-    # Work module (Phase 1): operational tasks (store-scoped).
-    work_tasks: Mapped[list["WorkTask"]] = relationship(back_populates="store")
-
-
 class Camera(Base):
     __tablename__ = "cameras"
     __table_args__ = {"schema": "vision"}
@@ -84,9 +18,15 @@ class Camera(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    store_id: Mapped[uuid.UUID] = mapped_column(
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -103,68 +43,7 @@ class Camera(Base):
         nullable=False,
     )
 
-    store: Mapped[Store] = relationship(back_populates="cameras")
     videos: Mapped[list["Video"]] = relationship(back_populates="camera")
-
-
-class Employee(Base):
-    __tablename__ = "employees"
-    __table_args__ = (
-        sa.UniqueConstraint(
-            "store_id", "employee_code", name="uq_employees_store_employee_code"
-        ),
-        sa.Index("ix_employees_store_active", "store_id", "is_active"),
-        {"schema": "core"},
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    store_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
-    employee_code: Mapped[str] = mapped_column(sa.String(64), nullable=False)
-    department: Mapped[str] = mapped_column(
-        sa.String(200),
-        nullable=False,
-        server_default="Unknown",
-    )
-    is_active: Mapped[bool] = mapped_column(
-        sa.Boolean, nullable=False, server_default=sa.true()
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True),
-        server_default=sa.func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True),
-        server_default=sa.func.now(),
-        onupdate=sa.func.now(),
-        nullable=False,
-    )
-
-    store: Mapped[Store] = relationship(back_populates="employees")
-    faces: Mapped[list["EmployeeFace"]] = relationship(back_populates="employee")
-    attendance_daily: Mapped[list["AttendanceDaily"]] = relationship(
-        back_populates="employee"
-    )
-    # HR module (Phase 6): onboarding plans created from HIRED ATS applications.
-    onboarding_plans: Mapped[list["HROnboardingPlan"]] = relationship(
-        back_populates="employee"
-    )
-    # Skills module (Phase 1): employee skill proficiency.
-    skills: Mapped[list["EmployeeSkill"]] = relationship(back_populates="employee")
-    # Work module (Phase 1): assignment log for operational tasks.
-    task_assignments: Mapped[list["TaskAssignment"]] = relationship(
-        back_populates="employee"
-    )
 
 
 class EmployeeFace(Base):
@@ -174,9 +53,15 @@ class EmployeeFace(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.employees.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr_core.employees.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -197,8 +82,6 @@ class EmployeeFace(Base):
         nullable=False,
     )
 
-    employee: Mapped[Employee] = relationship(back_populates="faces")
-
 
 class MobileAccount(Base):
     """
@@ -206,21 +89,21 @@ class MobileAccount(Base):
 
     Why this table exists:
     - Firebase Auth gives the mobile app a `uid`, but our domain identity lives in Postgres.
-    - The mobile app must be able to resolve org/store/employee in ONE read:
-        Auth -> uid -> Firestore users/{uid} -> org_id/store_id/employee_code
+    - The mobile app must be able to resolve tenant/branch/employee in ONE read:
+        Auth -> uid -> Firestore users/{uid} -> tenant_id/branch_id/employee_code
     - Postgres is the source of truth; Firestore `users/{uid}` is a derived cache.
     """
 
     __tablename__ = "mobile_accounts"
     __table_args__ = (
-        # An employee should have at most one active mapping per store.
+        # An employee should have at most one active mapping per branch.
         sa.UniqueConstraint(
-            "store_id", "employee_id", name="uq_mobile_accounts_store_employee"
+            "branch_id", "employee_id", name="uq_mobile_accounts_branch_employee"
         ),
         # Firebase UID must be unique globally.
         sa.UniqueConstraint("firebase_uid", name="uq_mobile_accounts_firebase_uid"),
-        # Common query patterns: list active users for a store, or lookup by employee_id.
-        sa.Index("ix_mobile_accounts_store_active", "store_id", "active"),
+        # Common query patterns: list active users for a branch, or lookup by employee_id.
+        sa.Index("ix_mobile_accounts_branch_active", "branch_id", "active"),
         sa.Index("ix_mobile_accounts_employee_id", "employee_id"),
         {"schema": "mobile"},
     )
@@ -229,21 +112,21 @@ class MobileAccount(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
-    org_id: Mapped[uuid.UUID] = mapped_column(
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.organizations.id", ondelete="CASCADE"),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    store_id: Mapped[uuid.UUID] = mapped_column(
+    branch_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.employees.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr_core.employees.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -272,8 +155,7 @@ class MobileAccount(Base):
         sa.DateTime(timezone=True), nullable=True
     )
 
-    store: Mapped["Store"] = relationship(back_populates="mobile_accounts")
-    employee: Mapped["Employee"] = relationship()
+    # vNext identity: employee_id references hr_core.employees.
 
 
 class Video(Base):
@@ -284,9 +166,15 @@ class Video(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
-    store_id: Mapped[uuid.UUID] = mapped_column(
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -317,7 +205,6 @@ class Video(Base):
         nullable=False,
     )
 
-    store: Mapped["Store"] = relationship(back_populates="videos")
     camera: Mapped["Camera"] = relationship(back_populates="videos")
     jobs: Mapped[list["Job"]] = relationship(back_populates="video")
 
@@ -425,7 +312,7 @@ class Track(Base):
     )
     employee_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.employees.id", ondelete="SET NULL"),
+        sa.ForeignKey("hr_core.employees.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -474,7 +361,7 @@ class Event(Base):
 
     employee_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.employees.id", ondelete="SET NULL"),
+        sa.ForeignKey("hr_core.employees.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -504,10 +391,10 @@ class AttendanceDaily(Base):
     __tablename__ = "attendance_daily"
     __table_args__ = (
         sa.UniqueConstraint(
-            "store_id",
+            "branch_id",
             "business_date",
             "employee_id",
-            name="uq_attendance_store_date_employee",
+            name="uq_attendance_branch_date_employee",
         ),
         {"schema": "attendance"},
     )
@@ -516,9 +403,15 @@ class AttendanceDaily(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
-    store_id: Mapped[uuid.UUID] = mapped_column(
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -526,7 +419,7 @@ class AttendanceDaily(Base):
 
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.employees.id", ondelete="RESTRICT"),
+        sa.ForeignKey("hr_core.employees.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
@@ -552,9 +445,6 @@ class AttendanceDaily(Base):
         server_default=sa.func.now(),
         nullable=False,
     )
-
-    store: Mapped["Store"] = relationship(back_populates="attendance_daily")
-    employee: Mapped["Employee"] = relationship(back_populates="attendance_daily")
 
 
 class MetricsHourly(Base):
@@ -635,13 +525,20 @@ class Dataset(Base):
     A versioned upload for a given month (YYYY-MM).
 
     Idempotency:
-    - We enforce uniqueness on (month_key, checksum). Uploading the exact same file
-      again for the same month should return the existing dataset_id.
+    - We enforce uniqueness on (tenant_id, branch_id, month_key, checksum). Uploading
+      the exact same file again for the same month/branch should return the existing
+      dataset_id.
     """
 
     __tablename__ = "datasets"
     __table_args__ = (
-        sa.UniqueConstraint("month_key", "checksum", name="uq_datasets_month_checksum"),
+        sa.UniqueConstraint(
+            "tenant_id",
+            "branch_id",
+            "month_key",
+            "checksum",
+            name="uq_datasets_tenant_branch_month_checksum",
+        ),
         sa.CheckConstraint(
             "status in ('VALIDATING','READY','FAILED')",
             name="ck_datasets_status",
@@ -658,9 +555,15 @@ class Dataset(Base):
     )
 
     month_key: Mapped[str] = mapped_column(sa.String(16), nullable=False, index=True)
-    store_id: Mapped[uuid.UUID] = mapped_column(
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -682,7 +585,6 @@ class Dataset(Base):
     raw_file_path: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     checksum: Mapped[str] = mapped_column(sa.String(64), nullable=False)
 
-    store: Mapped[Optional["Store"]] = relationship()
     pos_rows: Mapped[list["PosSummary"]] = relationship(back_populates="dataset")
     attendance_rows: Mapped[list["AttendanceSummary"]] = relationship(
         back_populates="dataset"
@@ -700,6 +602,16 @@ class MonthState(Base):
     __tablename__ = "month_state"
     __table_args__ = {"schema": "imports"}
 
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
     month_key: Mapped[str] = mapped_column(sa.String(16), primary_key=True)
     published_dataset_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -712,6 +624,12 @@ class PosSummary(Base):
     __tablename__ = "pos_summary"
     __table_args__ = {"schema": "analytics"}
 
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     dataset_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         sa.ForeignKey("imports.datasets.id", ondelete="CASCADE"),
@@ -719,7 +637,7 @@ class PosSummary(Base):
     )
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.employees.id", ondelete="RESTRICT"),
+        sa.ForeignKey("hr_core.employees.id", ondelete="RESTRICT"),
         primary_key=True,
     )
 
@@ -736,6 +654,12 @@ class AttendanceSummary(Base):
     __tablename__ = "attendance_summary"
     __table_args__ = {"schema": "attendance"}
 
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     dataset_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         sa.ForeignKey("imports.datasets.id", ondelete="CASCADE"),
@@ -743,7 +667,7 @@ class AttendanceSummary(Base):
     )
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.employees.id", ondelete="RESTRICT"),
+        sa.ForeignKey("hr_core.employees.id", ondelete="RESTRICT"),
         primary_key=True,
     )
 
@@ -763,7 +687,7 @@ class AttendanceSummary(Base):
 
 class HROpening(Base):
     """
-    Hiring opening (store-scoped).
+    Hiring opening (branch-scoped).
 
     Notes:
     - This is intentionally named "Opening" (not "Job") to avoid conflict with CCTV jobs.
@@ -775,9 +699,21 @@ class HROpening(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    store_id: Mapped[uuid.UUID] = mapped_column(
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -807,7 +743,6 @@ class HROpening(Base):
         nullable=False,
     )
 
-    store: Mapped["Store"] = relationship(back_populates="hr_openings")
     resumes: Mapped[list["HRResume"]] = relationship(
         back_populates="opening", cascade="all, delete-orphan"
     )
@@ -845,9 +780,21 @@ class HRResumeBatch(Base):
         nullable=False,
         index=True,
     )
-    store_id: Mapped[uuid.UUID] = mapped_column(
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -886,9 +833,21 @@ class HRResume(Base):
         nullable=False,
         index=True,
     )
-    store_id: Mapped[uuid.UUID] = mapped_column(
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -978,6 +937,12 @@ class HRResumeView(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     resume_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         sa.ForeignKey("hr.hr_resumes.id", ondelete="CASCADE"),
@@ -1042,9 +1007,21 @@ class HRScreeningRun(Base):
         nullable=False,
         index=True,
     )
-    store_id: Mapped[uuid.UUID] = mapped_column(
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1089,7 +1066,6 @@ class HRScreeningRun(Base):
     )
 
     opening: Mapped["HROpening"] = relationship(back_populates="screening_runs")
-    store: Mapped["Store"] = relationship(back_populates="hr_screening_runs")
     results: Mapped[list["HRScreeningResult"]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
     )
@@ -1117,6 +1093,12 @@ class HRScreeningResult(Base):
         UUID(as_uuid=True),
         sa.ForeignKey("hr.hr_resumes.id", ondelete="CASCADE"),
         primary_key=True,
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     rank: Mapped[int] = mapped_column(sa.Integer, nullable=False)
@@ -1173,6 +1155,12 @@ class HRScreeningExplanation(Base):
         sa.ForeignKey("hr.hr_resumes.id", ondelete="CASCADE"),
         primary_key=True,
     )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     # Optional: snapshot rank at the time of explanation generation.
     rank: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
@@ -1222,6 +1210,12 @@ class HRPipelineStage(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     opening_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         sa.ForeignKey("hr.hr_openings.id", ondelete="CASCADE"),
@@ -1264,7 +1258,7 @@ class HRApplication(Base):
         ),
         sa.Index("ix_hr_applications_opening_id", "opening_id"),
         sa.Index("ix_hr_applications_stage_id", "stage_id"),
-        sa.Index("ix_hr_applications_store_id", "store_id"),
+        sa.Index("ix_hr_applications_branch_id", "branch_id"),
         sa.Index("ix_hr_applications_status", "status"),
         {"schema": "hr"},
     )
@@ -1278,9 +1272,21 @@ class HRApplication(Base):
         sa.ForeignKey("hr.hr_openings.id", ondelete="CASCADE"),
         nullable=False,
     )
-    store_id: Mapped[uuid.UUID] = mapped_column(
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1294,7 +1300,7 @@ class HRApplication(Base):
     # Phase 6: once a HIRED application is converted, link it to the canonical Employee row.
     employee_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.employees.id", ondelete="SET NULL"),
+        sa.ForeignKey("hr_core.employees.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -1334,14 +1340,8 @@ class HRApplication(Base):
     )
 
     opening: Mapped["HROpening"] = relationship(back_populates="applications")
-    store: Mapped["Store"] = relationship(back_populates="hr_applications")
     resume: Mapped["HRResume"] = relationship()
     stage: Mapped["HRPipelineStage"] = relationship()
-    # Optional link to the canonical Employee once a HIRED application is converted.
-    # Use Optional[...] instead of `"Employee" | None` because this file does not use
-    # `from __future__ import annotations`, and the `|` operator would be evaluated
-    # at runtime (causing a TypeError when used inside a quoted forward ref).
-    employee: Mapped[Optional["Employee"]] = relationship()
     notes: Mapped[list["HRApplicationNote"]] = relationship(
         back_populates="application", cascade="all, delete-orphan"
     )
@@ -1369,6 +1369,12 @@ class HRApplicationNote(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     application_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -1401,7 +1407,7 @@ class HROnboardingPlan(Base):
     __tablename__ = "hr_onboarding_plans"
     __table_args__ = (
         sa.Index("ix_hr_onboarding_plans_employee_id", "employee_id"),
-        sa.Index("ix_hr_onboarding_plans_store_id", "store_id"),
+        sa.Index("ix_hr_onboarding_plans_branch_id", "branch_id"),
         sa.Index("ix_hr_onboarding_plans_status", "status"),
         {"schema": "hr"},
     )
@@ -1409,15 +1415,27 @@ class HROnboardingPlan(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    store_id: Mapped[uuid.UUID] = mapped_column(
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.employees.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr_core.employees.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1446,15 +1464,10 @@ class HROnboardingPlan(Base):
         nullable=False,
     )
 
-    employee: Mapped["Employee"] = relationship(back_populates="onboarding_plans")
-    store: Mapped["Store"] = relationship()
     # Optional link back to the originating ATS application.
     application: Mapped[Optional["HRApplication"]] = relationship()
 
     tasks: Mapped[list["HROnboardingTask"]] = relationship(
-        back_populates="plan", cascade="all, delete-orphan"
-    )
-    documents: Mapped[list["HREmployeeDocument"]] = relationship(
         back_populates="plan", cascade="all, delete-orphan"
     )
 
@@ -1476,6 +1489,12 @@ class HROnboardingTask(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     plan_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -1523,62 +1542,6 @@ class HROnboardingTask(Base):
     plan: Mapped["HROnboardingPlan"] = relationship(back_populates="tasks")
 
 
-class HREmployeeDocument(Base):
-    """
-    One onboarding document uploaded for an employee.
-
-    Storage:
-    - file_path is stored as a path RELATIVE to settings.data_dir (portable).
-    - files are stored under: hr/onboarding/{employee_id}/{document_id}/files/{filename}
-    """
-
-    __tablename__ = "hr_employee_documents"
-    __table_args__ = (
-        sa.Index("ix_hr_employee_documents_employee_id", "employee_id"),
-        sa.Index("ix_hr_employee_documents_plan_id", "plan_id"),
-        sa.Index("ix_hr_employee_documents_doc_type", "doc_type"),
-        {"schema": "hr"},
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    plan_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        sa.ForeignKey("hr.hr_onboarding_plans.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    employee_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        sa.ForeignKey("core.employees.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    doc_type: Mapped[str] = mapped_column(sa.String(32), nullable=False, index=True)
-    original_filename: Mapped[str] = mapped_column(sa.Text, nullable=False)
-    file_path: Mapped[str] = mapped_column(sa.Text, nullable=False)
-
-    # UPLOADED|VERIFIED|REJECTED
-    status: Mapped[str] = mapped_column(
-        sa.String(16), nullable=False, server_default="UPLOADED", index=True
-    )
-    verified_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    verified_at: Mapped[datetime | None] = mapped_column(
-        sa.DateTime(timezone=True), nullable=True
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True),
-        server_default=sa.func.now(),
-        nullable=False,
-    )
-
-    plan: Mapped["HROnboardingPlan"] = relationship(back_populates="documents")
-    employee: Mapped["Employee"] = relationship()
-
-
 # -----------------------------------------------------------------------------
 # Skills + Work modules (Auto Task Assignment - Phase 1)
 # -----------------------------------------------------------------------------
@@ -1594,12 +1557,18 @@ class SkillTaxonomy(Base):
 
     __tablename__ = "skill_taxonomy"
     __table_args__ = (
-        sa.UniqueConstraint("code", name="uq_skill_taxonomy_code"),
+        sa.UniqueConstraint("tenant_id", "code", name="uq_skill_taxonomy_tenant_code"),
         {"schema": "skills"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     code: Mapped[str] = mapped_column(sa.String(64), nullable=False)
     name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
@@ -1641,7 +1610,7 @@ class EmployeeSkill(Base):
 
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.employees.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr_core.employees.id", ondelete="CASCADE"),
         primary_key=True,
     )
     skill_id: Mapped[uuid.UUID] = mapped_column(
@@ -1659,13 +1628,12 @@ class EmployeeSkill(Base):
         sa.DateTime(timezone=True), nullable=True
     )
 
-    employee: Mapped["Employee"] = relationship(back_populates="skills")
     skill: Mapped["SkillTaxonomy"] = relationship(back_populates="employee_skills")
 
 
 class WorkTask(Base):
     """
-    Operational task, scoped to a store.
+    Operational task, scoped to a branch.
 
     Status values (Phase 1):
       - pending
@@ -1676,16 +1644,22 @@ class WorkTask(Base):
 
     __tablename__ = "tasks"
     __table_args__ = (
-        sa.Index("ix_work_tasks_store_status", "store_id", "status"),
+        sa.Index("ix_work_tasks_branch_status", "branch_id", "status"),
         {"schema": "work"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    store_id: Mapped[uuid.UUID] = mapped_column(
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.stores.id", ondelete="CASCADE"),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1715,7 +1689,6 @@ class WorkTask(Base):
         nullable=False,
     )
 
-    store: Mapped["Store"] = relationship(back_populates="work_tasks")
     required_skills: Mapped[list["TaskRequiredSkill"]] = relationship(
         back_populates="task", cascade="all, delete-orphan"
     )
@@ -1778,7 +1751,7 @@ class TaskAssignment(Base):
     )
     employee_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        sa.ForeignKey("core.employees.id", ondelete="CASCADE"),
+        sa.ForeignKey("hr_core.employees.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1801,4 +1774,4 @@ class TaskAssignment(Base):
     )
 
     task: Mapped["WorkTask"] = relationship(back_populates="assignments")
-    employee: Mapped["Employee"] = relationship(back_populates="task_assignments")
+    # Canonical employee identity lives in hr_core.employees (FK constraint).

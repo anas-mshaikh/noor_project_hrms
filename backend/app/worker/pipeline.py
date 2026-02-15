@@ -477,7 +477,7 @@ def process_video_pipeline(
         face_cfg = FaceSystemConfig.from_settings()
         if face_cfg.enabled:
             storage = FaceLibraryStorage(face_cfg.storage)
-            if storage.store_has_any_images(store_id=video.store_id):
+            if storage.branch_has_any_images(tenant_id=video.tenant_id, branch_id=video.branch_id):
                 # Fail fast if required model files are missing (better than silently producing
                 # "all absent" attendance).
                 if not face_cfg.detector.model_path.exists():
@@ -490,7 +490,8 @@ def process_video_pipeline(
                     )
 
                 face_proc = FaceRuntimeProcessor(
-                    store_id=video.store_id,
+                    tenant_id=video.tenant_id,
+                    branch_id=video.branch_id,
                     camera_id=video.camera_id,
                 )
 

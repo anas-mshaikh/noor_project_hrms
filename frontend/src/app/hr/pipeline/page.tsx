@@ -17,6 +17,7 @@ import { HrHeader } from "@/features/hr/components/layout/HrHeader";
 import { GradientButton } from "@/features/hr/components/cards/GradientButton";
 import { PanelCard } from "@/features/hr/components/cards/PanelCard";
 import { EmptyStateCard } from "@/features/hr/components/cards/EmptyStateCard";
+import { StorePicker } from "@/components/StorePicker";
 import { KanbanBoard } from "@/features/hr/components/pipeline/KanbanBoard";
 import { ApplicationDrawer } from "@/features/hr/components/pipeline/ApplicationDrawer";
 import type { PipelineCardUi, PipelineStageUi } from "@/features/hr/components/pipeline/types";
@@ -43,8 +44,8 @@ function safeLocalStorageSet(key: string, value: string) {
 }
 
 export default function HRPipelinePage() {
-  const storeId = useSelection((s) => s.storeId) as UUID | undefined;
-  const openingsQ = useOpenings(storeId ?? null);
+  const branchId = useSelection((s) => s.branchId) as UUID | undefined;
+  const openingsQ = useOpenings(branchId ?? null);
 
   // We avoid `useSearchParams()` here because Next may attempt to pre-render this
   // page during build, and `useSearchParams()` requires a Suspense boundary.
@@ -69,7 +70,7 @@ export default function HRPipelinePage() {
 
   // Select a default opening when we have a store + opening list.
   React.useEffect(() => {
-    if (!storeId) {
+    if (!branchId) {
       setOpeningId(null);
       return;
     }
@@ -79,18 +80,18 @@ export default function HRPipelinePage() {
     const list = openingsQ.list.data ?? [];
     if (list.length === 0) return;
 
-    const saved = safeLocalStorageGet(`hr:lastOpening:${storeId}`);
+    const saved = safeLocalStorageGet(`hr:lastOpening:${branchId}`);
     const valid = saved && list.some((o) => o.id === saved);
     setOpeningId((valid ? saved : list[0].id) as UUID);
-  }, [storeId, openingsQ.list.data, openingFromUrl, openingId]);
+  }, [branchId, openingsQ.list.data, openingFromUrl, openingId]);
 
   React.useEffect(() => {
-    if (!storeId || !openingId) return;
-    safeLocalStorageSet(`hr:lastOpening:${storeId}`, openingId);
-  }, [storeId, openingId]);
+    if (!branchId || !openingId) return;
+    safeLocalStorageSet(`hr:lastOpening:${branchId}`, openingId);
+  }, [branchId, openingId]);
 
-  const stagesQ = usePipelineStages(openingId);
-  const appsQ = useApplications(openingId);
+  const stagesQ = usePipelineStages(branchId ?? null, openingId);
+  const appsQ = useApplications(branchId ?? null, openingId);
 
   const [selectedAppId, setSelectedAppId] = React.useState<UUID | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
@@ -196,12 +197,13 @@ export default function HRPipelinePage() {
         }
       />
 
-      {!storeId ? (
+      {!branchId ? (
         <div className="mt-6">
           <EmptyStateCard
-            title="Select a store"
-            description="Choose a store to manage openings and pipeline."
+            title="Select a branch"
+            description="Choose a branch to manage openings and pipeline."
             icon={Sparkles}
+            actions={<div className="w-full max-w-xl"><StorePicker /></div>}
           />
         </div>
       ) : openingsQ.list.isPending ? (

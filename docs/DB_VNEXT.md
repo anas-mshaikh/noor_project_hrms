@@ -35,6 +35,12 @@ Alembic migrations added DB vNext foundation objects:
   - Adds `tenant_id` to key module/business tables (analytics, face, HR module tables, vision pipeline) for simpler tenant filtering and future RLS
 - `backend/alembic/versions/85a23039697f_iam_refresh_tokens.py`
   - Adds `iam.refresh_tokens` for JWT refresh token storage (used by `/api/v1/auth/*`)
+- `backend/alembic/versions/6e4f83bf4ad6_seed_colon_permissions.py`
+  - Seeds colon-style permission vocabulary and role-permission mappings for permission-driven enforcement
+- `backend/alembic/versions/a2ce7edbde24_audit_log.py`
+  - Adds `audit.audit_log` for tenant-scoped critical action auditing
+- `backend/alembic/versions/571e947ad55d_workflow_notifications.py`
+  - Adds `workflow.notifications` for in-app notification inbox delivery
 
 ## Canonical masters (authoritative source of truth)
 
@@ -52,6 +58,15 @@ Canonical ID mapping for module schemas:
 - `company_id` → `tenancy.companies.id`
 - `branch_id` → `tenancy.branches.id`
 - `employee_id` → `hr_core.employees.id`
+
+## Milestone 1 runtime guarantees
+
+- Branch-first API shape: legacy `/api/v1/stores*` and `/api/v1/organizations*` are removed.
+- Tenant isolation is fail-closed at runtime (tenant context required for protected operations).
+- Permission checks are enforced via IAM permissions (not role-name checks).
+- Request correlation id is emitted via `X-Correlation-Id` and carried in structured error/log context.
+- Critical IAM/HR mutations are written to `audit.audit_log`.
+- In-app notifications are produced into `workflow.notification_outbox` and consumed into `workflow.notifications`.
 
 ## Legacy removal (0004–0006)
 

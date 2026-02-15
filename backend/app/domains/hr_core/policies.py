@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from fastapi import Depends
 
-from app.auth.deps import get_auth_context, require_roles
+from app.auth.deps import require_permission
+from app.auth.permissions import (
+    ESS_PROFILE_READ,
+    ESS_PROFILE_WRITE,
+    HR_EMPLOYEE_READ,
+    HR_EMPLOYEE_WRITE,
+    HR_TEAM_READ,
+)
 from app.domains.hr_core import repo as hr_repo
 from app.domains.hr_core.schemas import (
     Employee360Out,
@@ -18,21 +25,28 @@ from app.domains.hr_core.schemas import (
 from app.shared.types import AuthContext
 
 
-def require_hr_read(ctx: AuthContext = Depends(require_roles(["ADMIN", "HR_ADMIN", "HR_MANAGER"]))) -> AuthContext:
+def require_hr_read(ctx: AuthContext = Depends(require_permission(HR_EMPLOYEE_READ))) -> AuthContext:
     return ctx
 
 
-def require_hr_write(ctx: AuthContext = Depends(require_roles(["ADMIN", "HR_ADMIN"]))) -> AuthContext:
+def require_hr_write(ctx: AuthContext = Depends(require_permission(HR_EMPLOYEE_WRITE))) -> AuthContext:
     return ctx
 
 
-def require_ess_user(ctx: AuthContext = Depends(get_auth_context)) -> AuthContext:
-    # ESS endpoints are for any authenticated user; role-based restrictions
-    # are enforced by employee linkage and record-level rules.
+def require_ess_user(ctx: AuthContext = Depends(require_permission(ESS_PROFILE_READ))) -> AuthContext:
+    # Backwards-compatible alias; prefer require_ess_read/require_ess_write.
     return ctx
 
 
-def require_mss_access(ctx: AuthContext = Depends(require_roles(["ADMIN", "HR_ADMIN", "HR_MANAGER", "MANAGER"]))) -> AuthContext:
+def require_ess_read(ctx: AuthContext = Depends(require_permission(ESS_PROFILE_READ))) -> AuthContext:
+    return ctx
+
+
+def require_ess_write(ctx: AuthContext = Depends(require_permission(ESS_PROFILE_WRITE))) -> AuthContext:
+    return ctx
+
+
+def require_mss_access(ctx: AuthContext = Depends(require_permission(HR_TEAM_READ))) -> AuthContext:
     return ctx
 
 

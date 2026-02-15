@@ -16,19 +16,18 @@ type Options = {
  * Fetch paged ScreeningRun results (available only once the run is DONE).
  *
  * Backend contract:
- * - GET /api/v1/screening-runs/{run_id}/results?page=&page_size=
+ * - GET /api/v1/branches/{branch_id}/screening-runs/{run_id}/results?page=&page_size=
  */
-export function useScreeningResults(runId: UUID | null, opts?: Options) {
+export function useScreeningResults(branchId: UUID | null, runId: UUID | null, opts?: Options) {
   const enabled = Boolean(opts?.enabled ?? true);
   const page = opts?.page ?? 1;
   const pageSize = opts?.pageSize ?? 50;
 
   return useQuery<ScreeningResultsPageOut>({
-    queryKey: hrQueryKeys.screeningResults(runId, page, pageSize),
-    enabled: enabled && Boolean(runId),
+    queryKey: hrQueryKeys.screeningResults(branchId, runId, page, pageSize),
+    enabled: enabled && Boolean(branchId && runId),
     queryFn: ({ signal }) =>
-      listScreeningResults(runId as UUID, { page, pageSize }, { signal }),
+      listScreeningResults(branchId as UUID, runId as UUID, { page, pageSize }, { signal }),
     retry: false, // backend returns 409 until DONE; don't spam.
   });
 }
-

@@ -10,18 +10,19 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.auth.deps import require_permission
+from app.auth.permissions import VISION_RESULTS_READ
 from app.db.session import get_db
 from app.models.models import (
     AttendanceDaily,
-    Employee,
     Event,
     Job,
     MetricsHourly,
     Video,
-    Store,
 )
 from app.core.config import settings
 from app.models.models import Artifact
+from app.shared.types import AuthContext
 
 
 router = APIRouter(tags=["results"])
@@ -76,16 +77,123 @@ class AttendanceDailySummaryOut(BaseModel):
     avg_punch_in_minutes: float | None
 
 
-@router.get("/jobs/{job_id}/events", response_model=list[EventOut])
+def _require_branch_info(
+    db: Session,
+    *,
+    tenant_id: UUID,
+    branch_id: UUID,
+) -> tuple[UUID, str]:
+    row = db.execute(
+        sa.text(
+            """
+            SELECT company_id, timezone
+            FROM tenancy.branches
+            WHERE id = :branch_id
+              AND tenant_id = :tenant_id
+            """
+        ),
+        {"tenant_id": tenant_id, "branch_id": branch_id},
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Branch not found")
+    company_id = row[0]
+    tz = row[1] or "UTC"
+    return company_id, tz
+
+
+def _require_job_video_in_branch(
+    db: Session,
+    *,
+    tenant_id: UUID,
+    branch_id: UUID,
+    job_id: UUID,
+) -> tuple[Job, Video]:
+    row = (
+        db.query(Job, Video)
+        .join(Video, Video.id == Job.video_id)
+        .filter(
+            Job.id == job_id,
+            Video.tenant_id == tenant_id,
+            Video.branch_id == branch_id,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return row[0], row[1]
+
+
+def _list_branch_employees(
+    db: Session,
+    *,
+    tenant_id: UUID,
+    company_id: UUID,
+    branch_id: UUID,
+    include_inactive: bool,
+) -> list[tuple[UUID, str, str]]:
+    # Canonical "current employment" selection (mirrors hr_core repo logic).
+    where_status = "" if include_inactive else "AND e.status = 'ACTIVE'"
+    rows = db.execute(
+        sa.text(
+            f"""
+            WITH current_employment AS (
+              SELECT
+                ee.employee_id,
+                ee.branch_id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY ee.employee_id
+                  ORDER BY ee.is_primary DESC NULLS LAST, ee.start_date DESC, ee.id DESC
+                ) AS rn
+              FROM hr_core.employee_employment ee
+              WHERE ee.tenant_id = :tenant_id
+                AND ee.company_id = :company_id
+                AND ee.end_date IS NULL
+            ),
+            ce AS (
+              SELECT employee_id, branch_id
+              FROM current_employment
+              WHERE rn = 1
+            )
+            SELECT
+              e.id AS employee_id,
+              e.employee_code AS employee_code,
+              p.first_name AS first_name,
+              p.last_name AS last_name
+            FROM ce
+            JOIN hr_core.employees e ON e.id = ce.employee_id
+            JOIN hr_core.persons p ON p.id = e.person_id
+            WHERE e.tenant_id = :tenant_id
+              AND e.company_id = :company_id
+              AND ce.branch_id = :branch_id
+              {where_status}
+            ORDER BY e.employee_code ASC, e.id ASC
+            """
+        ),
+        {"tenant_id": tenant_id, "company_id": company_id, "branch_id": branch_id},
+    ).all()
+
+    out: list[tuple[UUID, str, str]] = []
+    for r in rows:
+        full_name = f"{r.first_name} {r.last_name}".strip()
+        out.append((r.employee_id, r.employee_code, full_name))
+    return out
+
+
+@router.get("/branches/{branch_id}/jobs/{job_id}/events", response_model=list[EventOut])
 def list_events(
+    branch_id: UUID,
     job_id: UUID,
     event_type: str | None = Query(default=None),
     employee_id: UUID | None = Query(default=None),
     is_inferred: bool | None = Query(default=None),
     limit: int = Query(default=200, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
     db: Session = Depends(get_db),
 ) -> list[EventOut]:
+    _job, _video = _require_job_video_in_branch(
+        db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, job_id=job_id
+    )
     # Filter by job and optional event_type/employee/inferred flag; paginated
     q = db.query(Event).filter(Event.job_id == job_id)
 
@@ -119,9 +227,11 @@ def list_events(
     ]
 
 
-@router.get("/events/{event_id}/snapshot")
+@router.get("/branches/{branch_id}/events/{event_id}/snapshot")
 def download_event_snapshot(
+    branch_id: UUID,
     event_id: UUID,
+    ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
     db: Session = Depends(get_db),
 ) -> FileResponse:
     """
@@ -129,9 +239,20 @@ def download_event_snapshot(
 
     This is useful for the UI to show a thumbnail/preview while keeping disk paths opaque.
     """
-    e = db.get(Event, event_id)
-    if e is None:
+    row = (
+        db.query(Event)
+        .join(Job, Job.id == Event.job_id)
+        .join(Video, Video.id == Job.video_id)
+        .filter(
+            Event.id == event_id,
+            Video.tenant_id == ctx.scope.tenant_id,
+            Video.branch_id == branch_id,
+        )
+        .first()
+    )
+    if row is None:
         raise HTTPException(status_code=404, detail="Event not found")
+    e = row
 
     if e.snapshot_path is None or e.snapshot_path == "":
         raise HTTPException(status_code=404, detail="Event snapshot not available")
@@ -163,43 +284,49 @@ def download_event_snapshot(
     )
 
 
-@router.get("/jobs/{job_id}/attendance", response_model=list[AttendanceOut])
-def list_attendance(job_id: UUID, db: Session = Depends(get_db)) -> list[AttendanceOut]:
-    # Resolve store/day via video so we return all employees for that store/day
-    job = db.get(Job, job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    video = db.get(Video, job.video_id)
-    if video is None:
-        raise HTTPException(status_code=404, detail="Video not found")
-
-    store_id = video.store_id
-    business_date = video.business_date
-
-    # Left join attendance so absentees still show up with anomalies={"absent": true}
-    rows = (
-        db.query(Employee, AttendanceDaily)
-        .outerjoin(
-            AttendanceDaily,
-            sa.and_(
-                AttendanceDaily.employee_id == Employee.id,
-                AttendanceDaily.store_id == store_id,
-                AttendanceDaily.business_date == business_date,
-            ),
-        )
-        .filter(Employee.store_id == store_id)
-        .order_by(Employee.employee_code.asc())
-        .all()
+@router.get("/branches/{branch_id}/jobs/{job_id}/attendance", response_model=list[AttendanceOut])
+def list_attendance(
+    branch_id: UUID,
+    job_id: UUID,
+    ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
+    db: Session = Depends(get_db),
+) -> list[AttendanceOut]:
+    # Resolve branch/day via video so we return all employees for that branch/day.
+    _job, video = _require_job_video_in_branch(
+        db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, job_id=job_id
     )
 
+    company_id, _tz = _require_branch_info(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id)
+
+    business_date = video.business_date
+
+    employees = _list_branch_employees(
+        db,
+        tenant_id=ctx.scope.tenant_id,
+        company_id=company_id,
+        branch_id=branch_id,
+        include_inactive=False,
+    )
+    att_rows = (
+        db.query(AttendanceDaily)
+        .filter(
+            AttendanceDaily.tenant_id == ctx.scope.tenant_id,
+            AttendanceDaily.branch_id == branch_id,
+            AttendanceDaily.business_date == business_date,
+        )
+        .all()
+    )
+    att_by_emp = {r.employee_id: r for r in att_rows}
+
     out: list[AttendanceOut] = []
-    for emp, att in rows:
+    for emp_id, emp_code, emp_name in employees:
+        att = att_by_emp.get(emp_id)
         if att is None:
             out.append(
                 AttendanceOut(
-                    employee_id=emp.id,
-                    employee_code=emp.employee_code,
-                    employee_name=emp.name,
+                    employee_id=emp_id,
+                    employee_code=emp_code,
+                    employee_name=emp_name,
                     business_date=business_date,
                     punch_in=None,
                     punch_out=None,
@@ -207,19 +334,20 @@ def list_attendance(job_id: UUID, db: Session = Depends(get_db)) -> list[Attenda
                     anomalies_json={"absent": True},
                 )
             )
-        else:
-            out.append(
-                AttendanceOut(
-                    employee_id=emp.id,
-                    employee_code=emp.employee_code,
-                    employee_name=emp.name,
-                    business_date=att.business_date,
-                    punch_in=att.punch_in,
-                    punch_out=att.punch_out,
-                    total_minutes=att.total_minutes,
-                    anomalies_json=att.anomalies_json,
-                )
+            continue
+
+        out.append(
+            AttendanceOut(
+                employee_id=emp_id,
+                employee_code=emp_code,
+                employee_name=emp_name,
+                business_date=att.business_date,
+                punch_in=att.punch_in,
+                punch_out=att.punch_out,
+                total_minutes=att.total_minutes,
+                anomalies_json=att.anomalies_json,
             )
+        )
 
     return out
 
@@ -249,49 +377,54 @@ def _parse_hhmm_to_minutes(value: str | None) -> int | None:
 
 
 @router.get(
-    "/stores/{store_id}/attendance/daily",
+    "/branches/{branch_id}/attendance/daily",
     response_model=list[AttendanceDailySummaryOut],
 )
 def list_attendance_daily(
-    store_id: UUID,
+    branch_id: UUID,
     start: date = Query(...),
     end: date = Query(...),
     late_after: str | None = Query(default=None),
     include_inactive: bool = Query(default=False),
+    ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
     db: Session = Depends(get_db),
 ) -> list[AttendanceDailySummaryOut]:
-    # Store timezone drives "late" classification.
-    store = db.get(Store, store_id)
-    if store is None:
-        raise HTTPException(status_code=404, detail="Store not found")
+    company_id, tz_name = _require_branch_info(
+        db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id
+    )
 
     if end < start:
         raise HTTPException(status_code=400, detail="end must be >= start")
 
     try:
-        tz = ZoneInfo(store.timezone or "UTC")
+        tz = ZoneInfo(tz_name or "UTC")
     except Exception as e:
-        raise HTTPException(status_code=400, detail="Invalid store timezone") from e
+        raise HTTPException(status_code=400, detail="Invalid branch timezone") from e
 
     late_after_minutes = _parse_hhmm_to_minutes(late_after)
 
-    emp_q = db.query(Employee).filter(Employee.store_id == store_id)
-    if not include_inactive:
-        emp_q = emp_q.filter(Employee.is_active.is_(True))
-    total_employees = int(emp_q.count())
+    employees = _list_branch_employees(
+        db,
+        tenant_id=ctx.scope.tenant_id,
+        company_id=company_id,
+        branch_id=branch_id,
+        include_inactive=bool(include_inactive),
+    )
+    total_employees = len(employees)
+    allowed_employee_ids = {e[0] for e in employees}
 
-    att_q = (
+    rows = (
         db.query(AttendanceDaily)
-        .join(Employee, AttendanceDaily.employee_id == Employee.id)
         .filter(
-            Employee.store_id == store_id,
+            AttendanceDaily.tenant_id == ctx.scope.tenant_id,
+            AttendanceDaily.branch_id == branch_id,
             AttendanceDaily.business_date >= start,
             AttendanceDaily.business_date <= end,
         )
+        .all()
     )
     if not include_inactive:
-        att_q = att_q.filter(Employee.is_active.is_(True))
-    rows = att_q.all()
+        rows = [r for r in rows if r.employee_id in allowed_employee_ids]
 
     # Pre-fill all dates so missing days still return zeros.
     per_day: dict[date, dict[str, float]] = {}
@@ -355,10 +488,16 @@ def list_attendance_daily(
     return out
 
 
-@router.get("/jobs/{job_id}/metrics/hourly", response_model=list[MetricsHourlyOut])
+@router.get("/branches/{branch_id}/jobs/{job_id}/metrics/hourly", response_model=list[MetricsHourlyOut])
 def list_metrics_hourly(
-    job_id: UUID, db: Session = Depends(get_db)
+    branch_id: UUID,
+    job_id: UUID,
+    ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
+    db: Session = Depends(get_db),
 ) -> list[MetricsHourlyOut]:
+    _job, _video = _require_job_video_in_branch(
+        db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, job_id=job_id
+    )
     # Simple listing of hourly aggregates for the job
     rows = (
         db.query(MetricsHourly)
@@ -379,8 +518,16 @@ def list_metrics_hourly(
     ]
 
 
-@router.get("/jobs/{job_id}/artifacts", response_model=list[ArtifactOut])
-def list_artifacts(job_id: UUID, db: Session = Depends(get_db)) -> list[ArtifactOut]:
+@router.get("/branches/{branch_id}/jobs/{job_id}/artifacts", response_model=list[ArtifactOut])
+def list_artifacts(
+    branch_id: UUID,
+    job_id: UUID,
+    ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
+    db: Session = Depends(get_db),
+) -> list[ArtifactOut]:
+    _job, _video = _require_job_video_in_branch(
+        db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, job_id=job_id
+    )
     rows = (
         db.query(Artifact)
         .filter(Artifact.job_id == job_id)
@@ -393,14 +540,29 @@ def list_artifacts(job_id: UUID, db: Session = Depends(get_db)) -> list[Artifact
     ]
 
 
-@router.get("/artifacts/{artifact_id}/download")
-def download_artifact(artifact_id: UUID, db: Session = Depends(get_db)) -> FileResponse:
+@router.get("/branches/{branch_id}/artifacts/{artifact_id}/download")
+def download_artifact(
+    branch_id: UUID,
+    artifact_id: UUID,
+    ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
+    db: Session = Depends(get_db),
+) -> FileResponse:
     """
     Secure download:
     - artifact.path is stored as a relative path
     - we refuse any path that resolves outside settings.data_dir
     """
-    a = db.get(Artifact, artifact_id)
+    a = (
+        db.query(Artifact)
+        .join(Job, Job.id == Artifact.job_id)
+        .join(Video, Video.id == Job.video_id)
+        .filter(
+            Artifact.id == artifact_id,
+            Video.tenant_id == ctx.scope.tenant_id,
+            Video.branch_id == branch_id,
+        )
+        .first()
+    )
     if a is None:
         raise HTTPException(status_code=404, detail="Artifact not found")
 

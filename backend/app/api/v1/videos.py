@@ -23,9 +23,12 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.auth.deps import require_permission
+from app.auth.permissions import VISION_VIDEO_UPLOAD
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.models import Camera, Video
+from app.shared.types import AuthContext
 
 router = APIRouter(tags=["videos"])
 
@@ -39,10 +42,10 @@ def _safe_ext(filename: str) -> str:
 
 
 def _video_rel_path(
-    store_id: UUID, camera_id: UUID, business_date: date, filename: str
+    tenant_id: UUID, branch_id: UUID, camera_id: UUID, business_date: date, filename: str
 ) -> str:
     ext = _safe_ext(filename)
-    return f"videos/{store_id}/{camera_id}/{business_date.isoformat()}/original{ext}"
+    return f"videos/{tenant_id}/{branch_id}/{camera_id}/{business_date.isoformat()}/original{ext}"
 
 
 def _full_path(rel_path: str) -> Path:
@@ -106,25 +109,35 @@ class VideoInitResponse(BaseModel):
 
 
 @router.post(
-    "/stores/{store_id}/videos/init",
+    "/branches/{branch_id}/videos/init",
     response_model=VideoInitResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def init_video_upload(
-    store_id: UUID,
+    branch_id: UUID,
     body: VideoInitRequest,
+    ctx: AuthContext = Depends(require_permission(VISION_VIDEO_UPLOAD)),
     db: Session = Depends(get_db),
 ) -> VideoInitResponse:
-    camera = db.get(Camera, body.camera_id)
-    if camera is None or camera.store_id != store_id:
-        raise HTTPException(status_code=404, detail="Camera not found for store")
+    camera = (
+        db.query(Camera)
+        .filter(
+            Camera.id == body.camera_id,
+            Camera.tenant_id == ctx.scope.tenant_id,
+            Camera.branch_id == branch_id,
+        )
+        .first()
+    )
+    if camera is None:
+        raise HTTPException(status_code=404, detail="Camera not found for branch")
 
     rel_path = _video_rel_path(
-        store_id, body.camera_id, body.business_date, body.filename
+        ctx.scope.tenant_id, branch_id, body.camera_id, body.business_date, body.filename
     )
 
     video = Video(
-        store_id=store_id,
+        tenant_id=ctx.scope.tenant_id,
+        branch_id=branch_id,
         camera_id=body.camera_id,
         business_date=body.business_date,
         file_path=rel_path,
@@ -139,21 +152,30 @@ def init_video_upload(
     return VideoInitResponse(
         video_id=video.id,
         file_path=video.file_path,
-        upload_endpoint=f"{settings.api_v1_prefix}/stores/{store_id}/videos/{video.id}/file",
-        finalize_endpoint=f"{settings.api_v1_prefix}/stores/{store_id}/videos/{video.id}/finalize",
+        upload_endpoint=f"{settings.api_v1_prefix}/branches/{branch_id}/videos/{video.id}/file",
+        finalize_endpoint=f"{settings.api_v1_prefix}/branches/{branch_id}/videos/{video.id}/finalize",
     )
 
 
-@router.put("/stores/{store_id}/videos/{video_id}/file")
+@router.put("/branches/{branch_id}/videos/{video_id}/file")
 def upload_video_file(
-    store_id: UUID,
+    branch_id: UUID,
     video_id: UUID,
     file: UploadFile = File(...),
+    ctx: AuthContext = Depends(require_permission(VISION_VIDEO_UPLOAD)),
     db: Session = Depends(get_db),
 ) -> dict:
-    video = db.get(Video, video_id)
-    if video is None or video.store_id != store_id:
-        raise HTTPException(status_code=404, detail="Video not found for store")
+    video = (
+        db.query(Video)
+        .filter(
+            Video.id == video_id,
+            Video.tenant_id == ctx.scope.tenant_id,
+            Video.branch_id == branch_id,
+        )
+        .first()
+    )
+    if video is None:
+        raise HTTPException(status_code=404, detail="Video not found for branch")
 
     dest = _full_path(video.file_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -177,15 +199,24 @@ def upload_video_file(
     }
 
 
-@router.post("/stores/{store_id}/videos/{video_id}/finalize")
+@router.post("/branches/{branch_id}/videos/{video_id}/finalize")
 def finalize_video(
-    store_id: UUID,
+    branch_id: UUID,
     video_id: UUID,
+    ctx: AuthContext = Depends(require_permission(VISION_VIDEO_UPLOAD)),
     db: Session = Depends(get_db),
 ) -> dict:
-    video = db.get(Video, video_id)
-    if video is None or video.store_id != store_id:
-        raise HTTPException(status_code=404, detail="Video not found for store")
+    video = (
+        db.query(Video)
+        .filter(
+            Video.id == video_id,
+            Video.tenant_id == ctx.scope.tenant_id,
+            Video.branch_id == branch_id,
+        )
+        .first()
+    )
+    if video is None:
+        raise HTTPException(status_code=404, detail="Video not found for branch")
 
     path = _full_path(video.file_path)
     if not path.exists():

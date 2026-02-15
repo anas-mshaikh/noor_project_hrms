@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.auth import repo
 from app.auth.jwt import create_access_token, create_refresh_token
 from app.auth.passwords import verify_password
+from app.auth.rbac import get_permissions
 from app.auth.scope import resolve_scope, roles_for_scope
 from app.core.config import settings
 from app.core.errors import AppError
@@ -71,8 +72,17 @@ class AuthService:
         scope = resolve_scope(db, user_id=user.id, headers=headers)
         assignments = repo.list_role_assignments(db, user_id=user.id)
         roles = roles_for_scope(assignments=assignments, scope=scope)
+        permissions = get_permissions(db, user_id=user.id, scope=scope)
 
-        ctx = AuthContext(user_id=user.id, email=user.email, status=user.status, roles=roles, scope=scope)
+        ctx = AuthContext(
+            user_id=user.id,
+            email=user.email,
+            status=user.status,
+            roles=roles,
+            scope=scope,
+            permissions=permissions,
+            correlation_id=None,
+        )
         return TokenPair(access_token=access, refresh_token=refresh), ctx
 
     def refresh(
@@ -116,8 +126,17 @@ class AuthService:
         scope = resolve_scope(db, user_id=user.id, headers=headers)
         assignments = repo.list_role_assignments(db, user_id=user.id)
         roles = roles_for_scope(assignments=assignments, scope=scope)
+        permissions = get_permissions(db, user_id=user.id, scope=scope)
 
-        ctx = AuthContext(user_id=user.id, email=user.email, status=user.status, roles=roles, scope=scope)
+        ctx = AuthContext(
+            user_id=user.id,
+            email=user.email,
+            status=user.status,
+            roles=roles,
+            scope=scope,
+            permissions=permissions,
+            correlation_id=None,
+        )
         return TokenPair(access_token=access, refresh_token=new_refresh), ctx
 
     def logout(self, db: Session, *, refresh_token: str) -> None:

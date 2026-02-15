@@ -14,15 +14,16 @@ import { hrQueryKeys } from "@/features/hr/api/queryKeys";
  * - We keep retry disabled to avoid hammering while UI is polling run status.
  */
 export function useScreeningExplanation(
+  branchId: UUID | null,
   runId: UUID | null,
   resumeId: UUID | null,
   opts: { enabled?: boolean; pollIntervalMs?: number } = {}
 ) {
   return useQuery<ScreeningExplanationOut>({
-    queryKey: hrQueryKeys.screeningExplanation(runId, resumeId),
-    enabled: Boolean(opts.enabled ?? true) && Boolean(runId) && Boolean(resumeId),
+    queryKey: hrQueryKeys.screeningExplanation(branchId, runId, resumeId),
+    enabled: Boolean(opts.enabled ?? true) && Boolean(branchId && runId && resumeId),
     queryFn: ({ signal }) =>
-      getScreeningExplanation(runId as UUID, resumeId as UUID, { signal }),
+      getScreeningExplanation(branchId as UUID, runId as UUID, resumeId as UUID, { signal }),
     refetchInterval: opts.pollIntervalMs ?? false,
     retry: false,
   });

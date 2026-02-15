@@ -8,7 +8,7 @@ import { getBatchStatus } from "@/features/hr/api/hr";
 import { hrQueryKeys } from "@/features/hr/api/queryKeys";
 
 type BatchPollInput =
-  | { openingId: UUID; batchId: UUID; enabled?: boolean }
+  | { branchId: UUID; openingId: UUID; batchId: UUID; enabled?: boolean }
   | null;
 
 function isDone(s: {
@@ -26,15 +26,16 @@ function isDone(s: {
 export function useBatchPoll(input: BatchPollInput) {
   const [done, setDone] = React.useState(false);
 
+  const branchId = input?.branchId ?? null;
   const openingId = input?.openingId ?? null;
   const batchId = input?.batchId ?? null;
   const enabled = Boolean(input?.enabled ?? true);
 
   const query = useQuery({
-    queryKey: hrQueryKeys.batchStatus(openingId, batchId),
-    enabled: enabled && Boolean(openingId) && Boolean(batchId) && !done,
+    queryKey: hrQueryKeys.batchStatus(branchId, openingId, batchId),
+    enabled: enabled && Boolean(branchId) && Boolean(openingId) && Boolean(batchId) && !done,
     queryFn: ({ signal }) =>
-      getBatchStatus(openingId as UUID, batchId as UUID, { signal }),
+      getBatchStatus(branchId as UUID, openingId as UUID, batchId as UUID, { signal }),
     refetchInterval: (q) => {
       const data = q.state.data;
       if (!data) return 1200;
@@ -53,4 +54,3 @@ export function useBatchPoll(input: BatchPollInput) {
     resetDone: () => setDone(false),
   };
 }
-

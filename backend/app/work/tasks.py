@@ -18,9 +18,9 @@ from app.work.service import AutoTaskAssigner
 logger = logging.getLogger(__name__)
 
 
-def assign_tasks_job(*, store_id: str, business_date: str) -> dict[str, int]:
+def assign_tasks_job(*, tenant_id: str, branch_id: str, business_date: str) -> dict[str, int]:
     """
-    Assign all pending tasks for one store for the given business date (YYYY-MM-DD).
+    Assign all pending tasks for one branch for the given business date (YYYY-MM-DD).
 
     Idempotency:
     - Only tasks in status='pending' are considered.
@@ -28,20 +28,23 @@ def assign_tasks_job(*, store_id: str, business_date: str) -> dict[str, int]:
 
     Returns a small summary dict suitable for logging/monitoring.
     """
-    sid = UUID(store_id)
+    tid = UUID(tenant_id)
+    bid = UUID(branch_id)
     bdate = date.fromisoformat(business_date)
 
     db = SessionLocal()
     try:
         svc = AutoTaskAssigner(db)
-        summary = svc.assign_pending_tasks_for_store(store_id=sid, business_date=bdate)
+        summary = svc.assign_pending_tasks_for_branch(
+            tenant_id=tid, branch_id=bid, business_date=bdate
+        )
         logger.info(
-            "work.assign_tasks_job complete store_id=%s business_date=%s summary=%s",
-            store_id,
+            "work.assign_tasks_job complete tenant_id=%s branch_id=%s business_date=%s summary=%s",
+            tenant_id,
+            branch_id,
             business_date,
             summary,
         )
         return summary
     finally:
         db.close()
-

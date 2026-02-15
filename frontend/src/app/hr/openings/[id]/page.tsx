@@ -17,6 +17,7 @@ import { GradientButton } from "@/features/hr/components/cards/GradientButton";
 import { StatCard } from "@/features/hr/components/cards/StatCard";
 import { PanelCard } from "@/features/hr/components/cards/PanelCard";
 import { EmptyStateCard } from "@/features/hr/components/cards/EmptyStateCard";
+import { StorePicker } from "@/components/StorePicker";
 import { ResumeDropzone } from "@/features/hr/components/openings/ResumeDropzone";
 import { BatchProgress, type BatchProgressItem } from "@/features/hr/components/openings/BatchProgress";
 import { ParsedResumeSheet } from "@/features/hr/components/openings/ParsedResumeSheet";
@@ -39,6 +40,7 @@ import { useResumes } from "@/features/hr/hooks/useResumes";
 import { useBatchPoll } from "@/features/hr/hooks/useBatchPoll";
 import type { PipelineCardUi, PipelineStageUi } from "@/features/hr/components/pipeline/types";
 import type { ApplicationOut, ResumeOut, UUID } from "@/lib/types";
+import { useSelection } from "@/lib/selection";
 import {
   createScreeningRun,
   enqueueOpeningEmbeddings,
@@ -69,7 +71,8 @@ export default function HROpeningDetailPage(_props: PageProps) {
   // route segments from a client component.
   const routeParams = useParams() as { id?: string };
   const openingId = (routeParams.id ?? null) as UUID | null;
-  const openingQ = useOpening(openingId);
+  const branchId = useSelection((s) => (s.branchId as UUID | undefined) ?? null);
+  const openingQ = useOpening(branchId, openingId);
 
   const opening: HrOpening | null = openingQ.data
     ? {
@@ -91,12 +94,13 @@ export default function HROpeningDetailPage(_props: PageProps) {
       // `openingId` comes from the route; during the first render it can be null.
       // This mutation should never be invoked without an id, but we guard anyway
       // so the callback is type-safe and fails with a clear message if misused.
+      if (!branchId) throw new Error("Select a branch first");
       if (!openingId) throw new Error("Missing opening id");
-      return createScreeningRun(openingId, {});
+      return createScreeningRun(branchId, openingId, {});
     },
     onSuccess: (run) => {
       try {
-        localStorage.setItem(`hr:lastRun:${openingId}`, run.id);
+        localStorage.setItem(`hr:lastRun:${branchId}:${openingId}`, run.id);
       } catch {
         // ignore (private browsing / storage disabled)
       }
@@ -116,17 +120,21 @@ export default function HROpeningDetailPage(_props: PageProps) {
   const [lastRunId, setLastRunId] = React.useState<UUID | null>(null);
   React.useEffect(() => {
     try {
-      const v = localStorage.getItem(`hr:lastRun:${openingId}`);
+      if (!branchId || !openingId) {
+        setLastRunId(null);
+        return;
+      }
+      const v = localStorage.getItem(`hr:lastRun:${branchId}:${openingId}`);
       setLastRunId((v as UUID) || null);
     } catch {
       setLastRunId(null);
     }
-  }, [openingId]);
+  }, [branchId, openingId]);
 
-  const lastRunQ = useScreeningRun(lastRunId);
+  const lastRunQ = useScreeningRun(branchId, lastRunId);
   const enqueueExplain = useMutation({
     mutationFn: () =>
-      enqueueRunExplanations(lastRunId as UUID, { topN: 20, force: false }),
+      enqueueRunExplanations(branchId as UUID, lastRunId as UUID, { topN: 20, force: false }),
     onSuccess: () =>
       toast("Explanations queued", {
         description: "Generating for top candidates…",
@@ -136,6 +144,19 @@ export default function HROpeningDetailPage(_props: PageProps) {
         description: err instanceof Error ? err.message : "Unknown error",
       }),
   });
+
+  if (!branchId) {
+    return (
+      <HrPageShell>
+        <EmptyStateCard
+          title="Select a branch to continue"
+          description="HR data is branch-scoped. Pick a branch to view this opening."
+          icon={Sparkles}
+          actions={<div className="w-full max-w-xl"><StorePicker /></div>}
+        />
+      </HrPageShell>
+    );
+  }
 
   // While route params are not ready, keep the UI mounted but don't start fetching.
   if (!openingId) {
@@ -192,12 +213,12 @@ export default function HROpeningDetailPage(_props: PageProps) {
     : runs[0];
   const topCandidates = lastRun ? getRunResults(lastRun.id).slice(0, 5) : [];
 
-  const { list: resumesQ, upload: uploadMutation } = useResumes(openingId);
-  const indexQ = useOpeningIndexStatus(openingId);
+  const { list: resumesQ, upload: uploadMutation } = useResumes(branchId, openingId);
+  const indexQ = useOpeningIndexStatus(branchId, openingId);
 
   // ATS / Pipeline (Phase 5): stages + applications for this opening.
-  const stagesQ = usePipelineStages(openingId);
-  const appsQ = useApplications(openingId);
+  const stagesQ = usePipelineStages(branchId, openingId);
+  const appsQ = useApplications(branchId, openingId);
   const [selectedAppId, setSelectedAppId] = React.useState<UUID | null>(null);
   const [appDrawerOpen, setAppDrawerOpen] = React.useState(false);
   const selectedApplication = React.useMemo(() => {
@@ -236,7 +257,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
   }, [appsQ.list.data]);
 
   const enqueueEmbed = useMutation({
-    mutationFn: () => enqueueOpeningEmbeddings(openingId as UUID, { force: false }),
+    mutationFn: () => enqueueOpeningEmbeddings(branchId as UUID, openingId as UUID, { force: false }),
     onSuccess: (resp) => {
       toast("Embedding queued", {
         description: `${resp.enqueued} enqueued, ${resp.skipped} skipped`,
@@ -252,7 +273,9 @@ export default function HROpeningDetailPage(_props: PageProps) {
   });
   const [activeBatchId, setActiveBatchId] = React.useState<UUID | null>(null);
   const batchQ = useBatchPoll(
-    activeBatchId ? { openingId, batchId: activeBatchId } : null
+    activeBatchId && openingId
+      ? { branchId, openingId, batchId: activeBatchId }
+      : null
   );
 
   const [parsedOpen, setParsedOpen] = React.useState(false);
@@ -275,11 +298,11 @@ export default function HROpeningDetailPage(_props: PageProps) {
   React.useEffect(() => {
     if (!openingQ.data) return;
     try {
-      localStorage.setItem(`hr:lastOpening:${openingQ.data.store_id}`, openingQ.data.id);
+      localStorage.setItem(`hr:lastOpening:${branchId}`, openingQ.data.id);
     } catch {
       // ignore
     }
-  }, [openingQ.data]);
+  }, [openingQ.data, branchId]);
 
   return (
     <HrPageShell>

@@ -8,15 +8,7 @@ import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.models import (
-    AttendanceSummary,
-    Dataset,
-    Employee,
-    MonthState,
-    Organization,
-    PosSummary,
-    Store,
-)
+from app.models.models import AttendanceSummary, Dataset, MonthState, PosSummary
 
 
 @dataclass(frozen=True)
@@ -39,24 +31,20 @@ class MobileRow:
     stocking_missed: int | None
 
 
-def get_published_dataset_id(db: Session, month_key: str) -> uuid.UUID | None:
+def get_published_dataset_id(
+    db: Session, *, tenant_id: uuid.UUID, branch_id: uuid.UUID, month_key: str
+) -> uuid.UUID | None:
     return db.execute(
-        select(MonthState.published_dataset_id).where(MonthState.month_key == month_key)
+        select(MonthState.published_dataset_id).where(
+            MonthState.tenant_id == tenant_id,
+            MonthState.branch_id == branch_id,
+            MonthState.month_key == month_key,
+        )
     ).scalar_one_or_none()
 
 
 def get_dataset(db: Session, dataset_id: uuid.UUID) -> Dataset | None:
     return db.get(Dataset, dataset_id)
-
-
-def resolve_store_org(db: Session, store_id: uuid.UUID) -> tuple[Store, Organization]:
-    store = db.get(Store, store_id)
-    if store is None:
-        raise ValueError(f"store not found: {store_id}")
-    org = db.get(Organization, store.org_id)
-    if org is None:
-        raise ValueError(f"organization not found: {store.org_id}")
-    return store, org
 
 
 def rows_to_mobile(rows: Iterable[sa.Row]) -> list[MobileRow]:
@@ -83,50 +71,80 @@ def rows_to_mobile(rows: Iterable[sa.Row]) -> list[MobileRow]:
     return out
 
 
-def fetch_monthly_rows(db: Session, dataset_id: uuid.UUID) -> list[MobileRow]:
+def fetch_monthly_rows(
+    db: Session,
+    *,
+    tenant_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+) -> list[MobileRow]:
     """
     Fetch per-employee monthly aggregates for a dataset by joining POS + Attendance.
     """
-    pos_ids = select(PosSummary.employee_id).where(PosSummary.dataset_id == dataset_id)
-    att_ids = select(AttendanceSummary.employee_id).where(
-        AttendanceSummary.dataset_id == dataset_id
-    )
-    ids_subq = sa.union(pos_ids, att_ids).subquery()
-
-    q = (
-        select(
-            Employee.id.label("employee_id"),
-            Employee.employee_code,
-            Employee.name,
-            Employee.department,
-            PosSummary.qty,
-            PosSummary.net_sales,
-            PosSummary.bills,
-            PosSummary.customers,
-            PosSummary.return_customers,
-            AttendanceSummary.present,
-            AttendanceSummary.absent,
-            AttendanceSummary.work_minutes,
-            AttendanceSummary.stocking_done,
-            AttendanceSummary.stocking_missed,
-        )
-        .select_from(ids_subq)
-        .join(Employee, Employee.id == ids_subq.c.employee_id)
-        .join(
-            PosSummary,
-            (PosSummary.employee_id == ids_subq.c.employee_id)
-            & (PosSummary.dataset_id == dataset_id),
-            isouter=True,
-        )
-        .join(
-            AttendanceSummary,
-            (AttendanceSummary.employee_id == ids_subq.c.employee_id)
-            & (AttendanceSummary.dataset_id == dataset_id),
-            isouter=True,
-        )
-    )
-
-    rows = db.execute(q).all()
+    rows = db.execute(
+        sa.text(
+            """
+            WITH ids AS (
+              SELECT employee_id
+              FROM analytics.pos_summary
+              WHERE tenant_id = :tenant_id
+                AND dataset_id = :dataset_id
+              UNION
+              SELECT employee_id
+              FROM attendance.attendance_summary
+              WHERE tenant_id = :tenant_id
+                AND dataset_id = :dataset_id
+            ),
+            current_employment AS (
+              SELECT
+                ee.employee_id,
+                ee.branch_id,
+                ee.org_unit_id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY ee.employee_id
+                  ORDER BY ee.is_primary DESC NULLS LAST, ee.start_date DESC, ee.id DESC
+                ) AS rn
+              FROM hr_core.employee_employment ee
+              WHERE ee.tenant_id = :tenant_id
+                AND ee.end_date IS NULL
+            ),
+            ce AS (
+              SELECT * FROM current_employment WHERE rn = 1
+            )
+            SELECT
+              e.id AS employee_id,
+              e.employee_code AS employee_code,
+              (p.first_name || ' ' || p.last_name) AS name,
+              ou.name AS department,
+              ps.qty,
+              ps.net_sales,
+              ps.bills,
+              ps.customers,
+              ps.return_customers,
+              att.present,
+              att.absent,
+              att.work_minutes,
+              att.stocking_done,
+              att.stocking_missed
+            FROM ids
+            JOIN hr_core.employees e ON e.id = ids.employee_id
+            JOIN hr_core.persons p ON p.id = e.person_id
+            LEFT JOIN analytics.pos_summary ps
+              ON ps.dataset_id = :dataset_id
+             AND ps.employee_id = ids.employee_id
+             AND ps.tenant_id = :tenant_id
+            LEFT JOIN attendance.attendance_summary att
+              ON att.dataset_id = :dataset_id
+             AND att.employee_id = ids.employee_id
+             AND att.tenant_id = :tenant_id
+            LEFT JOIN ce ON ce.employee_id = e.id AND ce.branch_id = :branch_id
+            LEFT JOIN tenancy.org_units ou ON ou.id = ce.org_unit_id
+            WHERE e.tenant_id = :tenant_id
+            ORDER BY e.employee_code, e.id
+            """
+        ),
+        {"tenant_id": tenant_id, "branch_id": branch_id, "dataset_id": dataset_id},
+    ).all()
     return rows_to_mobile(rows)
 
 

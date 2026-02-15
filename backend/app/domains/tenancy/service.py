@@ -14,6 +14,7 @@ from app.auth.models import Role as RoleModel
 from app.auth.models import User as UserModel
 from app.auth.models import UserRole as UserRoleModel
 from app.auth.passwords import hash_password, validate_password_strength
+from app.auth.rbac import get_permissions
 from app.core.config import settings
 from app.core.errors import AppError
 from app.domains.tenancy import repo
@@ -157,6 +158,8 @@ class TenancyService:
             status="ACTIVE",
             roles=("ADMIN",),
             scope=scope,
+            permissions=get_permissions(db, user_id=user_id, scope=scope),
+            correlation_id=None,
         )
         return BootstrapResult(access_token=access_token, refresh_token=refresh_token, ctx=ctx)
 

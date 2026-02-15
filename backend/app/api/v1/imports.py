@@ -26,6 +26,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth.deps import require_permission
+from app.auth.permissions import IMPORTS_READ, IMPORTS_WRITE, MOBILE_SYNC
 from app.core.config import settings
 from app.db.session import get_db
 from app.imports.excel import sheet_to_matrix
@@ -37,16 +39,9 @@ from app.imports.parsing import (
     parse_attendance_sheet,
     parse_pos_sheet,
 )
-from app.models.models import (
-    AttendanceSummary,
-    Dataset,
-    Employee,
-    MonthState,
-    PosSummary,
-    Store,
-)
-from app.mobile.repository import resolve_store_org
+from app.models.models import AttendanceSummary, Dataset, MonthState, PosSummary
 from app.mobile.service import sync_mobile_for_dataset
+from app.shared.types import AuthContext
 
 router = APIRouter(tags=["imports"])
 logger = logging.getLogger(__name__)
@@ -219,48 +214,73 @@ def _build_preview(parsed: ParsedWorkbook) -> ImportPreviewOut:
     )
 
 
-def _upsert_employees(
+def _resolve_employee_ids_for_branch(
     db: Session,
-    store_id: UUID,
+    *,
+    tenant_id: UUID,
+    company_id: UUID,
+    branch_id: UUID,
     employees: dict[str, ParsedEmployee],
-) -> dict[str, UUID]:
+) -> tuple[dict[str, UUID], list[str]]:
     """
-    Upsert employees by (store_id, employee_code) and return a code->id map.
+    Resolve employee_code -> hr_core.employees.id for the given branch.
 
-    This keeps POS/attendance imports as the canonical source of employee identity
-    while still honoring the single-employees table design.
+    Imports are not allowed to create legacy employees. Employee identity lives
+    in hr_core; to import POS/Attendance data you must first create employees
+    (and their active employment) in the branch.
     """
     if not employees:
-        return {}
+        return {}, []
 
-    codes = list(employees.keys())
-    existing_rows = db.execute(
-        select(Employee)
-        .where(Employee.store_id == store_id)
-        .where(Employee.employee_code.in_(codes))
-    ).scalars().all()
-    existing_by_code = {row.employee_code: row for row in existing_rows}
+    codes = sorted({c.strip() for c in employees.keys() if c.strip()})
+    if not codes:
+        return {}, []
 
-    for code, emp in employees.items():
-        department = emp.department or "Unknown"
-        current = existing_by_code.get(code)
-        if current is None:
-            current = Employee(
-                store_id=store_id,
-                employee_code=code,
-                name=emp.name,
-                department=department,
+    sql = (
+        sa.text(
+            """
+            WITH current_employment AS (
+              SELECT
+                ee.employee_id,
+                ee.branch_id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY ee.employee_id
+                  ORDER BY ee.is_primary DESC NULLS LAST, ee.start_date DESC, ee.id DESC
+                ) AS rn
+              FROM hr_core.employee_employment ee
+              WHERE ee.tenant_id = :tenant_id
+                AND ee.company_id = :company_id
+                AND ee.end_date IS NULL
+            ),
+            ce AS (
+              SELECT * FROM current_employment WHERE rn = 1
             )
-            db.add(current)
-            existing_by_code[code] = current
-        else:
-            current.name = emp.name
-            current.department = emp.department or current.department or "Unknown"
-            current.is_active = True
+            SELECT e.id AS employee_id, e.employee_code
+            FROM hr_core.employees e
+            JOIN ce ON ce.employee_id = e.id
+            WHERE e.tenant_id = :tenant_id
+              AND e.company_id = :company_id
+              AND e.employee_code IN :codes
+              AND ce.branch_id = :branch_id
+              AND e.status = 'ACTIVE'
+            """
+        )
+        .bindparams(sa.bindparam("codes", expanding=True))
+    )
 
-    # Flush to ensure IDs exist for new rows before summary inserts.
-    db.flush()
-    return {code: row.id for code, row in existing_by_code.items()}
+    rows = db.execute(
+        sql,
+        {
+            "tenant_id": tenant_id,
+            "company_id": company_id,
+            "branch_id": branch_id,
+            "codes": codes,
+        },
+    ).all()
+
+    found = {str(r.employee_code): r.employee_id for r in rows}
+    missing = [c for c in codes if c not in found]
+    return found, missing
 
 
 def _ensure_openpyxl():
@@ -280,12 +300,13 @@ def _ensure_openpyxl():
 # -----------------------------------------------------------------------------
 
 
-@router.post("/imports", response_model=ImportResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/branches/{branch_id}/imports", response_model=ImportResponse, status_code=status.HTTP_201_CREATED)
 def upload_import(
+    branch_id: UUID,
     file: UploadFile = File(...),
     month_key: str | None = Form(default=None),
     uploaded_by: str | None = Form(default=None),
-    store_id: str = Form(...),
+    ctx: AuthContext = Depends(require_permission(IMPORTS_WRITE)),
     db: Session = Depends(get_db),
 ) -> ImportResponse:
     # 1) Validate input
@@ -294,18 +315,20 @@ def upload_import(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
-    try:
-        store_uuid = UUID(store_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="store_id must be a valid UUID",
-        )
-    if db.get(Store, store_uuid) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"store not found: {store_uuid}",
-        )
+    branch_row = db.execute(
+        sa.text(
+            """
+            SELECT id, company_id
+            FROM tenancy.branches
+            WHERE id = :branch_id
+              AND tenant_id = :tenant_id
+            """
+        ),
+        {"tenant_id": ctx.scope.tenant_id, "branch_id": branch_id},
+    ).first()
+    if branch_row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="branch not found")
+    company_id: UUID = branch_row.company_id  # type: ignore[attr-defined]
 
     # 2) Compute checksum + dedupe (idempotent per month)
     dataset_id = uuid4()
@@ -322,23 +345,18 @@ def upload_import(
         dest_path,
     )
 
-    existing_all = db.execute(
-        select(Dataset).where(Dataset.month_key == month_key_final, Dataset.checksum == checksum)
-    ).scalars().all()
-
-    existing: Dataset | None = None
-    if store_uuid is not None:
-        for cand in existing_all:
-            if cand.store_id == store_uuid:
-                existing = cand
-                break
-        if existing is None and existing_all:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="dataset already exists for this month with a different store_id",
+    existing = (
+        db.execute(
+            select(Dataset).where(
+                Dataset.tenant_id == ctx.scope.tenant_id,
+                Dataset.branch_id == branch_id,
+                Dataset.month_key == month_key_final,
+                Dataset.checksum == checksum,
             )
-    else:
-        existing = existing_all[0] if existing_all else None
+        )
+        .scalars()
+        .one_or_none()
+    )
 
     if existing is not None:
         # If a previous upload FAILED, allow re-upload to re-validate the same dataset_id.
@@ -372,8 +390,6 @@ def upload_import(
             dest_path.replace(stable_path)
 
             existing.raw_file_path = str(stable_path)
-            if store_uuid is not None:
-                existing.store_id = store_uuid
             if uploaded_by:
                 existing.uploaded_by = uploaded_by
             existing.status = "VALIDATING"
@@ -447,11 +463,38 @@ def upload_import(
                 sa.delete(AttendanceSummary).where(AttendanceSummary.dataset_id == existing.id)
             )
 
-            employee_ids = _upsert_employees(db, store_uuid, parsed.employees)
+            employee_ids, missing_codes = _resolve_employee_ids_for_branch(
+                db,
+                tenant_id=ctx.scope.tenant_id,
+                company_id=company_id,
+                branch_id=branch_id,
+                employees=parsed.employees,
+            )
+            if missing_codes:
+                for code in missing_codes:
+                    parsed.errors.append(
+                        RowError(
+                            sheet="employees",
+                            row=1,
+                            message=f"Unknown employee_code {code!r} for this branch; create the employee in HR first.",
+                        )
+                    )
+                existing.status = "FAILED"
+                db.add(existing)
+                db.commit()
+                return ImportResponse(
+                    dataset_id=existing.id,
+                    month_key=existing.month_key,
+                    status=existing.status,
+                    sync_status=existing.sync_status,
+                    counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
+                    preview=_build_preview(parsed),
+                )
 
             for sid, row in parsed.pos.items():
                 db.add(
                     PosSummary(
+                        tenant_id=ctx.scope.tenant_id,
                         dataset_id=existing.id,
                         employee_id=employee_ids[sid],
                         qty=row.qty,
@@ -465,6 +508,7 @@ def upload_import(
             for sid, row in parsed.attendance.items():
                 db.add(
                     AttendanceSummary(
+                        tenant_id=ctx.scope.tenant_id,
                         dataset_id=existing.id,
                         employee_id=employee_ids[sid],
                         present=row.present,
@@ -535,16 +579,21 @@ def upload_import(
         employee_count = len(pos_ids | att_ids)
 
         top_rows = db.execute(
-            select(Employee.employee_code, Employee.name, PosSummary.net_sales)
-            .select_from(Employee)
-            .join(
-                PosSummary,
-                (PosSummary.employee_id == Employee.id)
-                & (PosSummary.dataset_id == existing.id),
-                isouter=True,
-            )
-            .order_by(PosSummary.net_sales.desc().nullslast())
-            .limit(10)
+            sa.text(
+                """
+                SELECT
+                  e.employee_code AS employee_code,
+                  (p.first_name || ' ' || p.last_name) AS name,
+                  ps.net_sales AS net_sales
+                FROM analytics.pos_summary ps
+                JOIN hr_core.employees e ON e.id = ps.employee_id
+                JOIN hr_core.persons p ON p.id = e.person_id
+                WHERE ps.dataset_id = :dataset_id
+                ORDER BY ps.net_sales DESC NULLS LAST
+                LIMIT 10
+                """
+            ),
+            {"dataset_id": existing.id},
         ).all()
 
         top_sales = [
@@ -574,7 +623,8 @@ def upload_import(
     ds = Dataset(
         id=dataset_id,
         month_key=month_key_final,
-        store_id=store_uuid,
+        tenant_id=ctx.scope.tenant_id,
+        branch_id=branch_id,
         uploaded_by=uploaded_by,
         status="VALIDATING",
         sync_status="DISABLED",
@@ -585,11 +635,15 @@ def upload_import(
     try:
         db.commit()
     except IntegrityError:
-        # Another request likely inserted the same (month_key, checksum) dataset concurrently.
+        # Another request likely inserted the same (tenant_id, branch_id, month_key, checksum)
+        # dataset concurrently.
         db.rollback()
         existing2 = db.execute(
             select(Dataset).where(
-                Dataset.month_key == month_key_final, Dataset.checksum == checksum
+                Dataset.tenant_id == ctx.scope.tenant_id,
+                Dataset.branch_id == branch_id,
+                Dataset.month_key == month_key_final,
+                Dataset.checksum == checksum,
             )
         ).scalar_one_or_none()
         if existing2 is not None:
@@ -685,13 +739,40 @@ def upload_import(
             preview=_build_preview(parsed),
         )
 
-    # 5) Upsert employees (POS/attendance drives the canonical employee list).
-    employee_ids = _upsert_employees(db, store_uuid, parsed.employees)
+    # 5) Resolve employee ids (HR core is the canonical employee identity).
+    employee_ids, missing_codes = _resolve_employee_ids_for_branch(
+        db,
+        tenant_id=ctx.scope.tenant_id,
+        company_id=company_id,
+        branch_id=branch_id,
+        employees=parsed.employees,
+    )
+    if missing_codes:
+        for code in missing_codes:
+            parsed.errors.append(
+                RowError(
+                    sheet="employees",
+                    row=1,
+                    message=f"Unknown employee_code {code!r} for this branch; create the employee in HR first.",
+                )
+            )
+        ds.status = "FAILED"
+        db.add(ds)
+        db.commit()
+        return ImportResponse(
+            dataset_id=ds.id,
+            month_key=ds.month_key,
+            status=ds.status,
+            sync_status=ds.sync_status,
+            counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
+            preview=_build_preview(parsed),
+        )
 
     # 6) Insert summaries
     for sid, row in parsed.pos.items():
         db.add(
             PosSummary(
+                tenant_id=ctx.scope.tenant_id,
                 dataset_id=ds.id,
                 employee_id=employee_ids[sid],
                 qty=row.qty,
@@ -705,6 +786,7 @@ def upload_import(
     for sid, row in parsed.attendance.items():
         db.add(
             AttendanceSummary(
+                tenant_id=ctx.scope.tenant_id,
                 dataset_id=ds.id,
                 employee_id=employee_ids[sid],
                 present=row.present,
@@ -742,10 +824,15 @@ def upload_import(
     )
 
 
-@router.post("/imports/{dataset_id}/publish", response_model=PublishResponse)
-def publish_import(dataset_id: UUID, db: Session = Depends(get_db)) -> PublishResponse:
+@router.post("/branches/{branch_id}/imports/{dataset_id}/publish", response_model=PublishResponse)
+def publish_import(
+    branch_id: UUID,
+    dataset_id: UUID,
+    ctx: AuthContext = Depends(require_permission(MOBILE_SYNC)),
+    db: Session = Depends(get_db),
+) -> PublishResponse:
     ds = db.get(Dataset, dataset_id)
-    if ds is None:
+    if ds is None or ds.tenant_id != ctx.scope.tenant_id or ds.branch_id != branch_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="dataset not found")
     if ds.status != "READY":
         raise HTTPException(
@@ -754,12 +841,25 @@ def publish_import(dataset_id: UUID, db: Session = Depends(get_db)) -> PublishRe
         )
 
     # Update month_state (source of truth pointer)
-    ms = db.get(MonthState, ds.month_key)
+    ms = (
+        db.query(MonthState)
+        .filter(
+            MonthState.tenant_id == ctx.scope.tenant_id,
+            MonthState.branch_id == branch_id,
+            MonthState.month_key == ds.month_key,
+        )
+        .one_or_none()
+    )
     if ms is None:
-        ms = MonthState(month_key=ds.month_key, published_dataset_id=ds.id)
-        db.add(ms)
+        ms = MonthState(
+            tenant_id=ctx.scope.tenant_id,
+            branch_id=branch_id,
+            month_key=ds.month_key,
+            published_dataset_id=ds.id,
+        )
     else:
         ms.published_dataset_id = ds.id
+    db.add(ms)
 
     # Mobile sync is the only Firestore integration now.
     if not settings.mobile_sync_enabled:
@@ -784,30 +884,13 @@ def publish_import(dataset_id: UUID, db: Session = Depends(get_db)) -> PublishRe
         ds.month_key,
     )
 
-    store_id = ds.store_id
-    if store_id is None:
-        # In the unified schema, datasets are always tied to a store.
-        ds.sync_status = "FAILED"
-        db.add(ds)
-        db.commit()
-        logger.error(
-            "mobile sync failed: dataset_id=%s month_key=%s store_id missing",
-            ds.id,
-            ds.month_key,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="dataset store_id is missing; cannot sync mobile data",
-        )
-
     try:
-        store, org = resolve_store_org(db, store_id)
         sync_mobile_for_dataset(
             db,
             dataset=ds,
             month_key=ds.month_key,
-            store_id=store.id,
-            org_id=org.id,
+            tenant_id=ctx.scope.tenant_id,
+            branch_id=branch_id,
             dry_run=settings.mobile_sync_dry_run,
         )
         ds.sync_status = "SYNCED"
@@ -832,57 +915,93 @@ def publish_import(dataset_id: UUID, db: Session = Depends(get_db)) -> PublishRe
     )
 
 
-@router.get("/months/{month_key}/leaderboard", response_model=list[LeaderboardRowOut])
-def leaderboard(month_key: str, db: Session = Depends(get_db)) -> list[LeaderboardRowOut]:
-    ms = db.get(MonthState, month_key)
+@router.get("/branches/{branch_id}/months/{month_key}/leaderboard", response_model=list[LeaderboardRowOut])
+def leaderboard(
+    branch_id: UUID,
+    month_key: str,
+    ctx: AuthContext = Depends(require_permission(IMPORTS_READ)),
+    db: Session = Depends(get_db),
+) -> list[LeaderboardRowOut]:
+    ms = (
+        db.query(MonthState)
+        .filter(
+            MonthState.tenant_id == ctx.scope.tenant_id,
+            MonthState.branch_id == branch_id,
+            MonthState.month_key == month_key,
+        )
+        .one_or_none()
+    )
     if ms is None or ms.published_dataset_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="month not published")
 
     dataset_id = ms.published_dataset_id
 
-    q = (
-        select(
-            Employee.id,
-            Employee.employee_code,
-            Employee.name,
-            Employee.department,
-            PosSummary.qty,
-            PosSummary.net_sales,
-            PosSummary.bills,
-            PosSummary.customers,
-            PosSummary.return_customers,
-            AttendanceSummary.present,
-            AttendanceSummary.absent,
-            AttendanceSummary.work_minutes,
-            AttendanceSummary.stocking_done,
-            AttendanceSummary.stocking_missed,
-        )
-        .select_from(Employee)
-        .join(
-            PosSummary,
-            (PosSummary.employee_id == Employee.id) & (PosSummary.dataset_id == dataset_id),
-            isouter=True,
-        )
-        .join(
-            AttendanceSummary,
-            (AttendanceSummary.employee_id == Employee.id)
-            & (AttendanceSummary.dataset_id == dataset_id),
-            isouter=True,
-        )
-    )
-
-    rows = db.execute(q).all()
-
-    def net_sales_key(r: Any) -> tuple[bool, float]:
-        ns = float(r.net_sales) if r.net_sales is not None else 0.0
-        return (r.net_sales is None, -ns)
-
-    rows_sorted = sorted(rows, key=net_sales_key)
     out: list[LeaderboardRowOut] = []
-    for r in rows_sorted:
+    rows = db.execute(
+        sa.text(
+            """
+            WITH ids AS (
+              SELECT employee_id FROM analytics.pos_summary WHERE dataset_id = :dataset_id
+              UNION
+              SELECT employee_id FROM attendance.attendance_summary WHERE dataset_id = :dataset_id
+            ),
+            current_employment AS (
+              SELECT
+                ee.employee_id,
+                ee.branch_id,
+                ee.org_unit_id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY ee.employee_id
+                  ORDER BY ee.is_primary DESC NULLS LAST, ee.start_date DESC, ee.id DESC
+                ) AS rn
+              FROM hr_core.employee_employment ee
+              WHERE ee.tenant_id = :tenant_id
+                AND ee.end_date IS NULL
+            ),
+            ce AS (
+              SELECT * FROM current_employment WHERE rn = 1
+            )
+            SELECT
+              e.id AS employee_id,
+              e.employee_code AS employee_code,
+              (p.first_name || ' ' || p.last_name) AS name,
+              ou.name AS department,
+              ps.qty,
+              ps.net_sales,
+              ps.bills,
+              ps.customers,
+              ps.return_customers,
+              att.present,
+              att.absent,
+              att.work_minutes,
+              att.stocking_done,
+              att.stocking_missed
+            FROM ids
+            JOIN hr_core.employees e ON e.id = ids.employee_id
+            JOIN hr_core.persons p ON p.id = e.person_id
+            LEFT JOIN analytics.pos_summary ps
+              ON ps.dataset_id = :dataset_id
+             AND ps.employee_id = ids.employee_id
+            LEFT JOIN attendance.attendance_summary att
+              ON att.dataset_id = :dataset_id
+             AND att.employee_id = ids.employee_id
+            LEFT JOIN ce ON ce.employee_id = e.id AND ce.branch_id = :branch_id
+            LEFT JOIN tenancy.org_units ou ON ou.id = ce.org_unit_id
+            WHERE e.tenant_id = :tenant_id
+            ORDER BY ps.net_sales DESC NULLS LAST, e.employee_code
+            """
+        ),
+        {
+            "dataset_id": dataset_id,
+            "tenant_id": ctx.scope.tenant_id,
+            "branch_id": branch_id,
+        },
+    ).all()
+
+    for r in rows:
         out.append(
             LeaderboardRowOut(
-                employee_id=r.id,
+                employee_id=r.employee_id,
                 employee_code=r.employee_code,
                 name=r.name,
                 department=r.department,

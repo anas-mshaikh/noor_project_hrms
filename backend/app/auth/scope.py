@@ -128,7 +128,21 @@ def resolve_scope(db: Session, *, user_id: UUID, headers: dict[str, str]) -> Sco
         raise AppError(code="forbidden", message="User has no role assignments", status_code=403)
 
     allowed_tenant_ids = tuple(sorted({a[0] for a in assignments}, key=str))
-    tenant_id = allowed_tenant_ids[0]
+    tenant_header = _parse_uuid_header(headers, "X-Tenant-Id", error_code="iam.scope.invalid_tenant")
+
+    if tenant_header is not None and tenant_header not in allowed_tenant_ids:
+        raise AppError(code="iam.scope.forbidden_tenant", message="Tenant scope not allowed", status_code=403)
+
+    if len(allowed_tenant_ids) > 1:
+        if tenant_header is None:
+            raise AppError(
+                code="iam.scope.tenant_required",
+                message="X-Tenant-Id is required for multi-tenant users",
+                status_code=400,
+            )
+        tenant_id = tenant_header
+    else:
+        tenant_id = allowed_tenant_ids[0]
 
     # Company resolution
     tenant_assignments = [a for a in assignments if a[0] == tenant_id]

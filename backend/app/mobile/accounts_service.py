@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
+import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,7 +16,7 @@ from app.mobile.accounts_repository import (
     get_mobile_account_by_employee,
     get_mobile_account_by_uid,
 )
-from app.models.models import Employee, MobileAccount, Organization, Store
+from app.models.models import MobileAccount
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +37,8 @@ def _build_firestore_mapping_doc(
     - Firestore remains a cache; Postgres is the source-of-truth.
     """
     return {
-        "org_id": str(row.org_id),
-        "store_id": str(row.store_id),
+        "tenant_id": str(row.tenant_id),
+        "branch_id": str(row.branch_id),
         "employee_id": str(row.employee_id),
         "employee_code": row.employee_code,
         # Keeping department here avoids an extra read on the mobile client
@@ -73,10 +74,51 @@ class MobileAccountService:
     def __init__(self, db: Session):
         self.db = db
 
+    def _resolve_employee_code_and_department(
+        self, *, tenant_id: UUID, branch_id: UUID, employee_id: UUID
+    ) -> tuple[str, str | None]:
+        row = self.db.execute(
+            sa.text(
+                """
+                WITH current_employment AS (
+                  SELECT
+                    ee.employee_id,
+                    ee.branch_id,
+                    ee.org_unit_id,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY ee.employee_id
+                      ORDER BY ee.is_primary DESC NULLS LAST, ee.start_date DESC, ee.id DESC
+                    ) AS rn
+                  FROM hr_core.employee_employment ee
+                  WHERE ee.tenant_id = :tenant_id
+                    AND ee.end_date IS NULL
+                ),
+                ce AS (
+                  SELECT * FROM current_employment WHERE rn = 1
+                )
+                SELECT
+                  e.employee_code AS employee_code,
+                  ou.name AS department
+                FROM hr_core.employees e
+                JOIN ce ON ce.employee_id = e.id
+                LEFT JOIN tenancy.org_units ou ON ou.id = ce.org_unit_id
+                WHERE e.id = :employee_id
+                  AND e.tenant_id = :tenant_id
+                  AND e.status = 'ACTIVE'
+                  AND ce.branch_id = :branch_id
+                """
+            ),
+            {"tenant_id": tenant_id, "branch_id": branch_id, "employee_id": employee_id},
+        ).first()
+        if row is None:
+            raise ValueError("employee not found in branch")
+        return str(row.employee_code), (str(row.department) if row.department else None)
+
     def provision_mobile_access(
         self,
         *,
-        store_id: UUID,
+        tenant_id: UUID,
+        branch_id: UUID,
         employee_id: UUID,
         email: str | None,
         phone_number: str | None = None,
@@ -91,29 +133,32 @@ class MobileAccountService:
         - generated_password (only when email flow and password was auto-generated)
 
         Idempotency rules:
-        - If an account already exists for (store_id, employee_id), we reuse it.
+        - If an account already exists for (branch_id, employee_id), we reuse it.
         - If the existing mapping is inactive, we reactivate it and re-sync Firebase.
         """
+        # Validate branch exists in tenant (avoid leaking info via FK errors).
+        branch_exists = self.db.execute(
+            sa.text(
+                "SELECT 1 FROM tenancy.branches WHERE id = :branch_id AND tenant_id = :tenant_id"
+            ),
+            {"tenant_id": tenant_id, "branch_id": branch_id},
+        ).first()
+        if branch_exists is None:
+            raise ValueError("branch not found")
 
-        store = self.db.get(Store, store_id)
-        if store is None:
-            raise ValueError("store not found")
-
-        employee = self.db.get(Employee, employee_id)
-        if employee is None or employee.store_id != store_id:
-            raise ValueError("employee not found in store")
-
-        org = self.db.get(Organization, store.org_id)
-        if org is None:
-            raise ValueError("org not found")
+        employee_code, department = self._resolve_employee_code_and_department(
+            tenant_id=tenant_id, branch_id=branch_id, employee_id=employee_id
+        )
 
         existing = (
-            get_mobile_account_by_employee(self.db, store_id, employee_id)
+            get_mobile_account_by_employee(
+                self.db, tenant_id=tenant_id, branch_id=branch_id, employee_id=employee_id
+            )
         )
 
         if existing is not None:
             # Ensure role/code stay in sync with current Employee record.
-            existing.employee_code = employee.employee_code
+            existing.employee_code = employee_code
             existing.role = role
             if not existing.active:
                 existing.active = True
@@ -131,7 +176,7 @@ class MobileAccountService:
             # but for an MVP onboarding flow it's common to want a known temp password again.
             if temp_password:
                 self._firebase_set_user_password(existing.firebase_uid, temp_password)
-            self._firestore_upsert_user_mapping(existing)
+            self._firestore_upsert_user_mapping(existing, department=department)
 
             return existing, None
 
@@ -143,10 +188,10 @@ class MobileAccountService:
         )
 
         row = MobileAccount(
-            org_id=org.id,
-            store_id=store.id,
-            employee_id=employee.id,
-            employee_code=employee.employee_code,
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            employee_id=employee_id,
+            employee_code=employee_code,
             firebase_uid=uid,
             role=role,
             active=True,
@@ -161,18 +206,20 @@ class MobileAccountService:
             # If a concurrent request created the row, fall back to reading it.
             self.db.rollback()
             logger.warning(
-                "mobile provision race: store_id=%s employee_id=%s err=%s",
-                store_id,
+                "mobile provision race: branch_id=%s employee_id=%s err=%s",
+                branch_id,
                 employee_id,
                 e,
             )
             row = (
-                get_mobile_account_by_employee(self.db, store_id, employee_id)
+                get_mobile_account_by_employee(
+                    self.db, tenant_id=tenant_id, branch_id=branch_id, employee_id=employee_id
+                )
             )
             if row is None:  # defensive: should not happen after IntegrityError
                 raise RuntimeError("mobile account insert raced but lookup returned none")
 
-        self._firestore_upsert_user_mapping(row)
+        self._firestore_upsert_user_mapping(row, department=department)
         return row, generated_password
 
     def revoke_mobile_access(
@@ -193,7 +240,7 @@ class MobileAccountService:
         if firebase_uid is not None:
             row = get_mobile_account_by_uid(self.db, firebase_uid)
         else:
-            # For revoke-by-employee_id we don't know store_id; revoke across stores is ok.
+            # For revoke-by-employee_id we don't know branch_id; revoke across branches is ok.
             row = q.filter(MobileAccount.employee_id == employee_id).one_or_none()
 
         if row is None:
@@ -206,7 +253,10 @@ class MobileAccountService:
         self.db.refresh(row)
 
         self._firebase_disable_user(row.firebase_uid)
-        self._firestore_upsert_user_mapping(row)
+        _code, department = self._resolve_employee_code_and_department(
+            tenant_id=row.tenant_id, branch_id=row.branch_id, employee_id=row.employee_id
+        )
+        self._firestore_upsert_user_mapping(row, department=department)
 
         return row
 
@@ -218,7 +268,10 @@ class MobileAccountService:
         if row is None:
             raise ValueError("mobile account not found")
 
-        self._firestore_upsert_user_mapping(row)
+        _code, department = self._resolve_employee_code_and_department(
+            tenant_id=row.tenant_id, branch_id=row.branch_id, employee_id=row.employee_id
+        )
+        self._firestore_upsert_user_mapping(row, department=department)
         return row
 
     # -----------------------------
@@ -305,17 +358,14 @@ class MobileAccountService:
         auth = get_auth_module()
         auth.update_user(uid, password=password)
 
-    def _firestore_upsert_user_mapping(self, row: MobileAccount) -> None:
-        # We denormalize department into the users/{uid} doc for mobile convenience.
-        employee = self.db.get(Employee, row.employee_id)
-        department = employee.department if employee else None
+    def _firestore_upsert_user_mapping(self, row: MobileAccount, *, department: str | None) -> None:
         payload = _build_firestore_mapping_doc(row, department=department)
 
         logger.info(
-            "firestore users/{uid} upsert: uid=%s employee_id=%s store_id=%s active=%s",
+            "firestore users/{uid} upsert: uid=%s employee_id=%s branch_id=%s active=%s",
             row.firebase_uid,
             row.employee_id,
-            row.store_id,
+            row.branch_id,
             row.active,
         )
 

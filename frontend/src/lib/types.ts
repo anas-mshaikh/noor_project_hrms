@@ -7,47 +7,96 @@
 
 export type UUID = string;
 
-// ----- Setup -----
-export type OrganizationOut = {
+// ----- Auth -----
+export type UserOut = {
   id: UUID;
-  name: string;
-  created_at: string;
+  email: string;
+  status: string;
 };
 
-export type StoreOut = {
+export type ScopeOut = {
+  tenant_id: UUID;
+  company_id: UUID | null;
+  branch_id: UUID | null;
+  allowed_tenant_ids: UUID[];
+  allowed_company_ids: UUID[];
+  allowed_branch_ids: UUID[];
+};
+
+export type TokenResponse = {
+  access_token: string;
+  refresh_token: string;
+  user: UserOut;
+  roles: string[];
+  scope: ScopeOut;
+};
+
+// ----- Tenancy (vNext masters) -----
+export type CompanyOut = {
   id: UUID;
-  org_id: UUID;
+  tenant_id: UUID;
   name: string;
-  timezone: string;
-  created_at: string;
+  legal_name: string | null;
+  currency_code: string | null;
+  timezone: string | null;
+  status: string;
+};
+
+export type BranchOut = {
+  id: UUID;
+  tenant_id: UUID;
+  company_id: UUID;
+  name: string;
+  code: string;
+  timezone: string | null;
+  address: Record<string, unknown>;
+  status: string;
 };
 
 export type CameraListOut = {
   id: UUID;
-  store_id: UUID;
+  tenant_id: UUID;
+  branch_id: UUID;
   name: string;
   placement: string | null;
   calibration_json: Record<string, unknown> | null;
   created_at: string;
 };
 
-// ----- Employees -----
-export type EmployeeOut = {
-  id: UUID;
-  store_id: UUID;
-  name: string;
+// ----- HR (canonical employee directory) -----
+export type EmployeeDirectoryRowOut = {
+  employee_id: UUID;
   employee_code: string;
-  department: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  status: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  branch_id: UUID;
+  org_unit_id: UUID | null;
+  manager_employee_id: UUID | null;
+  manager_name: string | null;
 };
 
-export type FaceCreatedOut = {
-  face_id: UUID;
+export type EmployeeDirectoryListOut = {
+  items: EmployeeDirectoryRowOut[];
+  paging: { limit: number; offset: number; total: number };
+};
+
+// Face system endpoints intentionally return file paths + ids only.
+export type FaceRegisterOut = {
   employee_id: UUID;
-  snapshot_path: string;
-  model_version: string;
+  stored: { filename: string; rel_path: string };
+};
+
+export type FaceRecognizeOut = {
+  employee_id: UUID | null;
+  confidence: number;
+  cosine_similarity: number | null;
+  top_k: Array<{
+    employee_id: UUID;
+    cosine_similarity: number;
+    confidence: number;
+  }>;
 };
 
 // ----- Mobile Accounts (Firebase bootstrap mapping) -----
@@ -153,7 +202,9 @@ export type OpeningUpdateRequest = {
 
 export type OpeningOut = {
   id: UUID;
-  store_id: UUID;
+  tenant_id: UUID;
+  company_id: UUID;
+  branch_id: UUID;
   title: string;
   status: "ACTIVE" | "ARCHIVED" | string;
   created_at: string;
@@ -163,7 +214,9 @@ export type OpeningOut = {
 export type ResumeOut = {
   id: UUID;
   opening_id: UUID;
-  store_id: UUID;
+  tenant_id: UUID;
+  company_id: UUID;
+  branch_id: UUID;
   batch_id: UUID | null;
   original_filename: string;
   status: "UPLOADED" | "PARSING" | "PARSED" | "FAILED" | string;
@@ -231,7 +284,9 @@ export type ScreeningRunCreateRequest = {
 export type ScreeningRunOut = {
   id: UUID;
   opening_id: UUID;
-  store_id: UUID;
+  tenant_id: UUID;
+  company_id: UUID;
+  branch_id: UUID;
   status: "QUEUED" | "RUNNING" | "DONE" | "FAILED" | "CANCELLED" | string;
   config_json: Record<string, unknown>;
   model_versions_json: Record<string, unknown>;
@@ -307,7 +362,9 @@ export type ResumeMetaOut = {
 export type ApplicationOut = {
   id: UUID;
   opening_id: UUID;
-  store_id: UUID;
+  tenant_id: UUID;
+  company_id: UUID;
+  branch_id: UUID;
   resume_id: UUID;
   stage_id: UUID | null;
   status: "ACTIVE" | "REJECTED" | "HIRED" | string;

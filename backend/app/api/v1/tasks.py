@@ -19,21 +19,22 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.auth.deps import require_permission
+from app.auth.permissions import WORK_TASK_AUTO_ASSIGN, WORK_TASK_READ, WORK_TASK_WRITE
 from app.db.session import get_db
 from app.models.models import (
-    Employee,
     SkillTaxonomy,
-    Store,
-    TaskAssignment,
     TaskRequiredSkill,
     WorkTask,
 )
 from app.work.queue import get_work_queue
 from app.work.tasks import assign_tasks_job
+from app.shared.types import AuthContext
 
 
 router = APIRouter(tags=["tasks"])
@@ -73,7 +74,8 @@ class TaskCreateRequest(BaseModel):
 
 class TaskOut(BaseModel):
     id: UUID
-    store_id: UUID
+    tenant_id: UUID
+    branch_id: UUID
     name: str
     task_type: str | None
     priority: int
@@ -88,7 +90,8 @@ class AutoAssignRequest(BaseModel):
 
 
 class AutoAssignResponse(BaseModel):
-    store_id: UUID
+    tenant_id: UUID
+    branch_id: UUID
     business_date: date
     rq_job_id: str
 
@@ -114,7 +117,8 @@ class AssignmentOut(BaseModel):
 def _task_out(t: WorkTask) -> TaskOut:
     return TaskOut(
         id=t.id,
-        store_id=t.store_id,
+        tenant_id=t.tenant_id,
+        branch_id=t.branch_id,
         name=t.name,
         task_type=t.task_type,
         priority=t.priority,
@@ -125,41 +129,26 @@ def _task_out(t: WorkTask) -> TaskOut:
     )
 
 
-def _assignment_out(a: TaskAssignment, *, employee: Employee) -> AssignmentOut:
-    return AssignmentOut(
-        id=a.id,
-        task_id=a.task_id,
-        employee_id=a.employee_id,
-        employee_code=employee.employee_code,
-        employee_name=employee.name,
-        assigned_by=a.assigned_by,
-        score=a.score,
-        assigned_at=a.assigned_at,
-        started_at=a.started_at,
-        completed_at=a.completed_at,
-    )
-
-
 # -----------------------------------------------------------------------------
 # Endpoints
 # -----------------------------------------------------------------------------
 
 
 @router.post(
-    "/stores/{store_id}/tasks",
+    "/branches/{branch_id}/tasks",
     response_model=TaskOut,
     status_code=status.HTTP_201_CREATED,
 )
 def create_task(
-    store_id: UUID, body: TaskCreateRequest, db: Session = Depends(get_db)
+    branch_id: UUID,
+    body: TaskCreateRequest,
+    ctx: AuthContext = Depends(require_permission(WORK_TASK_WRITE)),
+    db: Session = Depends(get_db),
 ) -> TaskOut:
-    store = db.get(Store, store_id)
-    if store is None:
-        raise HTTPException(status_code=404, detail="Store not found")
-
     task = WorkTask(
         id=uuid4(),
-        store_id=store_id,
+        tenant_id=ctx.scope.tenant_id,
+        branch_id=branch_id,
         name=body.name,
         task_type=body.task_type,
         priority=body.priority,
@@ -176,10 +165,15 @@ def create_task(
         if not code:
             raise HTTPException(status_code=400, detail="skill code cannot be empty")
 
-        skill = db.query(SkillTaxonomy).filter(SkillTaxonomy.code == code).one_or_none()
+        skill = (
+            db.query(SkillTaxonomy)
+            .filter(SkillTaxonomy.tenant_id == ctx.scope.tenant_id, SkillTaxonomy.code == code)
+            .one_or_none()
+        )
         if skill is None:
             skill = SkillTaxonomy(
                 id=uuid4(),
+                tenant_id=ctx.scope.tenant_id,
                 code=code,
                 name=(s.name or code),
                 category=s.category,
@@ -199,15 +193,18 @@ def create_task(
     return _task_out(task)
 
 
-@router.get("/stores/{store_id}/tasks", response_model=list[TaskOut])
-def list_tasks(store_id: UUID, db: Session = Depends(get_db)) -> list[TaskOut]:
-    store = db.get(Store, store_id)
-    if store is None:
-        raise HTTPException(status_code=404, detail="Store not found")
-
+@router.get("/branches/{branch_id}/tasks", response_model=list[TaskOut])
+def list_tasks(
+    branch_id: UUID,
+    ctx: AuthContext = Depends(require_permission(WORK_TASK_READ)),
+    db: Session = Depends(get_db),
+) -> list[TaskOut]:
     tasks = (
         db.query(WorkTask)
-        .filter(WorkTask.store_id == store_id)
+        .filter(
+            WorkTask.tenant_id == ctx.scope.tenant_id,
+            WorkTask.branch_id == branch_id,
+        )
         .order_by(WorkTask.created_at.desc())
         .all()
     )
@@ -215,41 +212,95 @@ def list_tasks(store_id: UUID, db: Session = Depends(get_db)) -> list[TaskOut]:
 
 
 @router.post(
-    "/stores/{store_id}/tasks/auto-assign",
+    "/branches/{branch_id}/tasks/auto-assign",
     response_model=AutoAssignResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 def auto_assign_tasks(
-    store_id: UUID, body: AutoAssignRequest, db: Session = Depends(get_db)
+    branch_id: UUID,
+    body: AutoAssignRequest,
+    ctx: AuthContext = Depends(require_permission(WORK_TASK_AUTO_ASSIGN)),
+    db: Session = Depends(get_db),
 ) -> AutoAssignResponse:
-    store = db.get(Store, store_id)
-    if store is None:
-        raise HTTPException(status_code=404, detail="Store not found")
-
     q = get_work_queue()
     job = q.enqueue(
         assign_tasks_job,
-        kwargs={"store_id": str(store_id), "business_date": body.business_date.isoformat()},
+        kwargs={
+            "tenant_id": str(ctx.scope.tenant_id),
+            "branch_id": str(branch_id),
+            "business_date": body.business_date.isoformat(),
+        },
     )
     return AutoAssignResponse(
-        store_id=store_id, business_date=body.business_date, rq_job_id=str(job.id)
+        tenant_id=ctx.scope.tenant_id,
+        branch_id=branch_id,
+        business_date=body.business_date,
+        rq_job_id=str(job.id),
     )
 
 
-@router.get("/tasks/{task_id}/assignments", response_model=list[AssignmentOut])
+@router.get("/branches/{branch_id}/tasks/{task_id}/assignments", response_model=list[AssignmentOut])
 def get_task_assignments(
-    task_id: UUID, db: Session = Depends(get_db)
+    branch_id: UUID,
+    task_id: UUID,
+    ctx: AuthContext = Depends(require_permission(WORK_TASK_READ)),
+    db: Session = Depends(get_db),
 ) -> list[AssignmentOut]:
-    task = db.get(WorkTask, task_id)
+    task = (
+        db.query(WorkTask)
+        .filter(
+            WorkTask.id == task_id,
+            WorkTask.tenant_id == ctx.scope.tenant_id,
+            WorkTask.branch_id == branch_id,
+        )
+        .first()
+    )
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    rows = (
-        db.query(TaskAssignment, Employee)
-        .join(Employee, Employee.id == TaskAssignment.employee_id)
-        .filter(TaskAssignment.task_id == task_id)
-        .order_by(TaskAssignment.assigned_at.desc())
-        .all()
-    )
+    rows = db.execute(
+        sa.text(
+            """
+            SELECT
+              a.id AS id,
+              a.task_id AS task_id,
+              a.employee_id AS employee_id,
+              e.employee_code AS employee_code,
+              p.first_name AS first_name,
+              p.last_name AS last_name,
+              a.assigned_by AS assigned_by,
+              a.score AS score,
+              a.assigned_at AS assigned_at,
+              a.started_at AS started_at,
+              a.completed_at AS completed_at
+            FROM work.task_assignments a
+            JOIN work.tasks t ON t.id = a.task_id
+            JOIN hr_core.employees e ON e.id = a.employee_id
+            JOIN hr_core.persons p ON p.id = e.person_id
+            WHERE a.task_id = :task_id
+              AND t.tenant_id = :tenant_id
+              AND t.branch_id = :branch_id
+            ORDER BY a.assigned_at DESC, a.id DESC
+            """
+        ),
+        {"task_id": task_id, "tenant_id": ctx.scope.tenant_id, "branch_id": branch_id},
+    ).all()
 
-    return [_assignment_out(a, employee=e) for (a, e) in rows]
+    out: list[AssignmentOut] = []
+    for r in rows:
+        full_name = f"{r.first_name} {r.last_name}".strip()
+        out.append(
+            AssignmentOut(
+                id=r.id,
+                task_id=r.task_id,
+                employee_id=r.employee_id,
+                employee_code=r.employee_code,
+                employee_name=full_name,
+                assigned_by=r.assigned_by,
+                score=float(r.score),
+                assigned_at=r.assigned_at,
+                started_at=r.started_at,
+                completed_at=r.completed_at,
+            )
+        )
+    return out

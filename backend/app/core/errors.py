@@ -33,8 +33,9 @@ class AppError(Exception):
         self.details = details
 
 
-def _trace_id(request: Request) -> str | None:
-    return getattr(request.state, "trace_id", None)
+def _correlation_id(request: Request) -> str | None:
+    # Prefer the new name; keep legacy alias for old code paths.
+    return getattr(request.state, "correlation_id", None) or getattr(request.state, "trace_id", None)
 
 
 def install_exception_handlers(app: FastAPI) -> None:
@@ -46,7 +47,7 @@ def install_exception_handlers(app: FastAPI) -> None:
                 code=exc.code,
                 message=exc.message,
                 details=exc.details,
-                trace_id=_trace_id(request),
+                correlation_id=_correlation_id(request),
             ),
         )
 
@@ -60,7 +61,7 @@ def install_exception_handlers(app: FastAPI) -> None:
                 code="validation_error",
                 message="Request validation failed",
                 details=exc.errors(),
-                trace_id=_trace_id(request),
+                correlation_id=_correlation_id(request),
             ),
         )
 
@@ -75,19 +76,18 @@ def install_exception_handlers(app: FastAPI) -> None:
                 code="http_error",
                 message=str(exc.detail),
                 details={"status_code": exc.status_code},
-                trace_id=_trace_id(request),
+                correlation_id=_correlation_id(request),
             ),
         )
 
     @app.exception_handler(Exception)
     async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
-        logger.exception("Unhandled error trace_id=%s", _trace_id(request), exc_info=exc)
+        logger.exception("Unhandled error correlation_id=%s", _correlation_id(request), exc_info=exc)
         return JSONResponse(
             status_code=500,
             content=error_envelope(
                 code="internal_error",
                 message="Internal server error",
-                trace_id=_trace_id(request),
+                correlation_id=_correlation_id(request),
             ),
         )
-

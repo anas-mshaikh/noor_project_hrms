@@ -42,8 +42,8 @@ function openingOutToCard(o: { id: string; title: string; status: string; create
 
 export default function HROpeningsPage() {
   const reducedMotion = useReducedMotion();
-  const storeId = useSelection((s) => s.storeId);
-  const { list } = useOpenings(storeId ?? null);
+  const branchId = useSelection((s) => s.branchId);
+  const { list } = useOpenings(branchId ?? null);
   const [filter, setFilter] = React.useState<FilterKey>("ACTIVE");
   const showDebugIds =
     process.env.NEXT_PUBLIC_SHOW_DEBUG_IDS === "true" ||
@@ -55,7 +55,7 @@ export default function HROpeningsPage() {
     .filter((o) => (filter === "ALL" ? true : o.status === filter))
     .map(openingOutToCard);
 
-  const isEmpty = Boolean(storeId) && !loading && openings.length === 0;
+  const isEmpty = Boolean(branchId) && !loading && openings.length === 0;
 
   const topByVolume = HR_OPENINGS.slice()
     .filter((o) => o.status === "ACTIVE")
@@ -72,7 +72,7 @@ export default function HROpeningsPage() {
         title="Openings"
         subtitle="Create openings, upload resumes, and run AI screening."
         chips={[
-          storeId ? (showDebugIds ? `store_id: ${storeId}` : null) : "Select a store",
+          branchId ? (showDebugIds ? `branch_id: ${branchId}` : null) : "Select a branch",
           process.env.NODE_ENV === "development" ? "Backend: Phase‑1" : null,
         ].filter(Boolean) as string[]}
         actions={
@@ -96,10 +96,10 @@ export default function HROpeningsPage() {
         }
       />
 
-      {!storeId ? (
+      {!branchId ? (
         <EmptyStateCard
-          title="Select a store to manage openings"
-          description="HR Openings are store-scoped. Pick a store to view and create openings."
+          title="Select a branch to manage openings"
+          description="HR Openings are branch-scoped. Pick a branch to view and create openings."
           icon={FolderOpen}
           actions={<div className="w-full max-w-xl"><StorePicker /></div>}
         />

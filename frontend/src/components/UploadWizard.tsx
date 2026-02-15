@@ -6,7 +6,7 @@
  * This is the MVP “video upload → job creation” wizard.
  *
  * Backend flow (exact order):
- *  1) POST /api/v1/stores/{store_id}/videos/init
+ *  1) POST /api/v1/branches/{branch_id}/videos/init
  *     - creates the Video row in DB
  *     - returns upload_endpoint + finalize_endpoint
  *
@@ -22,7 +22,7 @@
  *     - enqueues the worker job
  *
  * Notes:
- * - This wizard reads storeId + cameraId from Zustand (top-right picker).
+ * - This wizard reads branchId + cameraId from Zustand (top-right picker).
  * - recorded_start_ts is optional, but if your worker uses it to create “real”
  *   timestamps, you SHOULD set it for accurate punch-in/out times.
  */
@@ -85,7 +85,7 @@ type Step = "idle" | "init" | "upload" | "finalize" | "create_job" | "done";
 
 export function UploadWizard() {
   // Selected IDs come from StorePicker (Zustand persisted).
-  const storeId = useSelection((s) => s.storeId);
+  const branchId = useSelection((s) => s.branchId);
   const cameraId = useSelection((s) => s.cameraId);
 
   // Form inputs.
@@ -108,9 +108,9 @@ export function UploadWizard() {
   const [jobRes, setJobRes] = useState<JobCreateResponse | null>(null);
 
   const canStart = useMemo(() => {
-    // We can only upload if a store + camera + file are selected.
-    return Boolean(storeId && cameraId && file && businessDate);
-  }, [storeId, cameraId, file, businessDate]);
+    // We can only upload if a branch + camera + file are selected.
+    return Boolean(branchId && cameraId && file && businessDate);
+  }, [branchId, cameraId, file, businessDate]);
 
   function reset() {
     // Reset only the wizard state (do NOT clear store/camera selection).
@@ -133,7 +133,7 @@ export function UploadWizard() {
       setFinalizeRes(null);
       setJobRes(null);
 
-      if (!storeId) throw new Error("Select a store in the header first.");
+      if (!branchId) throw new Error("Select a branch in the header first.");
       if (!cameraId) throw new Error("Select a camera in the header first.");
       if (!file) throw new Error("Select a video file first.");
       if (!businessDate) throw new Error("Business date is required.");
@@ -151,7 +151,7 @@ export function UploadWizard() {
       // -----------------------------
       setStep("init");
       const init = await apiJson<VideoInitResponse>(
-        `/api/v1/stores/${storeId}/videos/init`,
+        `/api/v1/branches/${branchId}/videos/init`,
         {
           method: "POST",
           body: JSON.stringify({
@@ -215,13 +215,13 @@ export function UploadWizard() {
   }
 
   // Guard: if store/camera not selected, show a clear message.
-  if (!storeId || !cameraId) {
+  if (!branchId || !cameraId) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>Upload Video</CardTitle>
           <CardDescription>
-            Select an organization + store + camera in the header first.
+            Select a tenant + company + branch + camera in the header first.
           </CardDescription>
         </CardHeader>
       </Card>

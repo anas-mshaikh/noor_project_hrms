@@ -466,23 +466,17 @@ def main() -> int:
             # ------------------------------------------------------------------
             # Rewiring validation (module schemas -> vNext masters)
             # ------------------------------------------------------------------
-            # Attendance: verify attendance_daily uses branch_id (or legacy store_id)
+            # Attendance: verify attendance_daily uses branch_id
             # and employee_id references hr_core.employees.
             if _table_exists(conn, "attendance", "attendance_daily"):
-                branch_col = None
-                if _column_exists(conn, "attendance", "attendance_daily", "branch_id"):
-                    branch_col = "branch_id"
-                elif _column_exists(conn, "attendance", "attendance_daily", "store_id"):
-                    branch_col = "store_id"
-
-                if branch_col is None:
-                    _warn("attendance.attendance_daily missing branch_id/store_id; skipping insert")
+                if not _column_exists(conn, "attendance", "attendance_daily", "branch_id"):
+                    _warn("attendance.attendance_daily missing branch_id; skipping insert")
                 else:
-                    cols = ["id", branch_col, "business_date", "employee_id"]
-                    vals = [":id", f":{branch_col}", ":business_date", ":employee_id"]
+                    cols = ["id", "branch_id", "business_date", "employee_id"]
+                    vals = [":id", ":branch_id", ":business_date", ":employee_id"]
                     params = {
                         "id": uuid4(),
-                        branch_col: branch_id,
+                        "branch_id": branch_id,
                         "business_date": today,
                         "employee_id": employee_id,
                     }

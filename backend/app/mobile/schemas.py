@@ -15,8 +15,8 @@ class MonthlyEmployeeStatsV1(BaseModel):
 
     month_key: str
     published_dataset_id: str
-    store_id: str
-    org_id: str
+    tenant_id: str
+    branch_id: str
 
     employee_id: str
     employee_code: str
@@ -64,16 +64,16 @@ class LeaderboardDocV1(BaseModel):
 
 class MobileSyncPreviewOut(BaseModel):
     month_key: str
-    store_id: str
-    org_id: str
+    tenant_id: str
+    branch_id: str
     published_dataset_id: str
     employees: list[MonthlyEmployeeStatsV1]
 
 
 class MobileLeaderboardPreviewOut(BaseModel):
     month_key: str
-    store_id: str
-    org_id: str
+    tenant_id: str
+    branch_id: str
     published_dataset_id: str
     overall: LeaderboardDocV1
     departments: dict[str, LeaderboardDocV1]

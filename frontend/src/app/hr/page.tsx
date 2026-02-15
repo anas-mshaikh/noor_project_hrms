@@ -40,11 +40,11 @@ export default function HROverviewPage() {
   const reducedMotion = useReducedMotion();
   const { loading } = useMockLoading(600);
 
-  const storeId = useSelection((s) => s.storeId);
+  const branchId = useSelection((s) => s.branchId);
   const showDebugIds =
     process.env.NEXT_PUBLIC_SHOW_DEBUG_IDS === "true" ||
     process.env.NODE_ENV === "development";
-  const { list } = useOpenings(storeId ?? null);
+  const { list } = useOpenings(branchId ?? null);
 
   const openings = list.data ?? [];
   const activeOpenings = openings.filter((o) => o.status === "ACTIVE").length;
@@ -54,10 +54,10 @@ export default function HROverviewPage() {
 
   const topOpening = openings.find((o) => o.status === "ACTIVE") ?? null;
 
-  const isEmpty = Boolean(storeId) && !list.isPending && activeOpenings === 0;
+  const isEmpty = Boolean(branchId) && !list.isPending && activeOpenings === 0;
 
   const chips = [
-    !storeId ? "Select a store" : showDebugIds ? `store_id: ${storeId}` : null,
+    !branchId ? "Select a branch" : showDebugIds ? `branch_id: ${branchId}` : null,
     topOpening ? `Top opening: ${topOpening.title}` : null,
     "Last run: Cashier (DONE)",
   ].filter(Boolean) as string[];
@@ -94,10 +94,10 @@ export default function HROverviewPage() {
         }
       />
 
-      {!storeId ? (
+      {!branchId ? (
         <EmptyStateCard
-          title="Select a store to manage HR"
-          description="HR data is store-scoped. Pick a store to view openings and uploads."
+          title="Select a branch to manage HR"
+          description="HR data is branch-scoped. Pick a branch to view openings and uploads."
           icon={Users2}
           actions={<div className="w-full max-w-xl"><StorePicker /></div>}
         />

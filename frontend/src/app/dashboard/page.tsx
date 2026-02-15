@@ -3,8 +3,8 @@
 /**
  * /dashboard
  *
- * Store-scoped, date-range dashboard using:
- *   GET /api/v1/stores/{store_id}/attendance/daily
+ * Branch-scoped, date-range dashboard using:
+ *   GET /api/v1/branches/{branch_id}/attendance/daily
  */
 
 import { useMemo, useState } from "react";
@@ -139,7 +139,7 @@ function AttendanceBars({ rows }: { rows: AttendanceDailySummaryOut[] }) {
 }
 
 export default function DashboardPage() {
-  const storeId = useSelection((s) => s.storeId);
+  const branchId = useSelection((s) => s.branchId);
 
   const [endDate, setEndDate] = useState(() => toLocalDateInput(new Date()));
   const [startDate, setStartDate] = useState(() => {
@@ -157,17 +157,17 @@ export default function DashboardPage() {
   }, [startDate, endDate]);
 
   const dailyQ = useQuery({
-    queryKey: ["attendance-daily", storeId, startDate, endDate, lateAfter],
-    enabled: Boolean(storeId && startDate && endDate && !dateError),
+    queryKey: ["attendance-daily", branchId, startDate, endDate, lateAfter],
+    enabled: Boolean(branchId && startDate && endDate && !dateError),
     queryFn: () => {
-      if (!storeId) throw new Error("Missing storeId");
+      if (!branchId) throw new Error("Missing branchId");
       const params = new URLSearchParams({
         start: startDate,
         end: endDate,
       });
       if (lateAfter) params.set("late_after", lateAfter);
       return apiJson<AttendanceDailySummaryOut[]>(
-        `/api/v1/stores/${storeId}/attendance/daily?${params.toString()}`
+        `/api/v1/branches/${branchId}/attendance/daily?${params.toString()}`
       );
     },
   });
@@ -216,7 +216,7 @@ export default function DashboardPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Store-scoped attendance summary across a date range.
+          Branch-scoped attendance summary across a date range.
         </p>
       </div>
 
@@ -261,16 +261,16 @@ export default function DashboardPage() {
                 type="button"
                 variant="outline"
                 onClick={() => dailyQ.refetch()}
-                disabled={!storeId || Boolean(dateError)}
+                disabled={!branchId || Boolean(dateError)}
               >
                 Refresh
               </Button>
             </div>
           </div>
 
-          {!storeId && (
+          {!branchId && (
             <div className="text-sm text-muted-foreground">
-              Select a store to view the dashboard.
+              Select a branch to view the dashboard.
             </div>
           )}
 
@@ -278,7 +278,7 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {storeId && !dateError && (
+      {branchId && !dateError && (
         <>
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Card>

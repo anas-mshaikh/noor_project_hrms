@@ -1,0 +1,82 @@
+"""
+Permission vocabulary (single source of truth).
+
+We use colon-style permission codes in the application layer (RBAC enforcement)
+and seed them into iam.permissions via migration.
+"""
+
+TENANCY_READ = "tenancy:read"
+TENANCY_WRITE = "tenancy:write"
+
+IAM_USER_READ = "iam:user:read"
+IAM_USER_WRITE = "iam:user:write"
+IAM_ROLE_ASSIGN = "iam:role:assign"
+IAM_PERMISSION_READ = "iam:permission:read"
+
+HR_EMPLOYEE_READ = "hr:employee:read"
+HR_EMPLOYEE_WRITE = "hr:employee:write"
+HR_TEAM_READ = "hr:team:read"
+
+ESS_PROFILE_READ = "ess:profile:read"
+ESS_PROFILE_WRITE = "ess:profile:write"
+
+NOTIFICATIONS_READ = "notifications:read"
+
+VISION_CAMERA_READ = "vision:camera:read"
+VISION_CAMERA_WRITE = "vision:camera:write"
+VISION_VIDEO_UPLOAD = "vision:video:upload"
+VISION_JOB_RUN = "vision:job:run"
+VISION_RESULTS_READ = "vision:results:read"
+
+FACE_LIBRARY_READ = "face:library:read"
+FACE_LIBRARY_WRITE = "face:library:write"
+FACE_RECOGNIZE = "face:recognize"
+
+WORK_TASK_READ = "work:task:read"
+WORK_TASK_WRITE = "work:task:write"
+WORK_TASK_AUTO_ASSIGN = "work:task:auto_assign"
+
+IMPORTS_READ = "imports:read"
+IMPORTS_WRITE = "imports:write"
+
+MOBILE_SYNC = "mobile:sync"
+MOBILE_ACCOUNTS_READ = "mobile:accounts:read"
+MOBILE_ACCOUNTS_WRITE = "mobile:accounts:write"
+
+# HR module (recruiting pipeline in schema `hr`)
+HR_RECRUITING_READ = "hr:recruiting:read"
+HR_RECRUITING_WRITE = "hr:recruiting:write"
+
+
+ALL_PERMISSION_CODES: tuple[str, ...] = (
+    TENANCY_READ,
+    TENANCY_WRITE,
+    IAM_USER_READ,
+    IAM_USER_WRITE,
+    IAM_ROLE_ASSIGN,
+    IAM_PERMISSION_READ,
+    HR_EMPLOYEE_READ,
+    HR_EMPLOYEE_WRITE,
+    HR_TEAM_READ,
+    ESS_PROFILE_READ,
+    ESS_PROFILE_WRITE,
+    NOTIFICATIONS_READ,
+    VISION_CAMERA_READ,
+    VISION_CAMERA_WRITE,
+    VISION_VIDEO_UPLOAD,
+    VISION_JOB_RUN,
+    VISION_RESULTS_READ,
+    FACE_LIBRARY_READ,
+    FACE_LIBRARY_WRITE,
+    FACE_RECOGNIZE,
+    WORK_TASK_READ,
+    WORK_TASK_WRITE,
+    WORK_TASK_AUTO_ASSIGN,
+    IMPORTS_READ,
+    IMPORTS_WRITE,
+    MOBILE_SYNC,
+    MOBILE_ACCOUNTS_READ,
+    MOBILE_ACCOUNTS_WRITE,
+    HR_RECRUITING_READ,
+    HR_RECRUITING_WRITE,
+)

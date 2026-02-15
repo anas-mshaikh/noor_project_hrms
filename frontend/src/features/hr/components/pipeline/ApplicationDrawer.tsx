@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useApplicationNotes } from "@/features/hr/hooks/useApplicationNotes";
 import { ParsedResumeSheet } from "@/features/hr/components/openings/ParsedResumeSheet";
+import { useSelection } from "@/lib/selection";
 
 type ApplicationDrawerProps = {
   open: boolean;
@@ -53,7 +54,8 @@ export function ApplicationDrawer({
   busy,
 }: ApplicationDrawerProps) {
   const appId = (open ? application?.id : null) as UUID | null;
-  const notes = useApplicationNotes(appId);
+  const branchId = useSelection((s) => (s.branchId as UUID | undefined) ?? null);
+  const notes = useApplicationNotes(branchId, appId);
 
   const [note, setNote] = React.useState("");
   const [parsedOpen, setParsedOpen] = React.useState(false);
@@ -269,4 +271,3 @@ export function ApplicationDrawer({
     </>
   );
 }
-

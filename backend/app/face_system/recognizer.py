@@ -2,7 +2,7 @@
 recognizer.py
 
 FaceRecognizer builds and maintains a "prototype embedding" per employee
-for a given store.
+for a given tenant + branch.
 
 Frigate-style approach:
 - Store many training face images per employee on disk.
@@ -74,16 +74,18 @@ class FaceRecognizeResult:
     top_k: list[FaceMatch]
 
 
-def _iter_store_employee_dirs(face_dir: Path, store_id: UUID) -> list[tuple[UUID, Path]]:
+def _iter_branch_employee_dirs(
+    face_dir: Path, *, tenant_id: UUID, branch_id: UUID
+) -> list[tuple[UUID, Path]]:
     """
-    Scan <face_dir>/<store_id>/<employee_id>/ folders.
+    Scan <face_dir>/<tenant_id>/<branch_id>/<employee_id>/ folders.
     """
-    store_dir = face_dir / str(store_id)
-    if not store_dir.exists():
+    branch_dir = face_dir / str(tenant_id) / str(branch_id)
+    if not branch_dir.exists():
         return []
 
     out: list[tuple[UUID, Path]] = []
-    for child in store_dir.iterdir():
+    for child in branch_dir.iterdir():
         if not child.is_dir():
             continue
         try:
@@ -104,7 +106,7 @@ def _iter_image_files(dir_path: Path) -> list[Path]:
 
 class FaceRecognizer:
     """
-    Store-scoped prototype recognizer.
+    Branch-scoped prototype recognizer.
 
     Threading model:
     - trigger_rebuild_async() spawns a background build thread
@@ -115,14 +117,16 @@ class FaceRecognizer:
     def __init__(
         self,
         *,
-        store_id: UUID,
+        tenant_id: UUID,
+        branch_id: UUID,
         detector_cfg: FaceDetectorConfig,
         aligner_cfg: FaceAlignerConfig,
         embedder_cfg: FaceEmbedderConfig,
         recognizer_cfg: FaceRecognizerConfig,
         storage: FaceLibraryStorage,
     ) -> None:
-        self.store_id = store_id
+        self.tenant_id = tenant_id
+        self.branch_id = branch_id
         self.cfg = recognizer_cfg
         self.storage = storage
 
@@ -328,7 +332,9 @@ class FaceRecognizer:
         import cv2  # type: ignore
 
         face_dir = self.storage.face_dir
-        employee_dirs = _iter_store_employee_dirs(face_dir, self.store_id)
+        employee_dirs = _iter_branch_employee_dirs(
+            face_dir, tenant_id=self.tenant_id, branch_id=self.branch_id
+        )
 
         total_images = 0
         prototypes: dict[UUID, np.ndarray] = {}

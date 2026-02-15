@@ -8,8 +8,10 @@
  *
  * Notes about your FastAPI backend:
  * - JSON endpoints live under /api/v1/...
- * - Video upload expects: PUT /stores/{store_id}/videos/{video_id}/file with FormData field name "file"
- * - Face upload expects: POST /employees/{employee_id}/faces with FormData field name "files" (multiple)
+ * - Responses are usually wrapped: { ok: true, data: ... } (enterprise envelope).
+ * - Video upload expects: PUT /branches/{branch_id}/videos/{video_id}/file with FormData field name "file"
+ * - Face upload expects: POST /branches/{branch_id}/employees/{employee_id}/faces/register with FormData field name "file" (single)
+ *   (for multiple images, call the endpoint multiple times)
  */
 
 export const API_BASE =
@@ -22,11 +24,61 @@ export function apiUrl(path: string): string {
   return `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 
+type Persisted<T> = { state: T; version?: number };
+
+function loadPersistedState<T>(key: string): T | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Persisted<T>;
+    if (!parsed || typeof parsed !== "object") return null;
+    return (parsed as Persisted<T>).state ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function authToken(): string | null {
+  const auth = loadPersistedState<{ accessToken?: string }>(
+    "attendance-admin-auth"
+  );
+  return auth?.accessToken ?? null;
+}
+
+function scopeHeaders(): Record<string, string> {
+  const sel = loadPersistedState<{
+    tenantId?: string;
+    companyId?: string;
+    branchId?: string;
+  }>("attendance-admin-selection");
+  const headers: Record<string, string> = {};
+  if (sel?.tenantId) headers["X-Tenant-Id"] = sel.tenantId;
+  if (sel?.companyId) headers["X-Company-Id"] = sel.companyId;
+  if (sel?.branchId) headers["X-Branch-Id"] = sel.branchId;
+  return headers;
+}
+
+function authHeaders(): Record<string, string> {
+  const token = authToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function readErrorBody(res: Response): Promise<string> {
-  // FastAPI errors often look like: {"detail":"..."} or {"detail":[...]}
+  // FastAPI errors may be either legacy {"detail": "..."} or enterprise envelope:
+  // {"ok": false, "error": {"code": "...", "message": "..."}}
   const text = await res.text();
   try {
     const json = JSON.parse(text) as Record<string, unknown>;
+    if (json && typeof json === "object") {
+      const ok = (json as any).ok;
+      if (ok === false && (json as any).error) {
+        const err = (json as any).error as any;
+        const code = typeof err.code === "string" ? err.code : "error";
+        const msg = typeof err.message === "string" ? err.message : "Request failed";
+        return `${code}: ${msg}`;
+      }
+    }
     if (json && typeof json === "object" && "detail" in json) {
       const detail = (json as Record<string, unknown>).detail;
       return typeof detail === "string" ? detail : JSON.stringify(detail);
@@ -37,11 +89,28 @@ async function readErrorBody(res: Response): Promise<string> {
   return text;
 }
 
+function unwrapOkEnvelope<T>(raw: unknown): T {
+  if (raw && typeof raw === "object" && "ok" in (raw as any)) {
+    const ok = (raw as any).ok;
+    if (ok === true) return (raw as any).data as T;
+    const err = (raw as any).error;
+    if (err && typeof err === "object") {
+      const code = (err as any).code ?? "error";
+      const message = (err as any).message ?? "Request failed";
+      throw new Error(`${code}: ${message}`);
+    }
+    throw new Error("Request failed");
+  }
+  return raw as T;
+}
+
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(apiUrl(path), {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...scopeHeaders(),
+      ...authHeaders(),
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
@@ -53,7 +122,8 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
     );
   }
 
-  return (await res.json()) as T;
+  const raw = (await res.json()) as unknown;
+  return unwrapOkEnvelope<T>(raw);
 }
 
 export async function apiForm<T>(
@@ -67,6 +137,8 @@ export async function apiForm<T>(
     ...init,
     body: form,
     headers: {
+      ...scopeHeaders(),
+      ...authHeaders(),
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
@@ -81,7 +153,7 @@ export async function apiForm<T>(
   // Some endpoints might return JSON, some might return text; handle both.
   const text = await res.text();
   try {
-    return JSON.parse(text) as T;
+    return unwrapOkEnvelope<T>(JSON.parse(text) as unknown);
   } catch {
     return text as unknown as T;
   }
@@ -102,6 +174,13 @@ export function xhrUploadFormWithProgress<T>(
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
 
+    const token = authToken();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    const scope = scopeHeaders();
+    for (const [k, v] of Object.entries(scope)) {
+      xhr.setRequestHeader(k, v);
+    }
+
     xhr.upload.onprogress = (evt) => {
       if (!evt.lengthComputable) return;
       onProgress(Math.round((evt.loaded / evt.total) * 100));
@@ -110,7 +189,7 @@ export function xhrUploadFormWithProgress<T>(
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          resolve(JSON.parse(xhr.responseText) as T);
+          resolve(unwrapOkEnvelope<T>(JSON.parse(xhr.responseText) as unknown));
         } catch {
           resolve(xhr.responseText as unknown as T);
         }

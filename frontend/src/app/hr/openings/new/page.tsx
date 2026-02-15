@@ -16,21 +16,21 @@ import { Sparkles } from "lucide-react";
 
 export default function HROpeningsNewPage() {
   const router = useRouter();
-  const storeId = useSelection((s) => s.storeId);
-  const { create } = useOpenings(storeId ?? null);
+  const branchId = useSelection((s) => s.branchId);
+  const { create } = useOpenings(branchId ?? null);
 
   return (
     <HrPageShell>
       <HrHeader
         title="Create Opening"
         subtitle="Draft an opening and start collecting resumes."
-        chips={storeId ? [] : ["Select a store first"]}
+        chips={branchId ? [] : ["Select a branch first"]}
       />
 
-      {!storeId ? (
+      {!branchId ? (
         <EmptyStateCard
-          title="Select a store to continue"
-          description="HR Openings are store-scoped. Pick a store to create and manage openings."
+          title="Select a branch to continue"
+          description="HR Openings are branch-scoped. Pick a branch to create and manage openings."
           icon={Sparkles}
           actions={<div className="w-full max-w-xl"><StorePicker /></div>}
         />

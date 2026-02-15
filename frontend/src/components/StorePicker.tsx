@@ -4,49 +4,70 @@
  * components/StorePicker.tsx
  *
  * Dropdowns:
- *   Organization -> Store -> Camera
+ *   Tenant -> Company -> Branch -> Camera
  *
  * Backend endpoints used:
- * - GET /api/v1/organizations
- * - GET /api/v1/organizations/{org_id}/stores
- * - GET /api/v1/stores/{store_id}/cameras
+ * - GET /api/v1/tenancy/companies
+ * - GET /api/v1/tenancy/branches?company_id=...
+ * - GET /api/v1/branches/{branch_id}/cameras
  *
  * Selection is persisted via Zustand in lib/selection.ts.
  */
 
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { apiJson } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useSelection } from "@/lib/selection";
-import type { CameraListOut, OrganizationOut, StoreOut } from "@/lib/types";
+import type { BranchOut, CameraListOut, CompanyOut } from "@/lib/types";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 export function StorePicker() {
-  const orgId = useSelection((s) => s.orgId);
-  const storeId = useSelection((s) => s.storeId);
+  const authScope = useAuth((s) => s.scope);
+
+  const tenantId = useSelection((s) => s.tenantId);
+  const companyId = useSelection((s) => s.companyId);
+  const branchId = useSelection((s) => s.branchId);
   const cameraId = useSelection((s) => s.cameraId);
 
-  const setOrgId = useSelection((s) => s.setOrgId);
-  const setStoreId = useSelection((s) => s.setStoreId);
+  const setTenantId = useSelection((s) => s.setTenantId);
+  const setCompanyId = useSelection((s) => s.setCompanyId);
+  const setBranchId = useSelection((s) => s.setBranchId);
   const setCameraId = useSelection((s) => s.setCameraId);
 
-  const orgsQ = useQuery({
-    queryKey: ["orgs"],
-    queryFn: () => apiJson<OrganizationOut[]>("/api/v1/organizations"),
+  // If the user is already authenticated, default the selection state to the token scope.
+  // This keeps API headers consistent even if localStorage selection was cleared.
+  useEffect(() => {
+    if (!authScope) return;
+    if (!tenantId) setTenantId(String(authScope.tenant_id));
+    if (!companyId && authScope.company_id) setCompanyId(String(authScope.company_id));
+    if (!branchId && authScope.branch_id) setBranchId(String(authScope.branch_id));
+    // cameraId has no server-side "default"; keep it user-selected.
+  }, [authScope, tenantId, companyId, branchId, setTenantId, setCompanyId, setBranchId]);
+
+  const allowedTenantIds = authScope?.allowed_tenant_ids ?? [];
+
+  const companiesQ = useQuery({
+    queryKey: ["companies", tenantId],
+    enabled: Boolean(tenantId),
+    queryFn: () => apiJson<CompanyOut[]>("/api/v1/tenancy/companies"),
   });
 
-  const storesQ = useQuery({
-    queryKey: ["stores", orgId],
-    enabled: Boolean(orgId), // don't fetch until org is selected
-    queryFn: () => apiJson<StoreOut[]>(`/api/v1/organizations/${orgId}/stores`),
+  const branchesQ = useQuery({
+    queryKey: ["branches", tenantId, companyId],
+    enabled: Boolean(tenantId && companyId),
+    queryFn: () =>
+      apiJson<BranchOut[]>(
+        `/api/v1/tenancy/branches?company_id=${encodeURIComponent(companyId as string)}`
+      ),
   });
 
   const camerasQ = useQuery({
-    queryKey: ["cameras", storeId],
-    enabled: Boolean(storeId), // don't fetch until store is selected
-    queryFn: () =>
-      apiJson<CameraListOut[]>(`/api/v1/stores/${storeId}/cameras`),
+    queryKey: ["cameras", tenantId, branchId],
+    enabled: Boolean(tenantId && branchId),
+    queryFn: () => apiJson<CameraListOut[]>(`/api/v1/branches/${branchId}/cameras`),
   });
 
   const selectClassName = cn(
@@ -56,48 +77,71 @@ export function StorePicker() {
   );
 
   return (
-    <div className="grid gap-2 text-sm sm:grid-cols-3">
+    <div className="grid gap-2 text-sm sm:grid-cols-2 md:grid-cols-4">
       <div className="flex flex-col gap-1">
-        <Label className="text-xs text-muted-foreground">Org</Label>
+        <Label className="text-xs text-muted-foreground">Tenant</Label>
         <select
           className={selectClassName}
-          value={orgId ?? ""}
-          onChange={(e) => setOrgId(e.target.value || undefined)}
+          value={tenantId ?? ""}
+          disabled={allowedTenantIds.length <= 1}
+          onChange={(e) => setTenantId(e.target.value || undefined)}
         >
-          <option value="">Select org…</option>
-          {orgsQ.isPending && <option>Loading…</option>}
-          {(orgsQ.data ?? []).map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
+          <option value="">Select tenant…</option>
+          {(allowedTenantIds.length ? allowedTenantIds : tenantId ? [tenantId] : []).map((id) => (
+            <option key={id} value={id}>
+              {id}
             </option>
           ))}
         </select>
-        {orgsQ.isError && (
-          <div className="text-xs text-destructive">Failed to load orgs</div>
-        )}
+        {allowedTenantIds.length > 1 && !tenantId ? (
+          <div className="text-xs text-muted-foreground">Required for multi-tenant users.</div>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-1">
-        <Label className="text-xs text-muted-foreground">Store</Label>
+        <Label className="text-xs text-muted-foreground">Company</Label>
         <select
           className={selectClassName}
-          value={storeId ?? ""}
-          disabled={!orgId || storesQ.isPending}
-          onChange={(e) => setStoreId(e.target.value || undefined)}
+          value={companyId ?? ""}
+          disabled={!tenantId || companiesQ.isPending}
+          onChange={(e) => setCompanyId(e.target.value || undefined)}
         >
           <option value="">
-            {orgId ? "Select store…" : "Select org first"}
+            {tenantId ? "Select company…" : "Select tenant first"}
           </option>
-          {storesQ.isPending && <option>Loading…</option>}
-          {(storesQ.data ?? []).map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} ({s.timezone})
+          {companiesQ.isPending && <option>Loading…</option>}
+          {(companiesQ.data ?? []).map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
             </option>
           ))}
         </select>
-        {storesQ.isError && (
-          <div className="text-xs text-destructive">Failed to load stores</div>
-        )}
+        {companiesQ.isError ? (
+          <div className="text-xs text-destructive">Failed to load companies</div>
+        ) : null}
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <Label className="text-xs text-muted-foreground">Branch</Label>
+        <select
+          className={selectClassName}
+          value={branchId ?? ""}
+          disabled={!tenantId || !companyId || branchesQ.isPending}
+          onChange={(e) => setBranchId(e.target.value || undefined)}
+        >
+          <option value="">
+            {companyId ? "Select branch…" : "Select company first"}
+          </option>
+          {branchesQ.isPending && <option>Loading…</option>}
+          {(branchesQ.data ?? []).map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name} ({b.code})
+            </option>
+          ))}
+        </select>
+        {branchesQ.isError ? (
+          <div className="text-xs text-destructive">Failed to load branches</div>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-1">
@@ -105,11 +149,11 @@ export function StorePicker() {
         <select
           className={selectClassName}
           value={cameraId ?? ""}
-          disabled={!storeId || camerasQ.isPending}
+          disabled={!tenantId || !branchId || camerasQ.isPending}
           onChange={(e) => setCameraId(e.target.value || undefined)}
         >
           <option value="">
-            {storeId ? "Select camera…" : "Select store first"}
+            {branchId ? "Select camera…" : "Select branch first"}
           </option>
           {camerasQ.isPending && <option>Loading…</option>}
           {(camerasQ.data ?? []).map((c) => (
@@ -118,9 +162,9 @@ export function StorePicker() {
             </option>
           ))}
         </select>
-        {camerasQ.isError && (
+        {camerasQ.isError ? (
           <div className="text-xs text-destructive">Failed to load cameras</div>
-        )}
+        ) : null}
       </div>
     </div>
   );

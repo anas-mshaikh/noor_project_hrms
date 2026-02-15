@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useParsedResume } from "@/features/hr/hooks/useParsedResume";
+import { useSelection } from "@/lib/selection";
 
 type ParsedResumeSheetProps = {
   open: boolean;
@@ -34,7 +35,8 @@ export function ParsedResumeSheet({
 }: ParsedResumeSheetProps) {
   const [showRaw, setShowRaw] = React.useState(false);
 
-  const q = useParsedResume(resumeId, open);
+  const branchId = useSelection((s) => (s.branchId as UUID | undefined) ?? null);
+  const q = useParsedResume(branchId, resumeId, open);
   const cleanText = cleanTextFromArtifact(q.data);
 
   React.useEffect(() => {
@@ -113,4 +115,3 @@ export function ParsedResumeSheet({
     </Sheet>
   );
 }
-

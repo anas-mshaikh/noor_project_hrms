@@ -5,12 +5,12 @@ from datetime import date, datetime, timezone
 from typing import Any
 from uuid import UUID
 
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.models import (
     AttendanceDaily,
-    Employee,
     Event,
     Job,
     MetricsHourly,
@@ -58,23 +58,63 @@ def _pair_sessions(
     return sessions, anomalies
 
 
-def recompute_attendance_for_store_day(
+def _list_branch_active_employees(
     db: Session,
     *,
-    store_id: UUID,
+    tenant_id: UUID,
+    branch_id: UUID,
+) -> list[tuple[UUID, str]]:
+    """
+    Return active employees for the branch (id + employee_code).
+
+    We use the latest active employment row per employee (end_date IS NULL),
+    then filter to the requested branch.
+    """
+    rows = db.execute(
+        sa.text(
+            """
+            WITH current_employment AS (
+              SELECT
+                ee.employee_id,
+                ee.branch_id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY ee.employee_id
+                  ORDER BY ee.is_primary DESC NULLS LAST, ee.start_date DESC, ee.id DESC
+                ) AS rn
+              FROM hr_core.employee_employment ee
+              WHERE ee.tenant_id = :tenant_id
+                AND ee.end_date IS NULL
+            ),
+            ce AS (
+              SELECT * FROM current_employment WHERE rn = 1
+            )
+            SELECT e.id, e.employee_code
+            FROM ce
+            JOIN hr_core.employees e ON e.id = ce.employee_id
+            WHERE ce.branch_id = :branch_id
+              AND e.tenant_id = :tenant_id
+              AND e.status = 'ACTIVE'
+            ORDER BY e.employee_code, e.id
+            """
+        ),
+        {"tenant_id": tenant_id, "branch_id": branch_id},
+    ).all()
+    return [(r[0], str(r[1])) for r in rows]
+
+
+def recompute_attendance_for_branch_day(
+    db: Session,
+    *,
+    tenant_id: UUID,
+    branch_id: UUID,
     business_date: date,
     job_ids: list[UUID],
 ) -> None:
     """
-    Recompute attendance_daily for ALL active employees in the store/day
+    Recompute attendance_daily for ALL active employees in the branch/day
     using events from the given job_ids (typically all DONE jobs for that day).
     """
-    employees = (
-        db.query(Employee)
-        .filter(Employee.store_id == store_id, Employee.is_active.is_(True))
-        .order_by(Employee.employee_code.asc())
-        .all()
-    )
+    employees = _list_branch_active_employees(db, tenant_id=tenant_id, branch_id=branch_id)
 
     events = (
         db.query(Event)
@@ -116,14 +156,14 @@ def recompute_attendance_for_store_day(
                 )
             )
 
-    for emp in employees:
-        emp_events = events_by_employee.get(emp.id, [])
+    for employee_id, _employee_code in employees:
+        emp_events = events_by_employee.get(employee_id, [])
 
         # Apply extremely conservative recognized-only stitching.
         # This is "attendance-first": avoid false merges.
         stitched_groups: list[set[str]] = []
         if bool(settings.enable_recognized_stitching):
-            tls = sorted(tracklets_by_employee.get(emp.id, []), key=lambda x: x.start_ts)
+            tls = sorted(tracklets_by_employee.get(employee_id, []), key=lambda x: x.start_ts)
             if tls:
                 mapping = group_stitched_tracklets(
                     tracklets=tls,
@@ -138,7 +178,7 @@ def recompute_attendance_for_store_day(
         # We never remove observed (non-inferred) events like line_crossing.
         events_for_pairing = emp_events
         if stitched_groups:
-            tracklet_by_key = {t.track_key: t for t in tracklets_by_employee.get(emp.id, [])}
+            tracklet_by_key = {t.track_key: t for t in tracklets_by_employee.get(employee_id, [])}
             ignore_entry_for: set[str] = set()
             ignore_exit_for: set[str] = set()
 
@@ -236,18 +276,18 @@ def recompute_attendance_for_store_day(
             else:
                 total_minutes = None
 
-        row = (
-            db.query(AttendanceDaily)
-            .filter(
-                AttendanceDaily.store_id == store_id,
-                AttendanceDaily.business_date == business_date,
-                AttendanceDaily.employee_id == emp.id,
-            )
-            .one_or_none()
-        )
+        row = db.query(AttendanceDaily).filter(
+            AttendanceDaily.tenant_id == tenant_id,
+            AttendanceDaily.branch_id == branch_id,
+            AttendanceDaily.business_date == business_date,
+            AttendanceDaily.employee_id == employee_id,
+        ).one_or_none()
         if row is None:
             row = AttendanceDaily(
-                store_id=store_id, business_date=business_date, employee_id=emp.id
+                tenant_id=tenant_id,
+                branch_id=branch_id,
+                business_date=business_date,
+                employee_id=employee_id,
             )
             db.add(row)
 
@@ -321,29 +361,34 @@ def recompute_metrics_hourly_for_job(db: Session, *, job_id: UUID) -> None:
         db.commit()
 
 
-def get_store_day_context(db: Session, *, job_id: UUID) -> tuple[UUID, date]:
-    # Resolve job -> video to get store_id + business_date
+def get_branch_day_context(db: Session, *, job_id: UUID) -> tuple[UUID, UUID, date]:
+    # Resolve job -> video to get tenant_id + branch_id + business_date
     job = db.get(Job, job_id)
     if job is None:
         raise RuntimeError("Job not found")
     video = db.get(Video, job.video_id)
     if video is None:
         raise RuntimeError("Video not found")
-    return video.store_id, video.business_date
+    return video.tenant_id, video.branch_id, video.business_date
 
 
 def get_related_job_ids(
-    db: Session, *, store_id: UUID, business_date: date
+    db: Session,
+    *,
+    tenant_id: UUID,
+    branch_id: UUID,
+    business_date: date,
 ) -> list[UUID]:
     """
-    Collect DONE jobs for this store/day (keeps daily attendance consistent if
+    Collect DONE jobs for this branch/day (keeps daily attendance consistent if
     multiple videos processed).
     """
     ids = (
         db.query(Job.id)
         .join(Video, Job.video_id == Video.id)
         .filter(
-            Video.store_id == store_id,
+            Video.tenant_id == tenant_id,
+            Video.branch_id == branch_id,
             Video.business_date == business_date,
             Job.status == "DONE",
         )

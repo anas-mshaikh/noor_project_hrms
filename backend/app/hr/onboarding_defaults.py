@@ -60,7 +60,7 @@ DEFAULT_ONBOARDING_TASKS: list[DefaultOnboardingTaskSpec] = [
         task_type="ACTION",
         metadata_json={
             # This endpoint exists already (mobile bootstrap mapping module).
-            "endpoint_hint": "/api/v1/stores/{store_id}/employees/{employee_id}/mobile/provision"
+            "endpoint_hint": "/api/v1/branches/{branch_id}/employees/{employee_id}/mobile/provision"
         },
     ),
     DefaultOnboardingTaskSpec(title="Assign role / department", task_type="TASK"),
@@ -88,4 +88,3 @@ def insert_default_onboarding_tasks(db: Session, *, plan_id: UUID) -> None:
                 metadata_json=spec.metadata_json,
             )
         )
-

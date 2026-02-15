@@ -60,7 +60,7 @@ def normalize_stage_name(name: str) -> str:
     return " ".join((name or "").strip().split()).lower()
 
 
-def ensure_default_pipeline_stages(db: Session, opening_id: UUID) -> None:
+def ensure_default_pipeline_stages(db: Session, opening_id: UUID, *, tenant_id: UUID) -> None:
     """
     Ensure an opening has at least the default pipeline stages.
 
@@ -76,7 +76,7 @@ def ensure_default_pipeline_stages(db: Session, opening_id: UUID) -> None:
 
     exists = (
         db.query(HRPipelineStage.id)
-        .filter(HRPipelineStage.opening_id == opening_id)
+        .filter(HRPipelineStage.opening_id == opening_id, HRPipelineStage.tenant_id == tenant_id)
         .limit(1)
         .first()
         is not None
@@ -87,6 +87,7 @@ def ensure_default_pipeline_stages(db: Session, opening_id: UUID) -> None:
     for spec in DEFAULT_PIPELINE_STAGES:
         db.add(
             HRPipelineStage(
+                tenant_id=tenant_id,
                 opening_id=opening_id,
                 name=spec.name,
                 sort_order=spec.sort_order,
@@ -98,7 +99,7 @@ def ensure_default_pipeline_stages(db: Session, opening_id: UUID) -> None:
 
 
 def find_stage_by_name(
-    db: Session, opening_id: UUID, stage_name: str
+    db: Session, opening_id: UUID, stage_name: str, *, tenant_id: UUID
 ) -> HRPipelineStage | None:
     """
     Find a stage by name (case-insensitive) within an opening.
@@ -114,13 +115,14 @@ def find_stage_by_name(
         db.query(HRPipelineStage)
         .filter(
             HRPipelineStage.opening_id == opening_id,
+            HRPipelineStage.tenant_id == tenant_id,
             sa.func.lower(HRPipelineStage.name) == needle,
         )
         .first()
     )
 
 
-def list_stage_names(db: Session, opening_id: UUID) -> list[str]:
+def list_stage_names(db: Session, opening_id: UUID, *, tenant_id: UUID) -> list[str]:
     """
     Return all stage names for an opening (sorted by sort_order).
 
@@ -129,9 +131,8 @@ def list_stage_names(db: Session, opening_id: UUID) -> list[str]:
 
     rows = (
         db.query(HRPipelineStage.name)
-        .filter(HRPipelineStage.opening_id == opening_id)
+        .filter(HRPipelineStage.opening_id == opening_id, HRPipelineStage.tenant_id == tenant_id)
         .order_by(HRPipelineStage.sort_order.asc())
         .all()
     )
     return [r[0] for r in rows]
-

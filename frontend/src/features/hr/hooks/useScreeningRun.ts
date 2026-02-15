@@ -25,13 +25,14 @@ function getPollIntervalMs(status: string | undefined, progressTotal: number | n
  * Poll ScreeningRun status while it's in-flight (QUEUED/RUNNING).
  *
  * Backend contract:
- * - GET /api/v1/screening-runs/{run_id}
+ * - GET /api/v1/branches/{branch_id}/screening-runs/{run_id}
  */
-export function useScreeningRun(runId: UUID | null) {
+export function useScreeningRun(branchId: UUID | null, runId: UUID | null) {
   return useQuery({
-    queryKey: hrQueryKeys.screeningRun(runId),
-    enabled: Boolean(runId),
-    queryFn: ({ signal }) => getScreeningRun(runId as UUID, { signal }),
+    queryKey: hrQueryKeys.screeningRun(branchId, runId),
+    enabled: Boolean(branchId && runId),
+    queryFn: ({ signal }) =>
+      getScreeningRun(branchId as UUID, runId as UUID, { signal }),
     refetchInterval: (q) => {
       const status = q.state.data?.status;
       const progressTotal = q.state.data?.progress_total ?? null;

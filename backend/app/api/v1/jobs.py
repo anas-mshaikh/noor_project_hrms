@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.auth.deps import require_permission
+from app.auth.permissions import VISION_JOB_RUN, VISION_RESULTS_READ
 from app.core.config import settings
 from app.db.session import get_db
 from app.face_system.runtime_processor import get_runtime_processor
@@ -20,11 +22,12 @@ from app.queue.rq import DEFAULT_JOB_TIMEOUT_SEC, get_queue
 from app.worker.tasks import process_video_job
 from app.worker.rollup import (
     get_related_job_ids,
-    get_store_day_context,
-    recompute_attendance_for_store_day,
+    get_branch_day_context,
+    recompute_attendance_for_branch_day,
     recompute_metrics_hourly_for_job,
 )
 from app.worker.artifacts import write_job_artifacts
+from app.shared.types import AuthContext
 
 
 router = APIRouter(tags=["jobs"])
@@ -80,7 +83,7 @@ def _assign_identities_for_job(
 
     # Load store prototypes (blocking build once).
     try:
-        proc = get_runtime_processor(store_id=video.store_id, camera_id=None)
+        proc = get_runtime_processor(tenant_id=video.tenant_id, branch_id=video.branch_id, camera_id=None)
         proc.recognizer.ensure_built(block=True, timeout_sec=60.0)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -181,14 +184,26 @@ class JobActionResponse(BaseModel):
 
 
 @router.post(
-    "/videos/{video_id}/jobs",
+    "/branches/{branch_id}/videos/{video_id}/jobs",
     response_model=JobCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def create_job(
-    video_id: UUID, body: JobCreateRequest, db: Session = Depends(get_db)
+    branch_id: UUID,
+    video_id: UUID,
+    body: JobCreateRequest,
+    ctx: AuthContext = Depends(require_permission(VISION_JOB_RUN)),
+    db: Session = Depends(get_db),
 ) -> JobCreateResponse:
-    video = db.get(Video, video_id)
+    video = (
+        db.query(Video)
+        .filter(
+            Video.id == video_id,
+            Video.tenant_id == ctx.scope.tenant_id,
+            Video.branch_id == branch_id,
+        )
+        .first()
+    )
     if video is None:
         raise HTTPException(status_code=404, detail="Video not found")
 
@@ -226,11 +241,26 @@ def create_job(
         )
 
 
-@router.get("/jobs/{job_id}", response_model=JobReadResponse)
-def get_job(job_id: UUID, db: Session = Depends(get_db)) -> JobReadResponse:
-    job = db.get(Job, job_id)
-    if job is None:
+@router.get("/branches/{branch_id}/jobs/{job_id}", response_model=JobReadResponse)
+def get_job(
+    branch_id: UUID,
+    job_id: UUID,
+    ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
+    db: Session = Depends(get_db),
+) -> JobReadResponse:
+    job_row = (
+        db.query(Job)
+        .join(Video, Video.id == Job.video_id)
+        .filter(
+            Job.id == job_id,
+            Video.tenant_id == ctx.scope.tenant_id,
+            Video.branch_id == branch_id,
+        )
+        .first()
+    )
+    if job_row is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    job = job_row
 
     return JobReadResponse(
         id=job.id,
@@ -244,9 +274,23 @@ def get_job(job_id: UUID, db: Session = Depends(get_db)) -> JobReadResponse:
     )
 
 
-@router.post("/jobs/{job_id}/cancel", response_model=JobActionResponse)
-def cancel_job(job_id: UUID, db: Session = Depends(get_db)) -> JobActionResponse:
-    job = db.get(Job, job_id)
+@router.post("/branches/{branch_id}/jobs/{job_id}/cancel", response_model=JobActionResponse)
+def cancel_job(
+    branch_id: UUID,
+    job_id: UUID,
+    ctx: AuthContext = Depends(require_permission(VISION_JOB_RUN)),
+    db: Session = Depends(get_db),
+) -> JobActionResponse:
+    job = (
+        db.query(Job)
+        .join(Video, Video.id == Job.video_id)
+        .filter(
+            Job.id == job_id,
+            Video.tenant_id == ctx.scope.tenant_id,
+            Video.branch_id == branch_id,
+        )
+        .first()
+    )
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -263,9 +307,23 @@ def cancel_job(job_id: UUID, db: Session = Depends(get_db)) -> JobActionResponse
     return JobActionResponse(job_id=job.id, status=job.status)
 
 
-@router.post("/jobs/{job_id}/retry", response_model=JobActionResponse)
-def retry_job(job_id: UUID, db: Session = Depends(get_db)) -> JobActionResponse:
-    job = db.get(Job, job_id)
+@router.post("/branches/{branch_id}/jobs/{job_id}/retry", response_model=JobActionResponse)
+def retry_job(
+    branch_id: UUID,
+    job_id: UUID,
+    ctx: AuthContext = Depends(require_permission(VISION_JOB_RUN)),
+    db: Session = Depends(get_db),
+) -> JobActionResponse:
+    job = (
+        db.query(Job)
+        .join(Video, Video.id == Job.video_id)
+        .filter(
+            Job.id == job_id,
+            Video.tenant_id == ctx.scope.tenant_id,
+            Video.branch_id == branch_id,
+        )
+        .first()
+    )
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -298,11 +356,24 @@ def retry_job(job_id: UUID, db: Session = Depends(get_db)) -> JobActionResponse:
         )
 
 
-@router.post("/jobs/{job_id}/recompute", response_model=JobRecomputeResponse)
+@router.post("/branches/{branch_id}/jobs/{job_id}/recompute", response_model=JobRecomputeResponse)
 def recompute_job(
-    job_id: UUID, body: JobRecomputeRequest, db: Session = Depends(get_db)
+    branch_id: UUID,
+    job_id: UUID,
+    body: JobRecomputeRequest,
+    ctx: AuthContext = Depends(require_permission(VISION_JOB_RUN)),
+    db: Session = Depends(get_db),
 ) -> JobRecomputeResponse:
-    job = db.get(Job, job_id)
+    job = (
+        db.query(Job)
+        .join(Video, Video.id == Job.video_id)
+        .filter(
+            Job.id == job_id,
+            Video.tenant_id == ctx.scope.tenant_id,
+            Video.branch_id == branch_id,
+        )
+        .first()
+    )
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -314,16 +385,19 @@ def recompute_job(
     )
 
     if body.recompute_rollups:
-        store_id, business_date = get_store_day_context(db, job_id=job_id)
+        tenant_id2, branch_id2, business_date = get_branch_day_context(db, job_id=job_id)
+        if tenant_id2 != ctx.scope.tenant_id or branch_id2 != branch_id:
+            raise HTTPException(status_code=404, detail="Job not found")
         related = get_related_job_ids(
-            db, store_id=store_id, business_date=business_date
+            db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, business_date=business_date
         )
         all_job_ids = sorted(set(related + [job_id]))
 
         recompute_metrics_hourly_for_job(db, job_id=job_id)
-        recompute_attendance_for_store_day(
+        recompute_attendance_for_branch_day(
             db,
-            store_id=store_id,
+            tenant_id=ctx.scope.tenant_id,
+            branch_id=branch_id,
             business_date=business_date,
             job_ids=all_job_ids,
         )

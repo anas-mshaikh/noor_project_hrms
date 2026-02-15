@@ -34,6 +34,15 @@ DB vNext introduces enterprise-ready HRMS foundation schemas (`tenancy`, `iam`, 
 - Smoke test: `python3 backend/scripts/db_vnext_smoke_test.py`
   - In Docker Compose, this also runs automatically via the `tests` service.
 
+Current API foundation state:
+- Legacy `/api/v1/organizations*` and `/api/v1/stores*` routes are removed.
+- Module APIs are branch-first (`/api/v1/branches/{branch_id}/...`).
+- Protected endpoints are tenant-scoped and permission-driven (RBAC via `iam.*`).
+- Multi-tenant users must send `X-Tenant-Id`; single-tenant users default automatically.
+- Responses include `X-Correlation-Id`; errors include `correlation_id`.
+- Critical IAM/HR mutations are audited in `audit.audit_log`.
+- In-app notifications flow through `workflow.notification_outbox` -> `workflow.notifications`.
+
 ### Safety backup / restore (dev)
 
 Backup (schema + data) using the Docker `db` container (no local Postgres tools required):
@@ -77,7 +86,7 @@ Firebase sync (optional):
 ## HR module (Phase 1: Openings + Resume parsing)
 
 What it does:
-- Create store-scoped hiring openings
+- Create branch-scoped hiring openings
 - Upload resumes to local disk
 - Parse resumes in the background using RQ + Unstructured
 - Store parsed artifacts locally (`parsed.json` + `clean.txt`) for debugging
@@ -86,13 +95,13 @@ Docker services:
 - The `hr_worker` service listens on the RQ queue named `hr`.
 
 Key endpoints:
-- `POST /api/v1/stores/{store_id}/openings`
-- `GET  /api/v1/stores/{store_id}/openings`
-- `GET  /api/v1/openings/{opening_id}`
-- `PATCH /api/v1/openings/{opening_id}`
-- `POST /api/v1/openings/{opening_id}/resumes/upload` (multipart files)
-- `GET  /api/v1/openings/{opening_id}/resumes`
-- `GET  /api/v1/resumes/{resume_id}/parsed` (debug artifact JSON)
+- `POST /api/v1/branches/{branch_id}/openings`
+- `GET  /api/v1/branches/{branch_id}/openings`
+- `GET  /api/v1/branches/{branch_id}/openings/{opening_id}`
+- `PATCH /api/v1/branches/{branch_id}/openings/{opening_id}`
+- `POST /api/v1/branches/{branch_id}/openings/{opening_id}/resumes/upload` (multipart files)
+- `GET  /api/v1/branches/{branch_id}/openings/{opening_id}/resumes`
+- `GET  /api/v1/branches/{branch_id}/resumes/{resume_id}/parsed` (debug artifact JSON)
 
 Local storage paths:
 - Raw uploads: `backend/data/hr/resumes/{opening_id}/{resume_id}/original/...`
@@ -111,9 +120,9 @@ How it runs:
   `PENDING -> EMBEDDING -> EMBEDDED` (or `FAILED`)
 
 Key debug endpoints:
-- `GET  /api/v1/openings/{opening_id}/resumes/index-status`
-- `GET  /api/v1/resumes/{resume_id}/views`
-- `POST /api/v1/openings/{opening_id}/search` (disabled unless `HR_SEARCH_DEBUG_ENABLED=true`)
+- `GET  /api/v1/branches/{branch_id}/openings/{opening_id}/resumes/index-status`
+- `GET  /api/v1/branches/{branch_id}/resumes/{resume_id}/views`
+- `POST /api/v1/branches/{branch_id}/openings/{opening_id}/search` (disabled unless `HR_SEARCH_DEBUG_ENABLED=true`)
 
 Config (env vars):
 - `HR_EMBEDDINGS_ENABLED=true|false`
@@ -139,11 +148,11 @@ What it adds:
   3) persist ranked results for paging / audit
 
 Key endpoints:
-- `POST /api/v1/openings/{opening_id}/screening-runs` (create + enqueue)
-- `GET  /api/v1/screening-runs/{run_id}` (poll status + progress)
-- `POST /api/v1/screening-runs/{run_id}/cancel`
-- `POST /api/v1/screening-runs/{run_id}/retry` (creates a new run)
-- `GET  /api/v1/screening-runs/{run_id}/results?page=1&page_size=50`
+- `POST /api/v1/branches/{branch_id}/openings/{opening_id}/screening-runs` (create + enqueue)
+- `GET  /api/v1/branches/{branch_id}/screening-runs/{run_id}` (poll status + progress)
+- `POST /api/v1/branches/{branch_id}/screening-runs/{run_id}/cancel`
+- `POST /api/v1/branches/{branch_id}/screening-runs/{run_id}/retry` (creates a new run)
+- `GET  /api/v1/branches/{branch_id}/screening-runs/{run_id}/results?page=1&page_size=50`
 
 Config (env vars):
 - `HR_RERANK_ENABLED=true|false`
@@ -165,9 +174,9 @@ What it adds:
 - Runs asynchronously via RQ (queue: `"hr"`) so ScreeningRuns are not blocked.
 
 Key endpoints:
-- `GET  /api/v1/screening-runs/{run_id}/results/{resume_id}/explanation`
-- `POST /api/v1/screening-runs/{run_id}/explanations` (enqueue explain top N)
-- `POST /api/v1/screening-runs/{run_id}/results/{resume_id}/explanation/recompute` (enqueue single)
+- `GET  /api/v1/branches/{branch_id}/screening-runs/{run_id}/results/{resume_id}/explanation`
+- `POST /api/v1/branches/{branch_id}/screening-runs/{run_id}/explanations` (enqueue explain top N)
+- `POST /api/v1/branches/{branch_id}/screening-runs/{run_id}/results/{resume_id}/explanation/recompute` (enqueue single)
 
 Config (env vars):
 - `GEMINI_API_KEY="..."` (required to run Phase 4)
@@ -192,16 +201,42 @@ Default pipeline stages:
   `Applied -> Screened -> Interview -> Offer -> Hired (terminal) / Rejected (terminal)`
 
 Key endpoints:
-- `GET  /api/v1/openings/{opening_id}/pipeline-stages`
-- `POST /api/v1/screening-runs/{run_id}/applications` (bulk add to pipeline)
+- `GET  /api/v1/branches/{branch_id}/openings/{opening_id}/pipeline-stages`
+- `POST /api/v1/branches/{branch_id}/screening-runs/{run_id}/applications` (bulk add to pipeline)
   - `{ "top_n": 20, "stage_name": "Screened" }`
   - OR `{ "resume_ids": ["..."], "stage_name": "Screened" }`
-- `POST /api/v1/openings/{opening_id}/applications` (manual add)
+- `POST /api/v1/branches/{branch_id}/openings/{opening_id}/applications` (manual add)
   - `{ "resume_id": "...", "stage_name": "Applied" }`
-- `GET  /api/v1/openings/{opening_id}/applications` (Kanban list)
-- `PATCH /api/v1/applications/{application_id}` (move stage)
-- `POST /api/v1/applications/{application_id}/reject`
-- `POST /api/v1/applications/{application_id}/hire`
+- `GET  /api/v1/branches/{branch_id}/openings/{opening_id}/applications` (Kanban list)
+- `PATCH /api/v1/branches/{branch_id}/applications/{application_id}` (move stage)
+- `POST /api/v1/branches/{branch_id}/applications/{application_id}/reject`
+- `POST /api/v1/branches/{branch_id}/applications/{application_id}/hire`
 - Notes:
-  - `POST /api/v1/applications/{application_id}/notes`
-  - `GET  /api/v1/applications/{application_id}/notes`
+  - `POST /api/v1/branches/{branch_id}/applications/{application_id}/notes`
+  - `GET  /api/v1/branches/{branch_id}/applications/{application_id}/notes`
+
+## Notifications (Milestone 1)
+
+In-app notifications are enabled (email is intentionally deferred).
+
+Worker pipeline:
+- Producer table: `workflow.notification_outbox`
+- Consumer process: `backend/app/worker/notification_worker.py`
+- User inbox table: `workflow.notifications`
+
+API endpoints:
+- `GET  /api/v1/notifications?unread_only=0|1&limit&cursor`
+- `GET  /api/v1/notifications/unread-count`
+- `POST /api/v1/notifications/{id}/read`
+- `POST /api/v1/notifications/read-all`
+
+## Test status and commands
+
+Primary backend validation:
+
+```bash
+docker compose up --build --abort-on-container-exit --exit-code-from tests tests
+```
+
+Current baseline:
+- Backend tests pass in Docker (`18 passed`).

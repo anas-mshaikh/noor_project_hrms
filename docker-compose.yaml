@@ -130,6 +130,21 @@ services:
         condition: service_healthy
     command: ["python", "-m", "app.worker.work_worker"]
 
+  notification_worker:
+    # Dedicated poller for in-app notifications (outbox -> notifications).
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env.docker
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/models:/app/models
+      - ./backend/secrets:/app/secrets:ro
+    depends_on:
+      tests:
+        condition: service_completed_successfully
+    command: ["python", "-m", "app.worker.notification_worker"]
+
   frontend:
     build:
       context: ./frontend

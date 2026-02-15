@@ -6,7 +6,7 @@
  * Mobile navigation sheet:
  * - Module switcher
  * - Active module nav items
- * - Context picker (Org/Store/Camera)
+ * - Context picker (Tenant/Company/Branch/Camera)
  */
 
 import Link from "next/link";
@@ -38,7 +38,7 @@ export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
     process.env.NEXT_PUBLIC_SHOW_DEBUG_IDS === "true" ||
     process.env.NODE_ENV === "development";
 
-  const storeId = useSelection((s) => s.storeId);
+  const branchId = useSelection((s) => s.branchId);
   const cameraId = useSelection((s) => s.cameraId);
 
   return (
@@ -139,7 +139,7 @@ export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
             <StorePicker />
             {showDebugIds ? (
               <div className="mt-2 text-[11px] text-muted-foreground">
-                {storeId ? `store_id: ${storeId}` : "Select a store"}
+                {branchId ? `branch_id: ${branchId}` : "Select a branch"}
                 {cameraId ? ` • camera_id: ${cameraId}` : ""}
               </div>
             ) : null}
@@ -149,4 +149,3 @@ export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
     </Sheet>
   );
 }
-

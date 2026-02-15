@@ -5,6 +5,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.auth.deps import require_permission
+from app.auth.permissions import IAM_PERMISSION_READ, IAM_ROLE_ASSIGN
 from app.core.responses import ok
 from app.db.session import get_db
 from app.domains.iam.policies import require_iam_read, require_iam_write
@@ -86,7 +88,7 @@ def patch_user(
 def assign_role(
     user_id: UUID,
     payload: RoleAssignIn,
-    ctx: AuthContext = Depends(require_iam_write),
+    ctx: AuthContext = Depends(require_permission(IAM_ROLE_ASSIGN)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     ur, role_code = _svc.assign_role(db, ctx=ctx, user_id=user_id, payload=payload)
@@ -128,7 +130,7 @@ def delete_user_role(
     role_code: str = Query(..., min_length=1),
     company_id: UUID | None = None,
     branch_id: UUID | None = None,
-    ctx: AuthContext = Depends(require_iam_write),
+    ctx: AuthContext = Depends(require_permission(IAM_ROLE_ASSIGN)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     _svc.remove_role(db, ctx=ctx, user_id=user_id, role_code=role_code, company_id=company_id, branch_id=branch_id)
@@ -146,9 +148,8 @@ def list_roles(
 
 @router.get("/permissions")
 def list_permissions(
-    ctx: AuthContext = Depends(require_iam_read),
+    ctx: AuthContext = Depends(require_permission(IAM_PERMISSION_READ)),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     perms = _svc.list_permissions(db)
     return ok([PermissionOut(code=code, description=desc).model_dump() for code, desc in perms])
-

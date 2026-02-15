@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date
 from uuid import UUID
 
+import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.audit import service as audit_svc
 from app.core.errors import AppError
 from app.domains.hr_core import repo
 from app.domains.hr_core.schemas import (
@@ -246,6 +249,23 @@ class HRCoreService:
         if row is None:
             raise AppError(code="hr.employee.not_found", message="Employee not found", status_code=404)
 
+        before = {
+            "person": {
+                "first_name": row.person.first_name,
+                "last_name": row.person.last_name,
+                "dob": str(row.person.dob) if row.person.dob is not None else None,
+                "nationality": row.person.nationality,
+                "email": row.person.email,
+                "phone": row.person.phone,
+                "address": row.person.address,
+            },
+            "employee": {
+                "status": row.employee.status,
+                "join_date": str(row.employee.join_date) if row.employee.join_date is not None else None,
+                "termination_date": str(row.employee.termination_date) if row.employee.termination_date is not None else None,
+            },
+        }
+
         try:
             if payload.person is not None:
                 p = row.person
@@ -284,6 +304,32 @@ class HRCoreService:
                     e.join_date = payload.employee.join_date
                 if payload.employee.termination_date is not None:
                     e.termination_date = payload.employee.termination_date
+
+            after = {
+                "person": {
+                    "first_name": row.person.first_name,
+                    "last_name": row.person.last_name,
+                    "dob": str(row.person.dob) if row.person.dob is not None else None,
+                    "nationality": row.person.nationality,
+                    "email": row.person.email,
+                    "phone": row.person.phone,
+                    "address": row.person.address,
+                },
+                "employee": {
+                    "status": row.employee.status,
+                    "join_date": str(row.employee.join_date) if row.employee.join_date is not None else None,
+                    "termination_date": str(row.employee.termination_date) if row.employee.termination_date is not None else None,
+                },
+            }
+            audit_svc.record(
+                db,
+                ctx=ctx,
+                action="hr.employee.patch",
+                entity_type="hr_core.employee",
+                entity_id=row.employee.id,
+                before=before,
+                after=after,
+            )
 
             db.commit()
         except AppError:
@@ -329,12 +375,23 @@ class HRCoreService:
                 manager_employee_id=payload.manager_employee_id,
             )
 
+        before_emp = {
+            "employee_id": str(employee_id),
+            "previous_employment_id": str(current.id),
+            "previous_branch_id": str(current.branch_id),
+            "previous_start_date": str(current.start_date),
+            "previous_end_date": str(current.end_date) if current.end_date is not None else None,
+            "previous_manager_employee_id": str(current.manager_employee_id)
+            if current.manager_employee_id is not None
+            else None,
+        }
+
         # Close current employment using a same-day boundary:
         # old.end_date = new.start_date, new.start_date = requested start_date.
         # This avoids date arithmetic and keeps the history deterministic.
         current.end_date = payload.start_date
 
-        repo.insert_employment(
+        new_emp = repo.insert_employment(
             db,
             tenant_id=scope.tenant_id,
             company_id=scope.company_id,
@@ -347,6 +404,24 @@ class HRCoreService:
             start_date=payload.start_date,
             end_date=None,
             is_primary=True,
+        )
+
+        audit_svc.record(
+            db,
+            ctx=ctx,
+            action="hr.employee.change_employment",
+            entity_type="hr_core.employee_employment",
+            entity_id=new_emp.id,
+            before=before_emp,
+            after={
+                "employee_id": str(employee_id),
+                "new_employment_id": str(new_emp.id),
+                "new_branch_id": str(new_emp.branch_id),
+                "new_start_date": str(new_emp.start_date),
+                "new_manager_employee_id": str(new_emp.manager_employee_id)
+                if new_emp.manager_employee_id is not None
+                else None,
+            },
         )
         try:
             db.commit()
@@ -404,6 +479,46 @@ class HRCoreService:
 
         try:
             link = repo.insert_employee_user_link(db, employee_id=employee_id, user_id=payload.user_id)
+
+            audit_svc.record(
+                db,
+                ctx=ctx,
+                action="hr.employee.link_user",
+                entity_type="hr_core.employee_user_link",
+                entity_id=employee_id,
+                before=None,
+                after={
+                    "employee_id": str(employee_id),
+                    "user_id": str(payload.user_id),
+                },
+            )
+
+            db.execute(
+                sa.text(
+                    """
+                    INSERT INTO workflow.notification_outbox (
+                      tenant_id, channel, recipient_user_id, template_code, payload
+                    ) VALUES (
+                      :tenant_id, 'IN_APP', :recipient_user_id, :template_code, CAST(:payload AS jsonb)
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": scope.tenant_id,
+                    "recipient_user_id": payload.user_id,
+                    "template_code": "EMPLOYEE_LINKED",
+                    "payload": json.dumps(
+                        {
+                            "title": "Employee linked",
+                            "body": "Your user account was linked to an employee profile.",
+                            "employee_id": str(employee_id),
+                            "company_id": str(scope.company_id),
+                            "correlation_id": ctx.correlation_id,
+                        },
+                        default=str,
+                    ),
+                },
+            )
             db.commit()
         except IntegrityError as e:
             db.rollback()

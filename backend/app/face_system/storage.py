@@ -4,7 +4,7 @@ storage.py
 File-based face library storage (Frigate-style).
 
 Directory layout:
-  <FACE_DIR>/<store_id>/<employee_id>/*.jpg
+  <FACE_DIR>/<tenant_id>/<branch_id>/<employee_id>/*.jpg
 
 This is separate from the DB (pgvector) templates:
 - You can still keep pgvector for "search by face" debug tools.
@@ -38,13 +38,13 @@ class FaceLibraryStorage:
     def face_dir(self) -> Path:
         return self._cfg.face_dir
 
-    def employee_dir(self, *, store_id: UUID, employee_id: UUID) -> Path:
-        return self._cfg.face_dir / str(store_id) / str(employee_id)
+    def employee_dir(self, *, tenant_id: UUID, branch_id: UUID, employee_id: UUID) -> Path:
+        return self._cfg.face_dir / str(tenant_id) / str(branch_id) / str(employee_id)
 
     def list_employee_images(
-        self, *, store_id: UUID, employee_id: UUID
+        self, *, tenant_id: UUID, branch_id: UUID, employee_id: UUID
     ) -> list[StoredFaceImage]:
-        d = self.employee_dir(store_id=store_id, employee_id=employee_id)
+        d = self.employee_dir(tenant_id=tenant_id, branch_id=branch_id, employee_id=employee_id)
         if not d.exists():
             return []
         out: list[StoredFaceImage] = []
@@ -55,9 +55,9 @@ class FaceLibraryStorage:
         return out
 
     def delete_employee_image(
-        self, *, store_id: UUID, employee_id: UUID, filename: str
+        self, *, tenant_id: UUID, branch_id: UUID, employee_id: UUID, filename: str
     ) -> bool:
-        d = self.employee_dir(store_id=store_id, employee_id=employee_id)
+        d = self.employee_dir(tenant_id=tenant_id, branch_id=branch_id, employee_id=employee_id)
         fn = safe_basename(filename)
         p = d / fn
         if not p.exists():
@@ -68,7 +68,8 @@ class FaceLibraryStorage:
     def save_face_crop(
         self,
         *,
-        store_id: UUID,
+        tenant_id: UUID,
+        branch_id: UUID,
         employee_id: UUID,
         face_crop_bgr: np.ndarray,
         ext: str = ".jpg",
@@ -83,7 +84,7 @@ class FaceLibraryStorage:
         if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
             ext = ".jpg"
 
-        d = self.employee_dir(store_id=store_id, employee_id=employee_id)
+        d = self.employee_dir(tenant_id=tenant_id, branch_id=branch_id, employee_id=employee_id)
         d.mkdir(parents=True, exist_ok=True)
 
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -95,12 +96,11 @@ class FaceLibraryStorage:
         rel = str(abs_path.relative_to(self._cfg.face_dir))
         return StoredFaceImage(filename=filename, rel_path=rel)
 
-    def store_has_any_images(self, *, store_id: UUID) -> bool:
-        store_dir = self._cfg.face_dir / str(store_id)
-        if not store_dir.exists():
+    def branch_has_any_images(self, *, tenant_id: UUID, branch_id: UUID) -> bool:
+        branch_dir = self._cfg.face_dir / str(tenant_id) / str(branch_id)
+        if not branch_dir.exists():
             return False
-        for p in store_dir.rglob("*"):
+        for p in branch_dir.rglob("*"):
             if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
                 return True
         return False
-

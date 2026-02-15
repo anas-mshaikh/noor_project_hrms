@@ -5,10 +5,11 @@ import { doc, getDoc } from "firebase/firestore";
 import { paths } from "../data/paths";
 
 type UserMapping = {
-  org_id: string;
-  store_id: string;
+  tenant_id: string;
+  branch_id: string;
   employee_id: string;
   employee_code: string;
+  department?: string | null;
   role: string;
   active: boolean;
 };
@@ -38,14 +39,14 @@ export function HomeScreen() {
       const statsSnap = await getDoc(
         doc(
           db,
-          paths.employeeMonth(m.org_id, m.store_id, monthKey, m.employee_code),
+          paths.employeeMonth(m.tenant_id, m.branch_id, monthKey, m.employee_code),
         ),
       );
       setMyStats(statsSnap.exists() ? statsSnap.data() : null);
 
       // 3) overall leaderboard
       const lbSnap = await getDoc(
-        doc(db, paths.leaderboardOverall(m.org_id, m.store_id, monthKey)),
+        doc(db, paths.leaderboardOverall(m.tenant_id, m.branch_id, monthKey)),
       );
       setOverall(lbSnap.exists() ? lbSnap.data() : null);
 

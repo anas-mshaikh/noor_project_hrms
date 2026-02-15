@@ -6,23 +6,22 @@ import type { UUID } from "@/lib/types";
 import { listResumes, uploadResumes } from "@/features/hr/api/hr";
 import { hrQueryKeys } from "@/features/hr/api/queryKeys";
 
-export function useResumes(openingId: UUID | null, statusFilter?: string) {
+export function useResumes(branchId: UUID | null, openingId: UUID | null, statusFilter?: string) {
   const queryClient = useQueryClient();
 
   const list = useQuery({
-    queryKey: hrQueryKeys.resumes(openingId, statusFilter),
-    enabled: Boolean(openingId),
+    queryKey: hrQueryKeys.resumes(branchId, openingId, statusFilter),
+    enabled: Boolean(branchId && openingId),
     queryFn: ({ signal }) =>
-      listResumes(openingId as UUID, statusFilter, { signal }),
+      listResumes(branchId as UUID, openingId as UUID, statusFilter, { signal }),
   });
 
   const upload = useMutation({
     mutationFn: (args: { files: File[] }) =>
-      uploadResumes(openingId as UUID, args.files),
+      uploadResumes(branchId as UUID, openingId as UUID, args.files),
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: hrQueryKeys.resumes(openingId) }),
+      queryClient.invalidateQueries({ queryKey: hrQueryKeys.resumes(branchId, openingId) }),
   });
 
   return { list, upload };
 }
-

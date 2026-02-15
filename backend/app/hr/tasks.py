@@ -211,7 +211,9 @@ def parse_resume(resume_id: str) -> None:
             {
                 "resume_id": str(resume.id),
                 "opening_id": str(resume.opening_id),
-                "store_id": str(resume.store_id),
+                "tenant_id": str(resume.tenant_id),
+                "company_id": str(resume.company_id),
+                "branch_id": str(resume.branch_id),
                 "parsed_at": _utcnow().isoformat(),
                 "elements": elements_dicts,
                 "clean_text": clean_text,
@@ -336,6 +338,7 @@ def embed_resume(resume_id: str) -> None:
             if row is None:
                 row = HRResumeView(
                     id=uuid.uuid4(),
+                    tenant_id=resume.tenant_id,
                     resume_id=resume.id,
                     view_type=view_type,
                     text_hash=h,
@@ -707,6 +710,7 @@ def run_screening(run_id: str) -> None:
                 HRScreeningResult(
                     run_id=run.id,
                     resume_id=cand.resume_id,
+                    tenant_id=run.tenant_id,
                     rank=idx,
                     final_score=cand.final_score,
                     rerank_score=cand.rerank_score,
@@ -940,6 +944,7 @@ def _explain_one_in_db(
         row = HRScreeningExplanation(
             run_id=run.id,
             resume_id=resume.id,
+            tenant_id=run.tenant_id,
             rank=rank,
             model_name=model_name,
             prompt_version=PROMPT_VERSION,

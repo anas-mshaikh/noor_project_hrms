@@ -19,11 +19,13 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.auth.deps import require_permission
+from app.auth.permissions import VISION_CAMERA_READ, VISION_CAMERA_WRITE
 from app.db.session import get_db
 from app.models.models import Camera
-from app.models.models import Store
 from app.models.models import Video
 from app.worker.zones import ZoneConfig, validate_zone_config
+from app.shared.types import AuthContext
 
 router = APIRouter(tags=["cameras"])
 
@@ -42,7 +44,8 @@ class CameraCreateRequest(BaseModel):
 
 class CameraListOut(BaseModel):
     id: UUID
-    store_id: UUID
+    tenant_id: UUID
+    branch_id: UUID
     name: str
     placement: str | None
     calibration_json: dict[str, Any] | None
@@ -50,19 +53,19 @@ class CameraListOut(BaseModel):
 
 
 @router.post(
-    "/stores/{store_id}/cameras",
+    "/branches/{branch_id}/cameras",
     response_model=CameraListOut,
     status_code=status.HTTP_201_CREATED,
 )
 def create_camera(
-    store_id: UUID, body: CameraCreateRequest, db: Session = Depends(get_db)
+    branch_id: UUID,
+    body: CameraCreateRequest,
+    ctx: AuthContext = Depends(require_permission(VISION_CAMERA_WRITE)),
+    db: Session = Depends(get_db),
 ) -> CameraListOut:
-    store = db.get(Store, store_id)
-    if store is None:
-        raise HTTPException(status_code=404, detail="Store not found")
-
     cam = Camera(
-        store_id=store_id,
+        tenant_id=ctx.scope.tenant_id,
+        branch_id=branch_id,
         name=body.name,
         placement=body.placement,
         calibration_json=body.calibration_json,
@@ -73,7 +76,8 @@ def create_camera(
 
     return CameraListOut(
         id=cam.id,
-        store_id=cam.store_id,
+        tenant_id=cam.tenant_id,
+        branch_id=cam.branch_id,
         name=cam.name,
         placement=cam.placement,
         calibration_json=cam.calibration_json,
@@ -81,18 +85,26 @@ def create_camera(
     )
 
 
-@router.get("/stores/{store_id}/cameras", response_model=list[CameraListOut])
-def list_cameras(store_id: UUID, db: Session = Depends(get_db)) -> list[CameraListOut]:
+@router.get("/branches/{branch_id}/cameras", response_model=list[CameraListOut])
+def list_cameras(
+    branch_id: UUID,
+    ctx: AuthContext = Depends(require_permission(VISION_CAMERA_READ)),
+    db: Session = Depends(get_db),
+) -> list[CameraListOut]:
     rows = (
         db.query(Camera)
-        .filter(Camera.store_id == store_id)
+        .filter(
+            Camera.tenant_id == ctx.scope.tenant_id,
+            Camera.branch_id == branch_id,
+        )
         .order_by(Camera.created_at.asc())
         .all()
     )
     return [
         CameraListOut(
             id=c.id,
-            store_id=c.store_id,
+            tenant_id=c.tenant_id,
+            branch_id=c.branch_id,
             name=c.name,
             placement=c.placement,
             calibration_json=c.calibration_json,
@@ -105,7 +117,8 @@ def list_cameras(store_id: UUID, db: Session = Depends(get_db)) -> list[CameraLi
 # TODO: Research on Frigate's camera/polygons mangement implementation
 class CameraOut(BaseModel):
     id: UUID
-    store_id: UUID
+    tenant_id: UUID
+    branch_id: UUID
     name: str
     placement: str | None
     calibration_json: dict[str, Any] | None
@@ -121,28 +134,52 @@ class CalibrationUpdateRequest(BaseModel):
     )
 
 
-@router.get("/cameras/{camera_id}", response_model=CameraOut)
-def get_camera(camera_id: UUID, db: Session = Depends(get_db)) -> CameraOut:
-    cam = db.get(Camera, camera_id)
+@router.get("/branches/{branch_id}/cameras/{camera_id}", response_model=CameraOut)
+def get_camera(
+    branch_id: UUID,
+    camera_id: UUID,
+    ctx: AuthContext = Depends(require_permission(VISION_CAMERA_READ)),
+    db: Session = Depends(get_db),
+) -> CameraOut:
+    cam = (
+        db.query(Camera)
+        .filter(
+            Camera.id == camera_id,
+            Camera.tenant_id == ctx.scope.tenant_id,
+            Camera.branch_id == branch_id,
+        )
+        .first()
+    )
     if cam is None:
         raise HTTPException(status_code=404, detail="Camera not found")
 
     return CameraOut(
         id=cam.id,
-        store_id=cam.store_id,
+        tenant_id=cam.tenant_id,
+        branch_id=cam.branch_id,
         name=cam.name,
         placement=cam.placement,
         calibration_json=cam.calibration_json,
     )
 
 
-@router.put("/cameras/{camera_id}/calibration", response_model=CameraOut)
+@router.put("/branches/{branch_id}/cameras/{camera_id}/calibration", response_model=CameraOut)
 def update_camera_calibration(
+    branch_id: UUID,
     camera_id: UUID,
     body: CalibrationUpdateRequest,
+    ctx: AuthContext = Depends(require_permission(VISION_CAMERA_WRITE)),
     db: Session = Depends(get_db),
 ) -> CameraOut:
-    cam = db.get(Camera, camera_id)
+    cam = (
+        db.query(Camera)
+        .filter(
+            Camera.id == camera_id,
+            Camera.tenant_id == ctx.scope.tenant_id,
+            Camera.branch_id == branch_id,
+        )
+        .first()
+    )
     if cam is None:
         raise HTTPException(status_code=404, detail="Camera not found")
 
@@ -155,7 +192,8 @@ def update_camera_calibration(
 
     return CameraOut(
         id=cam.id,
-        store_id=cam.store_id,
+        tenant_id=cam.tenant_id,
+        branch_id=cam.branch_id,
         name=cam.name,
         placement=cam.placement,
         calibration_json=cam.calibration_json,
@@ -163,20 +201,38 @@ def update_camera_calibration(
 
 
 @router.post(
-    "/cameras/{camera_id}/calibration/validate", response_model=CalibrationValidateOut
+    "/branches/{branch_id}/cameras/{camera_id}/calibration/validate", response_model=CalibrationValidateOut
 )
 def validate_camera_calibration(
+    branch_id: UUID,
     camera_id: UUID,
     video_id: UUID | None = Query(default=None),
+    ctx: AuthContext = Depends(require_permission(VISION_CAMERA_READ)),
     db: Session = Depends(get_db),
 ) -> CalibrationValidateOut:
-    cam = db.get(Camera, camera_id)
+    cam = (
+        db.query(Camera)
+        .filter(
+            Camera.id == camera_id,
+            Camera.tenant_id == ctx.scope.tenant_id,
+            Camera.branch_id == branch_id,
+        )
+        .first()
+    )
     if cam is None:
         raise HTTPException(status_code=404, detail="Camera not found")
 
     target_w = target_h = None
     if video_id is not None:
-        v = db.get(Video, video_id)
+        v = (
+            db.query(Video)
+            .filter(
+                Video.id == video_id,
+                Video.tenant_id == ctx.scope.tenant_id,
+                Video.branch_id == branch_id,
+            )
+            .first()
+        )
         if v is None:
             raise HTTPException(status_code=404, detail="Video not found")
         if v.camera_id != camera_id:

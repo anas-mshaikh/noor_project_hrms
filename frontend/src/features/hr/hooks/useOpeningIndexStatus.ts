@@ -17,14 +17,14 @@ function shouldPoll(d: OpeningIndexStatusOut | undefined): boolean {
  * Phase 2: opening-level index/embedding status.
  *
  * Backend contract:
- * - GET /api/v1/openings/{opening_id}/resumes/index-status
+ * - GET /api/v1/branches/{branch_id}/openings/{opening_id}/resumes/index-status
  */
-export function useOpeningIndexStatus(openingId: UUID | null) {
+export function useOpeningIndexStatus(branchId: UUID | null, openingId: UUID | null) {
   return useQuery<OpeningIndexStatusOut>({
-    queryKey: hrQueryKeys.openingIndexStatus(openingId),
-    enabled: Boolean(openingId),
-    queryFn: ({ signal }) => getOpeningIndexStatus(openingId as UUID, { signal }),
+    queryKey: hrQueryKeys.openingIndexStatus(branchId, openingId),
+    enabled: Boolean(branchId && openingId),
+    queryFn: ({ signal }) =>
+      getOpeningIndexStatus(branchId as UUID, openingId as UUID, { signal }),
     refetchInterval: (q) => (shouldPoll(q.state.data) ? 1500 : false),
   });
 }
-

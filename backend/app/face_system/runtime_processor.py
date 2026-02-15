@@ -3,13 +3,13 @@ runtime_processor.py
 
 Frigate-style per-track runtime face recognition:
 - Detect faces inside a tracked person's crop.
-- Align, embed, classify using store prototypes.
+- Align, embed, classify using branch prototypes.
 - Maintain attempt history and vote across frames.
 - "Lock" the identity for a track when confidence is stable enough.
 
 This module provides the minimal integration hook expected by the worker pipeline:
 
-  recognize_track_face(frame_bgr, person_bbox, track_id, store_id, camera_id) -> UUID | None
+  recognize_track_face(frame_bgr, person_bbox, track_id, tenant_id, branch_id, camera_id, ts) -> UUID | None
 
 The pipeline can also construct FaceRuntimeProcessor directly for more control
 (e.g. job-scoped state).
@@ -77,9 +77,16 @@ class TrackFaceResult:
 
 
 class FaceRuntimeProcessor:
-    def __init__(self, *, store_id: UUID, camera_id: UUID | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        tenant_id: UUID,
+        branch_id: UUID,
+        camera_id: UUID | None = None,
+    ) -> None:
         self.cfg = FaceSystemConfig.from_settings()
-        self.store_id = store_id
+        self.tenant_id = tenant_id
+        self.branch_id = branch_id
         self.camera_id = camera_id
 
         if not self.cfg.enabled:
@@ -90,7 +97,8 @@ class FaceRuntimeProcessor:
         self.aligner = OpenCVLBFFaceAligner(self.cfg.aligner)
         self.embedder = ONNXArcFaceEmbedder(self.cfg.embedder)
         self.recognizer = FaceRecognizer(
-            store_id=store_id,
+            tenant_id=tenant_id,
+            branch_id=branch_id,
             detector_cfg=self.cfg.detector,
             aligner_cfg=self.cfg.aligner,
             embedder_cfg=self.cfg.embedder,
@@ -356,20 +364,25 @@ class FaceRuntimeProcessor:
 # Minimal hook API for the existing worker pipeline
 # -----------------------------------------------------------------------------
 
-_PROCESSORS: dict[tuple[UUID, UUID | None], FaceRuntimeProcessor] = {}
+_PROCESSORS: dict[tuple[UUID, UUID, UUID | None], FaceRuntimeProcessor] = {}
 _PROC_LOCK = Lock()
 
 
-def get_runtime_processor(*, store_id: UUID, camera_id: UUID | None = None) -> FaceRuntimeProcessor:
+def get_runtime_processor(
+    *,
+    tenant_id: UUID,
+    branch_id: UUID,
+    camera_id: UUID | None = None,
+) -> FaceRuntimeProcessor:
     """
     Process-level cache for processors (heavy models + prototypes).
     """
-    key = (store_id, camera_id)
+    key = (tenant_id, branch_id, camera_id)
     with _PROC_LOCK:
         proc = _PROCESSORS.get(key)
         if proc is not None:
             return proc
-        proc = FaceRuntimeProcessor(store_id=store_id, camera_id=camera_id)
+        proc = FaceRuntimeProcessor(tenant_id=tenant_id, branch_id=branch_id, camera_id=camera_id)
         _PROCESSORS[key] = proc
         return proc
 
@@ -378,7 +391,8 @@ def recognize_track_face(
     frame_bgr: np.ndarray,
     person_bbox_xyxy: tuple[float, float, float, float],
     track_id: str,
-    store_id: UUID,
+    tenant_id: UUID,
+    branch_id: UUID,
     camera_id: UUID | None,
     ts: datetime,
     *,
@@ -390,7 +404,7 @@ def recognize_track_face(
     NOTE: For best results in the worker, create ONE FaceRuntimeProcessor per job
     and pass it in (so state doesn't leak across jobs/cameras).
     """
-    proc = processor or get_runtime_processor(store_id=store_id, camera_id=camera_id)
+    proc = processor or get_runtime_processor(tenant_id=tenant_id, branch_id=branch_id, camera_id=camera_id)
     res = proc.process(
         track_id=str(track_id),
         frame_bgr=frame_bgr,
