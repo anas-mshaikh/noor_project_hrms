@@ -1,0 +1,57 @@
+{
+  "language": {
+    "label": "Sprache",
+    "en": "English",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "fr": "Français"
+  },
+  "common": {
+    "coming_soon": "Kommt bald",
+    "loading": "Wird geladen...",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "sign_in": "Anmelden",
+    "sign_out": "Abmelden"
+  },
+  "shell": {
+    "notifications": "Benachrichtigungen",
+    "help": "Hilfe",
+    "account": "Konto",
+    "profile": "Profil",
+    "settings": "Einstellungen",
+    "signed_in_as": "Angemeldet als",
+    "open_menu": "Menue oeffnen",
+    "go_module_home": "Zur Modul-Startseite",
+    "notifications_panel": "Benachrichtigungsbereich",
+    "sign_in_to_view_notifications": "Zum Anzeigen anmelden",
+    "help_shortcuts": "Hilfe und Kurzbefehle",
+    "profile_page": "Profilseite",
+    "signed_out": "Abgemeldet",
+    "menu": "Menue",
+    "menu_switch_modules": "Module wechseln und navigieren.",
+    "modules": "Module",
+    "context": "Kontext",
+    "context_select": "Tenant, Firma, Filiale und Kamera waehlen.",
+    "select_branch": "Filiale waehlen"
+  },
+  "page": {
+    "login": {
+      "title": "Anmelden",
+      "subtitle": "Mit Admin/HR-Zugangsdaten zum Dashboard anmelden.",
+      "card_title": "Login",
+      "bootstrap_hint": "Bei frischer DB zuerst Bootstrap ausfuehren.",
+      "email": "E-Mail",
+      "password": "Passwort",
+      "email_required": "E-Mail ist erforderlich.",
+      "password_required": "Passwort ist erforderlich.",
+      "signing_in": "Anmeldung..."
+    },
+    "settings": {
+      "title": "Einstellungen",
+      "subtitle": "Organisationseinstellungen. (UI-Geruest)",
+      "language_title": "Sprache",
+      "language_body": "Anwendungssprache fuer dieses Geraet waehlen."
+    }
+  }
+}

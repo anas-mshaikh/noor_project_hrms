@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { ArrowUpRight, Briefcase, MapPin } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
 
 import type { HrOpening } from "@/features/hr/mock/types";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,8 @@ type OpeningCardProps = {
 };
 
 export function OpeningCard({ opening, className }: OpeningCardProps) {
+  const { t } = useTranslation();
+
   return (
     <GlassCard asChild className={cn("p-5", className)}>
       <Link href={`/hr/openings/${opening.id}`} className="block">
@@ -43,11 +46,16 @@ export function OpeningCard({ opening, className }: OpeningCardProps) {
 
         <div className="mt-4 flex flex-wrap gap-2">
           <TagChip>{opening.status}</TagChip>
-          <TagChip>{opening.resumes_count} resumes</TagChip>
-          <TagChip>{opening.in_pipeline_count} in pipeline</TagChip>
+          <TagChip>
+            {opening.resumes_count}{" "}
+            {t("hr.opening_card.resumes_suffix", { defaultValue: "resumes" })}
+          </TagChip>
+          <TagChip>
+            {opening.in_pipeline_count}{" "}
+            {t("hr.opening_card.in_pipeline_suffix", { defaultValue: "in pipeline" })}
+          </TagChip>
         </div>
       </Link>
     </GlassCard>
   );
 }
-

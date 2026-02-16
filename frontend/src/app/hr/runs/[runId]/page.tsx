@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { Search, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "@/lib/i18n";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,7 @@ import { useSelection } from "@/lib/selection";
 import type { ScreeningResultRowOut, UUID } from "@/lib/types";
 
 export default function HRRunDetailPage() {
+  const { t } = useTranslation();
   const { loading } = useMockLoading(600);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -71,10 +73,10 @@ export default function HRRunDetailPage() {
     mutationFn: () => cancelScreeningRun(branchId as UUID, runId as UUID),
     onSuccess: (updated) => {
       queryClient.setQueryData(hrQueryKeys.screeningRun(branchId, runId), updated);
-      toast("Run cancelled");
+      toast(t("hr.run_detail.toast_cancelled", { defaultValue: "Run cancelled" }));
     },
     onError: (err) => {
-      toast("Could not cancel run", {
+      toast(t("hr.run_detail.toast_cancel_failed", { defaultValue: "Could not cancel run" }), {
         description: err instanceof Error ? err.message : "Unknown error",
       });
     },
@@ -83,11 +85,13 @@ export default function HRRunDetailPage() {
   const retryMut = useMutation({
     mutationFn: () => retryScreeningRun(branchId as UUID, runId as UUID),
     onSuccess: (newRun) => {
-      toast("Retry started", { description: `run_id: ${newRun.id}` });
+      toast(t("hr.run_detail.toast_retry_started", { defaultValue: "Retry started" }), {
+        description: `run_id: ${newRun.id}`,
+      });
       router.push(`/hr/runs/${newRun.id}`);
     },
     onError: (err) => {
-      toast("Could not retry run", {
+      toast(t("hr.run_detail.toast_retry_failed", { defaultValue: "Could not retry run" }), {
         description: err instanceof Error ? err.message : "Unknown error",
       });
     },
@@ -102,7 +106,7 @@ export default function HRRunDetailPage() {
       return createApplicationsFromRun(branchId, runId, { top_n: 10, stage_name: "Screened" });
     },
     onSuccess: (resp) => {
-      toast("Added to pipeline", {
+      toast(t("hr.run_detail.toast_added_to_pipeline", { defaultValue: "Added to pipeline" }), {
         description: `${resp.created_count} created, ${resp.skipped_count} skipped`,
       });
       if (run?.opening_id) {
@@ -112,7 +116,7 @@ export default function HRRunDetailPage() {
       }
     },
     onError: (err) => {
-      toast("Could not add to pipeline", {
+      toast(t("hr.run_detail.toast_add_to_pipeline_failed", { defaultValue: "Could not add to pipeline" }), {
         description: err instanceof Error ? err.message : "Unknown error",
       });
     },
@@ -121,11 +125,14 @@ export default function HRRunDetailPage() {
   if (!runId) {
     return (
       <HrPageShell>
-        <HrHeader title="Screening Run" subtitle="Loading…" />
+        <HrHeader
+          title={t("hr.run_detail.title", { defaultValue: "Screening Run" })}
+          subtitle={t("common.loading", { defaultValue: "Loading..." })}
+        />
         <div className="mt-6">
           <EmptyStateCard
-            title="Loading run…"
-            description="Preparing route context."
+            title={t("hr.run_detail.loading_title", { defaultValue: "Loading run…" })}
+            description={t("hr.run_detail.preparing_route", { defaultValue: "Preparing route context." })}
             icon={Sparkles}
           />
         </div>
@@ -136,11 +143,16 @@ export default function HRRunDetailPage() {
   if (!branchId) {
     return (
       <HrPageShell>
-        <HrHeader title="Screening Run" subtitle="Select a branch…" />
+        <HrHeader
+          title={t("hr.run_detail.title", { defaultValue: "Screening Run" })}
+          subtitle={t("hr.run_detail.select_branch_subtitle", { defaultValue: "Select a branch…" })}
+        />
         <div className="mt-6">
           <EmptyStateCard
-            title="Select a branch to continue"
-            description="Runs are branch-scoped. Pick a branch to view this run."
+            title={t("hr.run_detail.select_branch_title", { defaultValue: "Select a branch to continue" })}
+            description={t("hr.run_detail.select_branch_description", {
+              defaultValue: "Runs are branch-scoped. Pick a branch to view this run.",
+            })}
             icon={Sparkles}
             actions={<div className="w-full max-w-xl"><StorePicker /></div>}
           />
@@ -152,10 +164,13 @@ export default function HRRunDetailPage() {
   if (runQ.isError) {
     return (
       <HrPageShell>
-        <HrHeader title="Screening Run" subtitle="Could not load run." />
+        <HrHeader
+          title={t("hr.run_detail.title", { defaultValue: "Screening Run" })}
+          subtitle={t("hr.run_detail.load_failed_subtitle", { defaultValue: "Could not load run." })}
+        />
         <div className="mt-6">
           <EmptyStateCard
-            title="Run not found"
+            title={t("hr.run_detail.not_found_title", { defaultValue: "Run not found" })}
             description={
               runQ.error instanceof Error ? runQ.error.message : "Unknown error"
             }
@@ -167,7 +182,7 @@ export default function HRRunDetailPage() {
                 className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
                 onClick={() => runQ.refetch()}
               >
-                Retry
+                {t("hr.common.retry", { defaultValue: "Retry" })}
               </Button>
             }
           />
@@ -191,9 +206,13 @@ export default function HRRunDetailPage() {
   return (
     <HrPageShell>
       <HrHeader
-        title="Screening Run"
+        title={t("hr.run_detail.title", { defaultValue: "Screening Run" })}
         subtitle={
-          run ? `opening_id: ${run.opening_id}` : runQ.isPending ? "Loading…" : "—"
+          run
+            ? `opening_id: ${run.opening_id}`
+            : runQ.isPending
+              ? t("common.loading", { defaultValue: "Loading..." })
+              : "—"
         }
         chips={
           run
@@ -214,11 +233,13 @@ export default function HRRunDetailPage() {
                   { topN: 20, force: false },
                   {
                     onSuccess: () =>
-                      toast("Explanations queued", {
-                        description: "Generating for top candidates…",
+                      toast(t("hr.run_detail.toast_explanations_queued", { defaultValue: "Explanations queued" }), {
+                        description: t("hr.run_detail.toast_generating_top", {
+                          defaultValue: "Generating for top candidates…",
+                        }),
                       }),
                     onError: (err) =>
-                      toast("Could not enqueue explanations", {
+                      toast(t("hr.run_detail.toast_explanations_failed", { defaultValue: "Could not enqueue explanations" }), {
                         description:
                           err instanceof Error ? err.message : "Unknown error",
                       }),
@@ -227,15 +248,19 @@ export default function HRRunDetailPage() {
               }}
             >
               <Sparkles className="h-4 w-4" />
-              Generate Explanations
+              {t("hr.run_detail.generate_explanations", { defaultValue: "Generate Explanations" })}
             </GradientButton>
             <Button
               type="button"
               variant="outline"
               className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
-              onClick={() => toast("Coming soon", { description: "Export" })}
+              onClick={() =>
+                toast(t("common.coming_soon", { defaultValue: "Coming soon" }), {
+                  description: t("hr.run_detail.export", { defaultValue: "Export" }),
+                })
+              }
             >
-              Export
+              {t("hr.run_detail.export", { defaultValue: "Export" })}
             </Button>
           </>
         }
@@ -249,14 +274,16 @@ export default function HRRunDetailPage() {
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search candidates…"
+                placeholder={t("hr.run_detail.search_placeholder", { defaultValue: "Search candidates…" })}
                 className="border-white/10 bg-white/[0.03] pl-9"
-                aria-label="Search candidates"
+                aria-label={t("hr.run_detail.search_aria", { defaultValue: "Search candidates" })}
               />
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="text-xs text-muted-foreground tabular-nums">Min score</div>
+              <div className="text-xs text-muted-foreground tabular-nums">
+                {t("hr.run_detail.min_score", { defaultValue: "Min score" })}
+              </div>
               <input
                 type="range"
                 min={0}
@@ -264,7 +291,7 @@ export default function HRRunDetailPage() {
                 value={minScore}
                 onChange={(e) => setMinScore(Number(e.target.value))}
                 className="w-44"
-                aria-label="Minimum score"
+                aria-label={t("hr.run_detail.min_score_aria", { defaultValue: "Minimum score" })}
               />
               <div className="w-10 text-right text-xs text-muted-foreground tabular-nums">{minScore}</div>
             </div>
@@ -282,7 +309,7 @@ export default function HRRunDetailPage() {
                 ))
               ) : resultsQ.isError ? (
                 <EmptyStateCard
-                  title="Could not load results"
+                  title={t("hr.run_detail.results_load_failed", { defaultValue: "Could not load results" })}
                   description={
                     resultsQ.error instanceof Error
                       ? resultsQ.error.message
@@ -296,14 +323,16 @@ export default function HRRunDetailPage() {
                       className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
                       onClick={() => resultsQ.refetch()}
                     >
-                      Retry
+                      {t("hr.common.retry", { defaultValue: "Retry" })}
                     </Button>
                   }
                 />
               ) : filtered.length === 0 ? (
                 <EmptyStateCard
-                  title="No results"
-                  description="No candidates matched the current filters."
+                  title={t("hr.run_detail.no_results_title", { defaultValue: "No results" })}
+                  description={t("hr.run_detail.no_results_description", {
+                    defaultValue: "No candidates matched the current filters.",
+                  })}
                   icon={Sparkles}
                 />
               ) : (
@@ -315,8 +344,8 @@ export default function HRRunDetailPage() {
                       setSelected(r);
                       setDrawerOpen(true);
                     }}
-                    className="w-full rounded-2xl bg-white/[0.02] p-4 text-left ring-1 ring-white/5 hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/60"
-                    aria-label={`Open result ${r.original_filename}`}
+                    className="w-full rounded-2xl bg-white/[0.02] p-4 text-start ring-1 ring-white/5 hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/60"
+                    aria-label={`${t("hr.run_detail.open_result_prefix", { defaultValue: "Open result" })} ${r.original_filename}`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -332,7 +361,10 @@ export default function HRRunDetailPage() {
                           {r.best_view_type ? <TagChip>{r.best_view_type}</TagChip> : null}
                         </div>
                         <div className="mt-3 text-xs text-muted-foreground tabular-nums">
-                          resume_status: {r.resume_status} • embedding: {r.embedding_status}
+                          {t("hr.run_detail.resume_status_prefix", { defaultValue: "resume_status:" })}{" "}
+                          {r.resume_status} •{" "}
+                          {t("hr.run_detail.embedding_prefix", { defaultValue: "embedding:" })}{" "}
+                          {r.embedding_status}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -344,11 +376,13 @@ export default function HRRunDetailPage() {
               )
             ) : run?.status === "FAILED" ? (
               <EmptyStateCard
-                title="Run failed"
+                title={t("hr.run_detail.run_failed_title", { defaultValue: "Run failed" })}
                 description={
                   run.error
                     ? String(run.error)
-                    : "The backend reported a failure."
+                    : t("hr.run_detail.run_failed_fallback", {
+                        defaultValue: "The backend reported a failure.",
+                      })
                 }
                 icon={Sparkles}
                 actions={
@@ -358,23 +392,32 @@ export default function HRRunDetailPage() {
                     onClick={() => retryMut.mutate()}
                     disabled={retryMut.isPending}
                   >
-                    Retry run
+                    {t("hr.run_detail.retry_run", { defaultValue: "Retry run" })}
                   </Button>
                 }
               />
             ) : run?.status === "CANCELLED" ? (
               <EmptyStateCard
-                title="Run cancelled"
-                description="This run was cancelled. You can start a new one from the Opening."
+                title={t("hr.run_detail.run_cancelled_title", { defaultValue: "Run cancelled" })}
+                description={t("hr.run_detail.run_cancelled_description", {
+                  defaultValue:
+                    "This run was cancelled. You can start a new one from the Opening.",
+                })}
                 icon={Sparkles}
               />
             ) : (
               <EmptyStateCard
-                title="Results not ready"
+                title={t("hr.run_detail.results_not_ready_title", { defaultValue: "Results not ready" })}
                 description={
                   run?.status === "RUNNING" && (run.progress_total ?? 0) === 0
-                    ? "This run is starting up (model load/download). First run can take a couple minutes on CPU — keep this page open."
-                    : "This run is still processing. Keep this page open — it will update automatically."
+                    ? t("hr.run_detail.starting_up", {
+                        defaultValue:
+                          "This run is starting up (model load/download). First run can take a couple minutes on CPU — keep this page open.",
+                      })
+                    : t("hr.run_detail.still_processing", {
+                        defaultValue:
+                          "This run is still processing. Keep this page open — it will update automatically.",
+                      })
                 }
                 icon={Sparkles}
               >
@@ -392,7 +435,9 @@ export default function HRRunDetailPage() {
           {run?.status === "DONE" && resultsQ.data ? (
             <div className="flex items-center justify-between gap-2 pt-2">
               <div className="text-xs text-muted-foreground tabular-nums">
-                Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, resultsQ.data.total_results)} of{" "}
+                {t("hr.run_detail.showing_prefix", { defaultValue: "Showing" })}{" "}
+                {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, resultsQ.data.total_results)}{" "}
+                {t("hr.run_detail.of", { defaultValue: "of" })}{" "}
                 {resultsQ.data.total_results}
               </div>
               <div className="flex items-center gap-2">
@@ -403,7 +448,7 @@ export default function HRRunDetailPage() {
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page <= 1}
                 >
-                  Prev
+                  {t("hr.run_detail.prev", { defaultValue: "Prev" })}
                 </Button>
                 <Button
                   type="button"
@@ -412,7 +457,7 @@ export default function HRRunDetailPage() {
                   onClick={() => setPage((p) => p + 1)}
                   disabled={page * pageSize >= resultsQ.data.total_results}
                 >
-                  Next
+                  {t("hr.run_detail.next", { defaultValue: "Next" })}
                 </Button>
               </div>
             </div>
@@ -420,7 +465,12 @@ export default function HRRunDetailPage() {
         </div>
 
         <div className="space-y-6 lg:col-span-4">
-          <PanelCard title="Run status" description="Progress and quick actions.">
+          <PanelCard
+            title={t("hr.run_detail.status_title", { defaultValue: "Run status" })}
+            description={t("hr.run_detail.status_description", {
+              defaultValue: "Progress and quick actions.",
+            })}
+          >
             <div className="rounded-2xl bg-white/[0.02] p-4 text-sm text-muted-foreground ring-1 ring-white/5">
               {run ? (
                 <div className="space-y-2">
@@ -449,7 +499,7 @@ export default function HRRunDetailPage() {
                   ) : null}
                 </div>
               ) : (
-                <div>Run not found.</div>
+                <div>{t("hr.run_detail.not_found_inline", { defaultValue: "Run not found." })}</div>
               )}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -461,41 +511,46 @@ export default function HRRunDetailPage() {
                 disabled={
                   !run ||
                   !["QUEUED", "RUNNING"].includes(run.status) ||
-                  cancelMut.isPending
-                }
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                className="rounded-2xl bg-white/[0.06] hover:bg-white/[0.09]"
-                onClick={() => addToPipelineMut.mutate()}
-                disabled={!run || run.status !== "DONE" || addToPipelineMut.isPending}
-              >
-                Add top 10 to pipeline
-              </Button>
-              {run?.status === "FAILED" ? (
-                <Button
-                  type="button"
-                  className="rounded-2xl bg-white/[0.06] hover:bg-white/[0.09]"
-                  onClick={() => retryMut.mutate()}
-                  disabled={retryMut.isPending}
-                >
-                  Retry run
-                </Button>
-              ) : null}
-            </div>
-          </PanelCard>
-
-          <PanelCard
-            title="Tip"
-            description="Try filtering by a higher score to reduce noise."
-          >
-            <div className="rounded-2xl bg-white/[0.02] p-4 text-sm text-muted-foreground ring-1 ring-white/5">
-              Open any candidate to see matched/missing requirements and evidence quotes (mock).
-            </div>
-          </PanelCard>
-        </div>
+	                cancelMut.isPending
+	              }
+	            >
+	                {t("hr.run_detail.cancel", { defaultValue: "Cancel" })}
+	              </Button>
+	              <Button
+	                type="button"
+	                className="rounded-2xl bg-white/[0.06] hover:bg-white/[0.09]"
+	                onClick={() => addToPipelineMut.mutate()}
+	                disabled={!run || run.status !== "DONE" || addToPipelineMut.isPending}
+	              >
+	                {t("hr.run_detail.add_top_10", { defaultValue: "Add top 10 to pipeline" })}
+	              </Button>
+	              {run?.status === "FAILED" ? (
+	                <Button
+	                  type="button"
+	                  className="rounded-2xl bg-white/[0.06] hover:bg-white/[0.09]"
+	                  onClick={() => retryMut.mutate()}
+	                  disabled={retryMut.isPending}
+	                >
+	                  {t("hr.run_detail.retry_run", { defaultValue: "Retry run" })}
+	                </Button>
+	              ) : null}
+	            </div>
+	          </PanelCard>
+	
+	          <PanelCard
+	            title={t("hr.run_detail.tip_title", { defaultValue: "Tip" })}
+	            description={t("hr.run_detail.tip_description", {
+	              defaultValue: "Try filtering by a higher score to reduce noise.",
+	            })}
+	          >
+	            <div className="rounded-2xl bg-white/[0.02] p-4 text-sm text-muted-foreground ring-1 ring-white/5">
+	              {t("hr.run_detail.tip_body", {
+	                defaultValue:
+	                  "Open any candidate to see matched/missing requirements and evidence quotes (mock).",
+	              })}
+	            </div>
+	          </PanelCard>
+	        </div>
       </div>
 
       <RunResultDrawer

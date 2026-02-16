@@ -13,9 +13,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { Building2 } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
 
 import { getActiveModule, isNavItemActive } from "@/config/navigation";
 import { StorePicker } from "@/components/StorePicker";
+import { useLocale } from "@/lib/useLocale";
 import { useSelection } from "@/lib/selection";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import { cn } from "@/lib/utils";
@@ -30,6 +32,8 @@ import {
 } from "@/components/ui/sheet";
 
 export function SidebarRail() {
+  const { t } = useTranslation();
+  const { isRtl } = useLocale();
   const pathname = usePathname();
   const reducedMotion = useReducedMotion();
   const activeModule = getActiveModule(pathname);
@@ -42,7 +46,12 @@ export function SidebarRail() {
   const cameraId = useSelection((s) => s.cameraId);
 
   return (
-    <aside className="hidden w-[76px] shrink-0 border-r border-white/10 bg-white/[0.02] backdrop-blur-xl md:flex">
+    <aside
+      className={cn(
+        "hidden w-[76px] shrink-0 bg-white/[0.02] backdrop-blur-xl md:flex",
+        isRtl ? "border-l border-white/10" : "border-r border-white/10"
+      )}
+    >
       <div className="flex h-full w-full flex-col">
         <div className="h-14" />
 
@@ -79,7 +88,14 @@ export function SidebarRail() {
                       >
                         <Link
                           href={item.href}
-                          aria-label={item.description ? `${item.title}: ${item.description}` : item.title}
+                          aria-label={
+                            item.description
+                              ? `${t(`nav.items.${item.id}.title`, { defaultValue: item.title })}: ${t(
+                                  `nav.items.${item.id}.description`,
+                                  { defaultValue: item.description }
+                                )}`
+                              : t(`nav.items.${item.id}.title`, { defaultValue: item.title })
+                          }
                         >
                           <Icon className="h-5 w-5" />
                         </Link>
@@ -88,18 +104,20 @@ export function SidebarRail() {
                   </TooltipTrigger>
 
                   <TooltipContent
-                    side="right"
+                    side={isRtl ? "left" : "right"}
                     sideOffset={10}
                     className={cn(
                       "w-64 rounded-xl border border-white/10 bg-white/[0.06] p-3 text-foreground shadow-lg backdrop-blur-xl"
                     )}
                   >
                     <div className="text-sm font-semibold leading-tight">
-                      {item.title}
+                      {t(`nav.items.${item.id}.title`, { defaultValue: item.title })}
                     </div>
                     {item.description ? (
                       <div className="mt-0.5 text-xs text-muted-foreground">
-                        {item.description}
+                        {t(`nav.items.${item.id}.description`, {
+                          defaultValue: item.description,
+                        })}
                       </div>
                     ) : null}
                   </TooltipContent>
@@ -121,25 +139,28 @@ export function SidebarRail() {
                   "hover:bg-white/[0.06] hover:text-foreground",
                   "focus-visible:ring-2 focus-visible:ring-violet-500/40 focus-visible:ring-offset-0"
                 )}
-                aria-label="Open context picker"
+                aria-label={t("shell.context", { defaultValue: "Context" })}
               >
                 <Building2 className="h-5 w-5" />
               </Button>
             </SheetTrigger>
 
             <SheetContent
-              side="left"
+              side={isRtl ? "right" : "left"}
               className={cn(
-                "w-full max-w-md border-r border-white/10 bg-white/[0.04] backdrop-blur-xl",
+                "w-full max-w-md bg-white/[0.04] backdrop-blur-xl",
+                isRtl ? "border-l border-white/10" : "border-r border-white/10",
                 "text-foreground"
               )}
             >
               <SheetHeader>
                 <SheetTitle className="text-base tracking-tight">
-                  Context
+                  {t("shell.context", { defaultValue: "Context" })}
                 </SheetTitle>
                 <div className="text-xs text-muted-foreground">
-                  Select tenant, company, branch, and camera.
+                  {t("shell.context_select", {
+                    defaultValue: "Select tenant, company, branch, and camera.",
+                  })}
                 </div>
               </SheetHeader>
               <div className="px-4 pb-6">
@@ -147,7 +168,9 @@ export function SidebarRail() {
                   <StorePicker />
                   {showDebugIds ? (
                     <div className="mt-2 text-[11px] text-muted-foreground">
-                      {branchId ? `branch_id: ${branchId}` : "Select a branch"}
+                      {branchId
+                        ? `branch_id: ${branchId}`
+                        : t("shell.select_branch", { defaultValue: "Select a branch" })}
                       {cameraId ? ` • camera_id: ${cameraId}` : ""}
                     </div>
                   ) : null}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { Filter, FolderOpen, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n";
 
 import { Button } from "@/components/ui/button";
 import { HrPageShell } from "@/features/hr/components/layout/HrPageShell";
@@ -41,6 +42,7 @@ function openingOutToCard(o: { id: string; title: string; status: string; create
 }
 
 export default function HROpeningsPage() {
+  const { t } = useTranslation();
   const reducedMotion = useReducedMotion();
   const branchId = useSelection((s) => s.branchId);
   const { list } = useOpenings(branchId ?? null);
@@ -69,10 +71,16 @@ export default function HROpeningsPage() {
   return (
     <HrPageShell>
       <HrHeader
-        title="Openings"
-        subtitle="Create openings, upload resumes, and run AI screening."
+        title={t("hr.openings_page.title", { defaultValue: "Openings" })}
+        subtitle={t("hr.openings_page.subtitle", {
+          defaultValue: "Create openings, upload resumes, and run AI screening.",
+        })}
         chips={[
-          branchId ? (showDebugIds ? `branch_id: ${branchId}` : null) : "Select a branch",
+          branchId
+            ? showDebugIds
+              ? `branch_id: ${branchId}`
+              : null
+            : t("hr.common.select_branch", { defaultValue: "Select a branch" }),
           process.env.NODE_ENV === "development" ? "Backend: Phase‑1" : null,
         ].filter(Boolean) as string[]}
         actions={
@@ -80,7 +88,7 @@ export default function HROpeningsPage() {
             <GradientButton asChild>
               <Link href="/hr/openings/new">
                 <Plus className="h-4 w-4" />
-                Create Opening
+                {t("hr.openings_page.create_opening", { defaultValue: "Create Opening" })}
               </Link>
             </GradientButton>
             <Button
@@ -90,7 +98,7 @@ export default function HROpeningsPage() {
               onClick={() => toast("Coming soon", { description: "Filters" })}
             >
               <Filter className="h-4 w-4" />
-              Filters
+              {t("hr.common.filters", { defaultValue: "Filters" })}
             </Button>
           </>
         }
@@ -98,14 +106,21 @@ export default function HROpeningsPage() {
 
       {!branchId ? (
         <EmptyStateCard
-          title="Select a branch to manage openings"
-          description="HR Openings are branch-scoped. Pick a branch to view and create openings."
+          title={t("hr.openings_page.empty_title", {
+            defaultValue: "Select a branch to manage openings",
+          })}
+          description={t("hr.openings_page.empty_description", {
+            defaultValue:
+              "HR Openings are branch-scoped. Pick a branch to view and create openings.",
+          })}
           icon={FolderOpen}
           actions={<div className="w-full max-w-xl"><StorePicker /></div>}
         />
       ) : list.isError ? (
         <EmptyStateCard
-          title="Could not load openings"
+          title={t("hr.openings_page.error_title", {
+            defaultValue: "Could not load openings",
+          })}
           description={list.error instanceof Error ? list.error.message : "Unknown error"}
           icon={FolderOpen}
           actions={
@@ -115,7 +130,7 @@ export default function HROpeningsPage() {
               className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
               onClick={() => list.refetch()}
             >
-              Retry
+              {t("hr.common.retry", { defaultValue: "Retry" })}
             </Button>
           }
         />
@@ -133,7 +148,7 @@ export default function HROpeningsPage() {
                     ? "rounded-full bg-white/[0.06] px-3 py-1 text-xs text-foreground ring-1 ring-white/15"
                     : "rounded-full bg-white/[0.03] px-3 py-1 text-xs text-muted-foreground ring-1 ring-white/10 hover:bg-white/[0.05]"
                 }
-                aria-label={`Filter ${k.toLowerCase()}`}
+                aria-label={`${t("hr.common.filters", { defaultValue: "Filter" })} ${k.toLowerCase()}`}
               >
                 {k}
               </button>
@@ -142,12 +157,19 @@ export default function HROpeningsPage() {
 
           {isEmpty ? (
             <EmptyStateCard
-              title="No openings found"
-              description="Create an opening to start collecting resumes and screening candidates."
+              title={t("hr.openings_page.no_openings_title", {
+                defaultValue: "No openings found",
+              })}
+              description={t("hr.openings_page.no_openings_description", {
+                defaultValue:
+                  "Create an opening to start collecting resumes and screening candidates.",
+              })}
               icon={FolderOpen}
               actions={
                 <GradientButton asChild>
-                  <Link href="/hr/openings/new">Create Opening</Link>
+                  <Link href="/hr/openings/new">
+                    {t("hr.openings_page.create_opening", { defaultValue: "Create Opening" })}
+                  </Link>
                 </GradientButton>
               }
             />
@@ -180,7 +202,14 @@ export default function HROpeningsPage() {
         </div>
 
         <div className="space-y-6 lg:col-span-4">
-          <PanelCard title="Top openings by volume" description="Highest resume volume (mock).">
+          <PanelCard
+            title={t("hr.openings_page.top_by_volume_title", {
+              defaultValue: "Top openings by volume",
+            })}
+            description={t("hr.openings_page.top_by_volume_description", {
+              defaultValue: "Highest resume volume (mock).",
+            })}
+          >
             <div className="space-y-3">
               {loading ? (
                 Array.from({ length: 4 }).map((_, i) => (
@@ -201,8 +230,14 @@ export default function HROpeningsPage() {
                   >
                     <div className="text-sm font-medium">{o.title}</div>
                     <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <TagChip className="bg-white/[0.03]">{o.resumes_count} resumes</TagChip>
-                      <TagChip className="bg-white/[0.03]">{o.in_pipeline_count} pipeline</TagChip>
+                      <TagChip className="bg-white/[0.03]">
+                        {o.resumes_count}{" "}
+                        {t("hr.opening_card.resumes_suffix", { defaultValue: "resumes" })}
+                      </TagChip>
+                      <TagChip className="bg-white/[0.03]">
+                        {o.in_pipeline_count}{" "}
+                        {t("hr.common.pipeline", { defaultValue: "Pipeline" })}
+                      </TagChip>
                     </div>
                   </Link>
                 ))
@@ -210,7 +245,11 @@ export default function HROpeningsPage() {
             </div>
           </PanelCard>
 
-          <PanelCard title="Recent runs" actionLabel="See runs" onAction={() => toast("Coming soon")}>
+          <PanelCard
+            title={t("hr.openings_page.recent_runs_title", { defaultValue: "Recent runs" })}
+            actionLabel={t("hr.openings_page.recent_runs_action", { defaultValue: "See runs" })}
+            onAction={() => toast("Coming soon")}
+          >
             <div className="space-y-3">
               {loading ? (
                 Array.from({ length: 3 }).map((_, i) => (

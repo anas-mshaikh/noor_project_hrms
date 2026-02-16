@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ChevronDown, Sparkles } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -44,6 +45,7 @@ function safeLocalStorageSet(key: string, value: string) {
 }
 
 export default function HRPipelinePage() {
+  const { t } = useTranslation();
   const branchId = useSelection((s) => s.branchId) as UUID | undefined;
   const openingsQ = useOpenings(branchId ?? null);
 
@@ -111,11 +113,16 @@ export default function HRPipelinePage() {
     const hasUnassigned = (appsQ.list.data ?? []).some((a) => !a.stage_id);
     return hasUnassigned
       ? [
-          { id: "__unassigned__", name: "Unassigned", sort_order: -1, is_terminal: false },
+          {
+            id: "__unassigned__",
+            name: t("hr.common.unassigned", { defaultValue: "Unassigned" }),
+            sort_order: -1,
+            is_terminal: false,
+          },
           ...stages,
         ]
       : stages;
-  }, [stagesQ.data, appsQ.list.data]);
+  }, [stagesQ.data, appsQ.list.data, t]);
 
   const pipelineCardsUi: PipelineCardUi[] = React.useMemo(() => {
     return (appsQ.list.data ?? []).map((a) => ({
@@ -124,20 +131,25 @@ export default function HRPipelinePage() {
       title: a.resume.original_filename,
       tags: [
         a.resume.status,
-        a.status === "ACTIVE" ? "Active" : a.status,
-        a.source_run_id ? "From run" : "Manual",
+        a.status === "ACTIVE"
+          ? t("hr.pipeline_page.tag_active", { defaultValue: "Active" })
+          : a.status,
+        a.source_run_id
+          ? t("hr.pipeline_page.tag_from_run", { defaultValue: "From run" })
+          : t("hr.pipeline_page.tag_manual", { defaultValue: "Manual" }),
       ].filter(Boolean),
       application: a,
     }));
-  }, [appsQ.list.data]);
+  }, [appsQ.list.data, t]);
 
   function onMove(cardId: string, stageId: string) {
     appsQ.moveStage.mutate(
       { applicationId: cardId as UUID, stageId: stageId as UUID },
       {
-        onSuccess: () => toast("Moved"),
+        onSuccess: () =>
+          toast(t("hr.pipeline_page.moved_toast", { defaultValue: "Moved" })),
         onError: (err) =>
-          toast("Could not move", {
+          toast(t("hr.pipeline_page.move_failed", { defaultValue: "Could not move" }), {
             description: err instanceof Error ? err.message : "Unknown error",
           }),
       }
@@ -152,8 +164,10 @@ export default function HRPipelinePage() {
   return (
     <HrPageShell>
       <HrHeader
-        title="Pipeline"
-        subtitle="ATS-style board for candidate progression."
+        title={t("hr.pipeline_page.title", { defaultValue: "Pipeline" })}
+        subtitle={t("hr.pipeline_page.subtitle", {
+          defaultValue: "ATS-style board for candidate progression.",
+        })}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <DropdownMenu>
@@ -163,11 +177,12 @@ export default function HRPipelinePage() {
                   variant="outline"
                   className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
                   disabled={openingsQ.list.isPending || (openingsQ.list.data?.length ?? 0) === 0}
-                  aria-label="Select opening"
+                  aria-label={t("hr.pipeline_page.select_opening", { defaultValue: "Select opening" })}
                 >
                   {openingId
-                    ? openingsQ.list.data?.find((o) => o.id === openingId)?.title ?? "Select opening"
-                    : "Select opening"}
+                    ? openingsQ.list.data?.find((o) => o.id === openingId)?.title ??
+                      t("hr.pipeline_page.select_opening", { defaultValue: "Select opening" })
+                    : t("hr.pipeline_page.select_opening", { defaultValue: "Select opening" })}
                   <ChevronDown className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -190,7 +205,7 @@ export default function HRPipelinePage() {
             <GradientButton asChild>
               <Link href="/hr/openings/new">
                 <Sparkles className="h-4 w-4" />
-                Create opening
+                {t("hr.openings_page.create_opening", { defaultValue: "Create opening" })}
               </Link>
             </GradientButton>
           </div>
@@ -200,25 +215,36 @@ export default function HRPipelinePage() {
       {!branchId ? (
         <div className="mt-6">
           <EmptyStateCard
-            title="Select a branch"
-            description="Choose a branch to manage openings and pipeline."
+            title={t("hr.common.select_branch", { defaultValue: "Select a branch" })}
+            description={t("hr.pipeline_page.branch_description", {
+              defaultValue: "Choose a branch to manage openings and pipeline.",
+            })}
             icon={Sparkles}
             actions={<div className="w-full max-w-xl"><StorePicker /></div>}
           />
         </div>
       ) : openingsQ.list.isPending ? (
         <div className="mt-6">
-          <EmptyStateCard title="Loading openings…" description="Fetching your openings." icon={Sparkles} />
+          <EmptyStateCard
+            title={t("hr.pipeline_page.loading_openings", { defaultValue: "Loading openings…" })}
+            description={t("hr.pipeline_page.fetching_openings", { defaultValue: "Fetching your openings." })}
+            icon={Sparkles}
+          />
         </div>
       ) : (openingsQ.list.data?.length ?? 0) === 0 ? (
         <div className="mt-6">
           <EmptyStateCard
-            title="No openings yet"
-            description="Create an opening first, then upload resumes and run screening."
+            title={t("hr.overview_page.no_openings_title", { defaultValue: "No openings yet" })}
+            description={t("hr.pipeline_page.no_openings_description", {
+              defaultValue:
+                "Create an opening first, then upload resumes and run screening.",
+            })}
             icon={Sparkles}
             actions={
               <GradientButton asChild>
-                <Link href="/hr/openings/new">Create opening</Link>
+                <Link href="/hr/openings/new">
+                  {t("hr.openings_page.create_opening", { defaultValue: "Create opening" })}
+                </Link>
               </GradientButton>
             }
           />
@@ -226,15 +252,17 @@ export default function HRPipelinePage() {
       ) : !openingId ? (
         <div className="mt-6">
           <EmptyStateCard
-            title="Select an opening"
-            description="Pick an opening to view its pipeline."
+            title={t("hr.pipeline_page.select_opening_title", { defaultValue: "Select an opening" })}
+            description={t("hr.pipeline_page.select_opening_description", {
+              defaultValue: "Pick an opening to view its pipeline.",
+            })}
             icon={Sparkles}
           />
         </div>
       ) : stagesQ.isError ? (
         <div className="mt-6">
           <EmptyStateCard
-            title="Could not load pipeline"
+            title={t("hr.pipeline_page.load_failed_title", { defaultValue: "Could not load pipeline" })}
             description={stagesQ.error instanceof Error ? stagesQ.error.message : "Unknown error"}
             icon={Sparkles}
             actions={
@@ -247,7 +275,7 @@ export default function HRPipelinePage() {
                   appsQ.list.refetch();
                 }}
               >
-                Retry
+                {t("hr.common.retry", { defaultValue: "Retry" })}
               </Button>
             }
           />
@@ -255,8 +283,11 @@ export default function HRPipelinePage() {
       ) : (stagesQ.data?.length ?? 0) === 0 && !stagesQ.isPending ? (
         <div className="mt-6">
           <EmptyStateCard
-            title="No pipeline stages found"
-            description="This opening has no stages yet. Try refreshing or recreate the opening defaults."
+            title={t("hr.pipeline_page.no_stages_title", { defaultValue: "No pipeline stages found" })}
+            description={t("hr.pipeline_page.no_stages_description", {
+              defaultValue:
+                "This opening has no stages yet. Try refreshing or recreate the opening defaults.",
+            })}
             icon={Sparkles}
             actions={
               <Button
@@ -265,7 +296,7 @@ export default function HRPipelinePage() {
                 className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
                 onClick={() => stagesQ.refetch()}
               >
-                Retry
+                {t("hr.common.retry", { defaultValue: "Retry" })}
               </Button>
             }
           />
@@ -283,18 +314,23 @@ export default function HRPipelinePage() {
             </div>
 
             <div className="space-y-6 lg:col-span-3">
-              <PanelCard title="Stage conversion" description="Mock funnel stats.">
+              <PanelCard
+                title={t("hr.pipeline_page.stage_conversion_title", { defaultValue: "Stage conversion" })}
+                description={t("hr.pipeline_page.stage_conversion_description", {
+                  defaultValue: "Mock funnel stats.",
+                })}
+              >
                 <div className="space-y-3 text-sm text-muted-foreground">
                   <div className="rounded-2xl bg-white/[0.02] p-3 ring-1 ring-white/5">
-                    Screened → Interview:{" "}
+                    {t("hr.pipeline_page.conv_screened_interview", { defaultValue: "Screened → Interview:" })}{" "}
                     <span className="text-foreground/90 tabular-nums">38%</span>
                   </div>
                   <div className="rounded-2xl bg-white/[0.02] p-3 ring-1 ring-white/5">
-                    Interview → Offer:{" "}
+                    {t("hr.pipeline_page.conv_interview_offer", { defaultValue: "Interview → Offer:" })}{" "}
                     <span className="text-foreground/90 tabular-nums">22%</span>
                   </div>
                   <div className="rounded-2xl bg-white/[0.02] p-3 ring-1 ring-white/5">
-                    Offer → Hired:{" "}
+                    {t("hr.pipeline_page.conv_offer_hired", { defaultValue: "Offer → Hired:" })}{" "}
                     <span className="text-foreground/90 tabular-nums">12%</span>
                   </div>
                 </div>
@@ -311,9 +347,10 @@ export default function HRPipelinePage() {
               appsQ.moveStage.mutate(
                 { applicationId, stageId },
                 {
-                  onSuccess: () => toast("Moved"),
+                  onSuccess: () =>
+                    toast(t("hr.pipeline_page.moved_toast", { defaultValue: "Moved" })),
                   onError: (err) =>
-                    toast("Could not move", {
+                    toast(t("hr.pipeline_page.move_failed", { defaultValue: "Could not move" }), {
                       description:
                         err instanceof Error ? err.message : "Unknown error",
                     }),
@@ -322,9 +359,10 @@ export default function HRPipelinePage() {
             }}
             onReject={(applicationId) => {
               appsQ.reject.mutate(applicationId, {
-                onSuccess: () => toast("Rejected"),
+                onSuccess: () =>
+                  toast(t("hr.pipeline_page.rejected_toast", { defaultValue: "Rejected" })),
                 onError: (err) =>
-                  toast("Could not reject", {
+                  toast(t("hr.pipeline_page.reject_failed", { defaultValue: "Could not reject" }), {
                     description:
                       err instanceof Error ? err.message : "Unknown error",
                   }),
@@ -332,9 +370,10 @@ export default function HRPipelinePage() {
             }}
             onHire={(applicationId) => {
               appsQ.hire.mutate(applicationId, {
-                onSuccess: () => toast("Marked as hired"),
+                onSuccess: () =>
+                  toast(t("hr.pipeline_page.hired_toast", { defaultValue: "Marked as hired" })),
                 onError: (err) =>
-                  toast("Could not hire", {
+                  toast(t("hr.pipeline_page.hire_failed", { defaultValue: "Could not hire" }), {
                     description:
                       err instanceof Error ? err.message : "Unknown error",
                   }),

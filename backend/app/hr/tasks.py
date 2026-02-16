@@ -635,52 +635,70 @@ def run_screening(run_id: str) -> None:
         # -----------------------------
         # Rerank (cross-encoder)
         # -----------------------------
-        if not settings.hr_rerank_enabled:
-            _set_run(db, run, status="FAILED", error="HR reranker disabled", finished_at=_utcnow())
-            return
-
-        from app.hr.reranker import rerank_pairs
-
         rerank_scores: list[float] = []
         bs = max(1, int(settings.hr_reranker_batch_size))
+        rerank_warning: str | None = None
 
-        for i in range(0, len(doc_texts), bs):
-            # Cancel check (cheap, once per batch).
-            db.refresh(run)
-            if run.status == "CANCELLED":
-                _set_run(db, run, finished_at=_utcnow())
-                return
+        if settings.hr_rerank_enabled:
+            from app.hr.reranker import HRRerankerError, rerank_pairs
 
-            chunk_docs = doc_texts[i : i + bs]
-            chunk_scores = rerank_pairs(query_text, chunk_docs, batch_size=bs)
-            rerank_scores.extend(chunk_scores)
+            for i in range(0, len(doc_texts), bs):
+                # Cancel check (cheap, once per batch).
+                db.refresh(run)
+                if run.status == "CANCELLED":
+                    _set_run(db, run, finished_at=_utcnow())
+                    return
 
-            done = i + len(chunk_docs)
-            # Persist progress periodically so UI polling sees movement.
-            if (
-                done == len(doc_texts)
-                or done % int(settings.hr_screening_progress_update_every) == 0
-            ):
-                _set_run(db, run, progress_done=done)
+                chunk_docs = doc_texts[i : i + bs]
+                try:
+                    chunk_scores = rerank_pairs(query_text, chunk_docs, batch_size=bs)
+                except HRRerankerError as e:
+                    # Demo-safe behavior: keep pipeline usable even if reranker deps drift.
+                    rerank_warning = f"{type(e).__name__}: {e}"
+                    logger.warning(
+                        "hr reranker unavailable; using retrieval-only fallback",
+                        extra={"run_id": str(run.id), "error": rerank_warning},
+                    )
+                    rerank_scores = []
+                    break
 
-        # Attach rerank scores to candidates.
-        # Normalize weights to keep `final_score` in a predictable 0..1 scale.
-        w_ret = max(0.0, float(settings.hr_screening_score_w_retrieval))
-        w_rer = max(0.0, float(settings.hr_screening_score_w_rerank))
-        w_sum = w_ret + w_rer
-        if w_sum <= 0.0:
-            # Fallback: if misconfigured, rely only on the reranker signal.
-            w_ret, w_rer, w_sum = 0.0, 1.0, 1.0
-        w_ret /= w_sum
-        w_rer /= w_sum
+                rerank_scores.extend(chunk_scores)
 
-        for cand, score in zip(pool, rerank_scores):
-            raw = float(score)
-            cand.rerank_score = raw
-            rerank01 = _sigmoid(raw)
-            cand.final_score_norm = _clamp01(
-                (w_ret * float(cand.retrieval_score)) + (w_rer * rerank01)
-            )
+                done = i + len(chunk_docs)
+                # Persist progress periodically so UI polling sees movement.
+                if (
+                    done == len(doc_texts)
+                    or done % int(settings.hr_screening_progress_update_every) == 0
+                ):
+                    _set_run(db, run, progress_done=done)
+        else:
+            rerank_warning = "HR reranker disabled (HR_RERANK_ENABLED=false)"
+
+        if rerank_warning is not None:
+            # Fallback ranker: retrieval-only (still produces deterministic shortlist).
+            for cand in pool:
+                cand.rerank_score = None
+                cand.final_score_norm = _clamp01(float(cand.retrieval_score))
+            _set_run(db, run, progress_done=len(doc_texts), error=rerank_warning)
+        else:
+            # Attach rerank scores to candidates.
+            # Normalize weights to keep `final_score` in a predictable 0..1 scale.
+            w_ret = max(0.0, float(settings.hr_screening_score_w_retrieval))
+            w_rer = max(0.0, float(settings.hr_screening_score_w_rerank))
+            w_sum = w_ret + w_rer
+            if w_sum <= 0.0:
+                # Fallback: if misconfigured, rely only on the reranker signal.
+                w_ret, w_rer, w_sum = 0.0, 1.0, 1.0
+            w_ret /= w_sum
+            w_rer /= w_sum
+
+            for cand, score in zip(pool, rerank_scores):
+                raw = float(score)
+                cand.rerank_score = raw
+                rerank01 = _sigmoid(raw)
+                cand.final_score_norm = _clamp01(
+                    (w_ret * float(cand.retrieval_score)) + (w_rer * rerank01)
+                )
 
         # Final ranking (MVP Phase 3: sort by rerank score, then retrieval score).
         pool.sort(

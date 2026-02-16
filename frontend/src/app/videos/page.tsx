@@ -9,14 +9,21 @@
  */
 
 import { UploadWizard } from "@/components/UploadWizard";
+import { useTranslation } from "@/lib/i18n";
 
 export default function VideosPage() {
+  const { t } = useTranslation();
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Videos</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {t("nav.items.videos.title", { defaultValue: "Videos" })}
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Upload a clip for a specific business date and run the worker job.
+          {t("page.videos.subtitle", {
+            defaultValue: "Upload a clip for a specific business date and run the worker job.",
+          })}
         </p>
       </div>
       <UploadWizard />

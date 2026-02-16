@@ -16,6 +16,13 @@
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+// TODO: MAKE this enterprise production ready for security purpose.
+const AUTH_STORAGE_KEY = "attendance-admin-auth";
+
+type TokenResponse = {
+  access_token: string;
+  refresh_token: string;
+};
 
 export function apiUrl(path: string): string {
   // Backend sometimes returns relative endpoints like "/api/v1/..."
@@ -40,10 +47,47 @@ function loadPersistedState<T>(key: string): T | null {
 }
 
 function authToken(): string | null {
-  const auth = loadPersistedState<{ accessToken?: string }>(
-    "attendance-admin-auth"
-  );
+  const auth = loadPersistedState<{ accessToken?: string }>(AUTH_STORAGE_KEY);
   return auth?.accessToken ?? null;
+}
+
+function refreshToken(): string | null {
+  const auth = loadPersistedState<{ refreshToken?: string }>(AUTH_STORAGE_KEY);
+  return auth?.refreshToken ?? null;
+}
+
+function saveAuthTokens(next: TokenResponse): void {
+  if (typeof window === "undefined") return;
+  try {
+    const current =
+      loadPersistedState<Record<string, unknown>>(AUTH_STORAGE_KEY) ?? {};
+    const updated = {
+      ...current,
+      accessToken: next.access_token,
+      refreshToken: next.refresh_token,
+    };
+    window.localStorage.setItem(
+      AUTH_STORAGE_KEY,
+      JSON.stringify({ state: updated, version: 0 })
+    );
+  } catch {
+    // Ignore storage errors (private mode / disabled storage).
+  }
+}
+
+function clearAuthStorage(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
+function redirectToLoginIfNeeded(): void {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === "/login") return;
+  window.location.assign("/login");
 }
 
 function scopeHeaders(): Record<string, string> {
@@ -62,6 +106,42 @@ function scopeHeaders(): Record<string, string> {
 function authHeaders(): Record<string, string> {
   const token = authToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function tryRefreshAccessToken(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    const rt = refreshToken();
+    if (!rt) return false;
+
+    try {
+      const res = await fetch(apiUrl("/api/v1/auth/refresh"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...scopeHeaders(),
+        },
+        body: JSON.stringify({ refresh_token: rt }),
+        cache: "no-store",
+      });
+
+      if (!res.ok) return false;
+      const raw = (await res.json()) as unknown;
+      const unwrapped = unwrapOkEnvelope<TokenResponse>(raw);
+      if (!unwrapped?.access_token || !unwrapped?.refresh_token) return false;
+      saveAuthTokens(unwrapped);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
 }
 
 async function readErrorBody(res: Response): Promise<string> {
@@ -105,16 +185,28 @@ function unwrapOkEnvelope<T>(raw: unknown): T {
 }
 
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(apiUrl(path), {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...scopeHeaders(),
-      ...authHeaders(),
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  const attempt = async (useAuth: boolean): Promise<Response> =>
+    fetch(apiUrl(path), {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...scopeHeaders(),
+        ...(useAuth ? authHeaders() : {}),
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+
+  let res = await attempt(true);
+  if (res.status === 401) {
+    const refreshed = await tryRefreshAccessToken();
+    if (refreshed) {
+      res = await attempt(true);
+    } else {
+      clearAuthStorage();
+      redirectToLoginIfNeeded();
+    }
+  }
 
   if (!res.ok) {
     throw new Error(
@@ -132,17 +224,29 @@ export async function apiForm<T>(
   init?: RequestInit
 ): Promise<T> {
   // IMPORTANT: don't set Content-Type for FormData; browser sets boundary.
-  const res = await fetch(apiUrl(path), {
-    method: init?.method ?? "POST",
-    ...init,
-    body: form,
-    headers: {
-      ...scopeHeaders(),
-      ...authHeaders(),
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  const attempt = async (): Promise<Response> =>
+    fetch(apiUrl(path), {
+      method: init?.method ?? "POST",
+      ...init,
+      body: form,
+      headers: {
+        ...scopeHeaders(),
+        ...authHeaders(),
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+
+  let res = await attempt();
+  if (res.status === 401) {
+    const refreshed = await tryRefreshAccessToken();
+    if (refreshed) {
+      res = await attempt();
+    } else {
+      clearAuthStorage();
+      redirectToLoginIfNeeded();
+    }
+  }
 
   if (!res.ok) {
     throw new Error(

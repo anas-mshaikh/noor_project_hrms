@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslation } from "@/lib/i18n";
 
 import { GlassCard } from "@/features/hr/components/cards/GlassCard";
 import { KanbanCard } from "@/features/hr/components/pipeline/KanbanCard";
@@ -24,6 +25,7 @@ export function KanbanColumn({
   onMove,
   onOpenCandidate,
 }: KanbanColumnProps) {
+  const { t } = useTranslation();
   return (
     <GlassCard className="p-4">
       <div className="flex items-center justify-between gap-2">
@@ -36,7 +38,7 @@ export function KanbanColumn({
       <div className="mt-4 space-y-3">
         {cards.length === 0 ? (
           <div className="rounded-2xl bg-white/[0.02] p-3 text-xs text-muted-foreground ring-1 ring-white/5">
-            No candidates yet.
+            {t("hr.pipeline.no_candidates", { defaultValue: "No candidates yet." })}
           </div>
         ) : (
           cards.map((c) => (

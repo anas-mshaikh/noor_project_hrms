@@ -16,6 +16,7 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "@/lib/i18n";
 
 import { apiJson } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -25,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 export function StorePicker() {
+  const { t } = useTranslation();
   const authScope = useAuth((s) => s.scope);
 
   const tenantId = useSelection((s) => s.tenantId);
@@ -79,14 +81,18 @@ export function StorePicker() {
   return (
     <div className="grid gap-2 text-sm sm:grid-cols-2 md:grid-cols-4">
       <div className="flex flex-col gap-1">
-        <Label className="text-xs text-muted-foreground">Tenant</Label>
+        <Label className="text-xs text-muted-foreground">
+          {t("picker.tenant", { defaultValue: "Tenant" })}
+        </Label>
         <select
           className={selectClassName}
           value={tenantId ?? ""}
           disabled={allowedTenantIds.length <= 1}
           onChange={(e) => setTenantId(e.target.value || undefined)}
         >
-          <option value="">Select tenant…</option>
+          <option value="">
+            {t("picker.select_tenant", { defaultValue: "Select tenant..." })}
+          </option>
           {(allowedTenantIds.length ? allowedTenantIds : tenantId ? [tenantId] : []).map((id) => (
             <option key={id} value={id}>
               {id}
@@ -94,12 +100,18 @@ export function StorePicker() {
           ))}
         </select>
         {allowedTenantIds.length > 1 && !tenantId ? (
-          <div className="text-xs text-muted-foreground">Required for multi-tenant users.</div>
+          <div className="text-xs text-muted-foreground">
+            {t("picker.tenant_required", {
+              defaultValue: "Required for multi-tenant users.",
+            })}
+          </div>
         ) : null}
       </div>
 
       <div className="flex flex-col gap-1">
-        <Label className="text-xs text-muted-foreground">Company</Label>
+        <Label className="text-xs text-muted-foreground">
+          {t("picker.company", { defaultValue: "Company" })}
+        </Label>
         <select
           className={selectClassName}
           value={companyId ?? ""}
@@ -107,9 +119,13 @@ export function StorePicker() {
           onChange={(e) => setCompanyId(e.target.value || undefined)}
         >
           <option value="">
-            {tenantId ? "Select company…" : "Select tenant first"}
+            {tenantId
+              ? t("picker.select_company", { defaultValue: "Select company..." })
+              : t("picker.select_tenant_first", { defaultValue: "Select tenant first" })}
           </option>
-          {companiesQ.isPending && <option>Loading…</option>}
+          {companiesQ.isPending && (
+            <option>{t("common.loading", { defaultValue: "Loading..." })}</option>
+          )}
           {(companiesQ.data ?? []).map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -117,12 +133,16 @@ export function StorePicker() {
           ))}
         </select>
         {companiesQ.isError ? (
-          <div className="text-xs text-destructive">Failed to load companies</div>
+          <div className="text-xs text-destructive">
+            {t("picker.failed_companies", { defaultValue: "Failed to load companies" })}
+          </div>
         ) : null}
       </div>
 
       <div className="flex flex-col gap-1">
-        <Label className="text-xs text-muted-foreground">Branch</Label>
+        <Label className="text-xs text-muted-foreground">
+          {t("picker.branch", { defaultValue: "Branch" })}
+        </Label>
         <select
           className={selectClassName}
           value={branchId ?? ""}
@@ -130,9 +150,13 @@ export function StorePicker() {
           onChange={(e) => setBranchId(e.target.value || undefined)}
         >
           <option value="">
-            {companyId ? "Select branch…" : "Select company first"}
+            {companyId
+              ? t("picker.select_branch", { defaultValue: "Select branch..." })
+              : t("picker.select_company_first", { defaultValue: "Select company first" })}
           </option>
-          {branchesQ.isPending && <option>Loading…</option>}
+          {branchesQ.isPending && (
+            <option>{t("common.loading", { defaultValue: "Loading..." })}</option>
+          )}
           {(branchesQ.data ?? []).map((b) => (
             <option key={b.id} value={b.id}>
               {b.name} ({b.code})
@@ -140,12 +164,16 @@ export function StorePicker() {
           ))}
         </select>
         {branchesQ.isError ? (
-          <div className="text-xs text-destructive">Failed to load branches</div>
+          <div className="text-xs text-destructive">
+            {t("picker.failed_branches", { defaultValue: "Failed to load branches" })}
+          </div>
         ) : null}
       </div>
 
       <div className="flex flex-col gap-1">
-        <Label className="text-xs text-muted-foreground">Camera</Label>
+        <Label className="text-xs text-muted-foreground">
+          {t("picker.camera", { defaultValue: "Camera" })}
+        </Label>
         <select
           className={selectClassName}
           value={cameraId ?? ""}
@@ -153,9 +181,13 @@ export function StorePicker() {
           onChange={(e) => setCameraId(e.target.value || undefined)}
         >
           <option value="">
-            {branchId ? "Select camera…" : "Select branch first"}
+            {branchId
+              ? t("picker.select_camera", { defaultValue: "Select camera..." })
+              : t("picker.select_branch_first", { defaultValue: "Select branch first" })}
           </option>
-          {camerasQ.isPending && <option>Loading…</option>}
+          {camerasQ.isPending && (
+            <option>{t("common.loading", { defaultValue: "Loading..." })}</option>
+          )}
           {(camerasQ.data ?? []).map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -163,7 +195,9 @@ export function StorePicker() {
           ))}
         </select>
         {camerasQ.isError ? (
-          <div className="text-xs text-destructive">Failed to load cameras</div>
+          <div className="text-xs text-destructive">
+            {t("picker.failed_cameras", { defaultValue: "Failed to load cameras" })}
+          </div>
         ) : null}
       </div>
     </div>

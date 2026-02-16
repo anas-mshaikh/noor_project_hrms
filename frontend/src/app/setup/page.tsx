@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { useTranslation } from "@/lib/i18n";
 
 import { apiJson } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -45,6 +46,7 @@ type BootstrapRequest = {
 };
 
 export default function SetupPage() {
+  const { t } = useTranslation();
   const router = useRouter();
 
   const accessToken = useAuth((s) => s.accessToken);
@@ -128,8 +130,12 @@ export default function SetupPage() {
 
   const createCameraM = useMutation({
     mutationFn: async () => {
-      if (!branchId) throw new Error("Select a branch first.");
-      if (!cameraName.trim()) throw new Error("Camera name is required.");
+      if (!branchId) {
+        throw new Error(t("shell.select_branch", { defaultValue: "Select a branch" }));
+      }
+      if (!cameraName.trim()) {
+        throw new Error("Camera name is required.");
+      }
 
       return apiJson<CameraListOut>(`/api/v1/branches/${branchId}/cameras`, {
         method: "POST",
@@ -150,16 +156,26 @@ export default function SetupPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Setup</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {t("nav.items.setup.title", { defaultValue: "Setup" })}
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Bootstrap tenancy (optional) and manage branch cameras.
+          {t("page.setup.subtitle", {
+            defaultValue: "Bootstrap tenancy (optional) and manage branch cameras.",
+          })}
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Current Context</CardTitle>
-          <CardDescription>Tenant/company/branch/camera selection.</CardDescription>
+          <CardTitle>
+            {t("page.setup.current_context", { defaultValue: "Current Context" })}
+          </CardTitle>
+          <CardDescription>
+            {t("page.setup.current_context_desc", {
+              defaultValue: "Tenant/company/branch/camera selection.",
+            })}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
@@ -172,11 +188,15 @@ export default function SetupPage() {
           {cameraId ? (
             <div className="flex flex-wrap items-center gap-2">
               <div className="text-xs text-muted-foreground">
-                Calibration is required before running jobs.
+                {t("page.setup.calibration_required", {
+                  defaultValue: "Calibration is required before running jobs.",
+                })}
               </div>
               <Button asChild variant="outline">
                 <Link href={`/cameras/${cameraId}/calibration`}>
-                  Calibrate this camera
+                  {t("page.setup.calibrate_camera", {
+                    defaultValue: "Calibrate this camera",
+                  })}
                 </Link>
               </Button>
             </div>
@@ -187,44 +207,66 @@ export default function SetupPage() {
       {!accessToken ? (
         <Card>
           <CardHeader>
-            <CardTitle>Bootstrap (Optional)</CardTitle>
+            <CardTitle>
+              {t("page.setup.bootstrap_title", {
+                defaultValue: "Bootstrap (Optional)",
+              })}
+            </CardTitle>
             <CardDescription>
-              Create a new tenant/company/branch and an admin user. This is meant
-              for local/dev environments.
+              {t("page.setup.bootstrap_desc", {
+                defaultValue:
+                  "Create a new tenant/company/branch and an admin user. This is meant for local/dev environments.",
+              })}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Tenant name</Label>
+                <Label className="text-xs text-muted-foreground">
+                  {t("page.setup.tenant_name", { defaultValue: "Tenant name" })}
+                </Label>
                 <Input value={tenantName} onChange={(e) => setTenantName(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Company name</Label>
+                <Label className="text-xs text-muted-foreground">
+                  {t("page.setup.company_name", { defaultValue: "Company name" })}
+                </Label>
                 <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Branch name</Label>
+                <Label className="text-xs text-muted-foreground">
+                  {t("page.setup.branch_name", { defaultValue: "Branch name" })}
+                </Label>
                 <Input value={branchName} onChange={(e) => setBranchName(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Branch code</Label>
+                <Label className="text-xs text-muted-foreground">
+                  {t("page.setup.branch_code", { defaultValue: "Branch code" })}
+                </Label>
                 <Input value={branchCode} onChange={(e) => setBranchCode(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Timezone</Label>
+                <Label className="text-xs text-muted-foreground">
+                  {t("page.setup.timezone", { defaultValue: "Timezone" })}
+                </Label>
                 <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Currency</Label>
+                <Label className="text-xs text-muted-foreground">
+                  {t("page.setup.currency", { defaultValue: "Currency" })}
+                </Label>
                 <Input value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Admin email</Label>
+                <Label className="text-xs text-muted-foreground">
+                  {t("page.setup.admin_email", { defaultValue: "Admin email" })}
+                </Label>
                 <Input value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Admin password</Label>
+                <Label className="text-xs text-muted-foreground">
+                  {t("page.setup.admin_password", { defaultValue: "Admin password" })}
+                </Label>
                 <Input
                   type="password"
                   value={adminPassword}
@@ -235,7 +277,9 @@ export default function SetupPage() {
 
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" onClick={() => bootstrapM.mutate()} disabled={bootstrapM.isPending}>
-                {bootstrapM.isPending ? "Bootstrapping…" : "Bootstrap"}
+                {bootstrapM.isPending
+                  ? t("page.setup.bootstrapping", { defaultValue: "Bootstrapping..." })
+                  : t("page.setup.bootstrap_cta", { defaultValue: "Bootstrap" })}
               </Button>
               {bootstrapM.isError ? (
                 <div className="text-sm text-destructive">
@@ -248,30 +292,42 @@ export default function SetupPage() {
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>Create Camera</CardTitle>
+            <CardTitle>
+              {t("page.setup.create_camera_title", { defaultValue: "Create Camera" })}
+            </CardTitle>
             <CardDescription>
-              Cameras are branch-scoped. Select a branch above first.
+              {t("page.setup.create_camera_desc", {
+                defaultValue: "Cameras are branch-scoped. Select a branch above first.",
+              })}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="space-y-1 sm:col-span-1">
-                <Label className="text-xs text-muted-foreground">Camera name</Label>
+                <Label className="text-xs text-muted-foreground">
+                  {t("page.setup.camera_name", { defaultValue: "Camera name" })}
+                </Label>
                 <Input
                   value={cameraName}
                   onChange={(e) => setCameraName(e.target.value)}
-                  placeholder="e.g. Entrance"
+                  placeholder={t("page.setup.camera_name_placeholder", {
+                    defaultValue: "e.g. Entrance",
+                  })}
                   disabled={!branchId}
                 />
               </div>
               <div className="space-y-1 sm:col-span-1">
                 <Label className="text-xs text-muted-foreground">
-                  Placement (optional)
+                  {t("page.setup.camera_placement", {
+                    defaultValue: "Placement (optional)",
+                  })}
                 </Label>
                 <Input
                   value={cameraPlacement}
                   onChange={(e) => setCameraPlacement(e.target.value)}
-                  placeholder="e.g. Door top-left"
+                  placeholder={t("page.setup.camera_placement_placeholder", {
+                    defaultValue: "e.g. Door top-left",
+                  })}
                   disabled={!branchId}
                 />
               </div>
@@ -281,7 +337,9 @@ export default function SetupPage() {
                   disabled={!branchId || !cameraName.trim() || createCameraM.isPending}
                   onClick={() => createCameraM.mutate()}
                 >
-                  {createCameraM.isPending ? "Creating…" : "Create"}
+                  {createCameraM.isPending
+                    ? t("page.setup.creating", { defaultValue: "Creating..." })
+                    : t("page.setup.create", { defaultValue: "Create" })}
                 </Button>
 
                 {createCameraM.isError ? (
@@ -299,4 +357,3 @@ export default function SetupPage() {
     </div>
   );
 }
-

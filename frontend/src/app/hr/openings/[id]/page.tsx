@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { ClipboardList, Loader2, Sparkles, UploadCloud } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
+import { useTranslation } from "@/lib/i18n";
 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -63,6 +64,7 @@ function toBatchItem(r: ResumeOut): BatchProgressItem {
 }
 
 export default function HROpeningDetailPage(_props: PageProps) {
+  const { t } = useTranslation();
   const reducedMotion = useReducedMotion();
   const { loading } = useMockLoading(600);
   const router = useRouter();
@@ -94,8 +96,16 @@ export default function HROpeningDetailPage(_props: PageProps) {
       // `openingId` comes from the route; during the first render it can be null.
       // This mutation should never be invoked without an id, but we guard anyway
       // so the callback is type-safe and fails with a clear message if misused.
-      if (!branchId) throw new Error("Select a branch first");
-      if (!openingId) throw new Error("Missing opening id");
+      if (!branchId) {
+        throw new Error(
+          t("hr.common.select_branch_first", { defaultValue: "Select a branch first" })
+        );
+      }
+      if (!openingId) {
+        throw new Error(
+          t("hr.opening_detail.missing_opening_id", { defaultValue: "Missing opening id" })
+        );
+      }
       return createScreeningRun(branchId, openingId, {});
     },
     onSuccess: (run) => {
@@ -105,13 +115,13 @@ export default function HROpeningDetailPage(_props: PageProps) {
         // ignore (private browsing / storage disabled)
       }
 
-      toast("Screening run started", {
+      toast(t("hr.opening_detail.run_started", { defaultValue: "Screening run started" }), {
         description: `run_id: ${run.id}`,
       });
       router.push(`/hr/runs/${run.id}`);
     },
     onError: (err) => {
-      toast("Could not start run", {
+      toast(t("hr.opening_detail.run_start_failed", { defaultValue: "Could not start run" }), {
         description: err instanceof Error ? err.message : "Unknown error",
       });
     },
@@ -136,11 +146,13 @@ export default function HROpeningDetailPage(_props: PageProps) {
     mutationFn: () =>
       enqueueRunExplanations(branchId as UUID, lastRunId as UUID, { topN: 20, force: false }),
     onSuccess: () =>
-      toast("Explanations queued", {
-        description: "Generating for top candidates…",
+      toast(t("hr.run_detail.toast_explanations_queued", { defaultValue: "Explanations queued" }), {
+        description: t("hr.run_detail.toast_generating_top", {
+          defaultValue: "Generating for top candidates…",
+        }),
       }),
     onError: (err) =>
-      toast("Could not enqueue explanations", {
+      toast(t("hr.run_detail.toast_explanations_failed", { defaultValue: "Could not enqueue explanations" }), {
         description: err instanceof Error ? err.message : "Unknown error",
       }),
   });
@@ -149,8 +161,10 @@ export default function HROpeningDetailPage(_props: PageProps) {
     return (
       <HrPageShell>
         <EmptyStateCard
-          title="Select a branch to continue"
-          description="HR data is branch-scoped. Pick a branch to view this opening."
+          title={t("hr.opening_detail.select_branch_title", { defaultValue: "Select a branch to continue" })}
+          description={t("hr.opening_detail.select_branch_description", {
+            defaultValue: "HR data is branch-scoped. Pick a branch to view this opening.",
+          })}
           icon={Sparkles}
           actions={<div className="w-full max-w-xl"><StorePicker /></div>}
         />
@@ -163,8 +177,8 @@ export default function HROpeningDetailPage(_props: PageProps) {
     return (
       <HrPageShell>
         <EmptyStateCard
-          title="Loading opening…"
-          description="Preparing route context."
+          title={t("hr.opening_detail.loading_opening", { defaultValue: "Loading opening…" })}
+          description={t("hr.opening_detail.preparing_route", { defaultValue: "Preparing route context." })}
           icon={Sparkles}
         />
       </HrPageShell>
@@ -175,12 +189,16 @@ export default function HROpeningDetailPage(_props: PageProps) {
     return (
       <HrPageShell>
         <EmptyStateCard
-          title="Opening not found"
-          description="The requested opening was not returned from the backend."
+          title={t("hr.opening_detail.not_found_title", { defaultValue: "Opening not found" })}
+          description={t("hr.opening_detail.not_found_description", {
+            defaultValue: "The requested opening was not returned from the backend.",
+          })}
           icon={Sparkles}
           actions={
             <GradientButton asChild>
-              <Link href="/hr/openings">Back to openings</Link>
+              <Link href="/hr/openings">
+                {t("hr.opening_detail.back_to_openings", { defaultValue: "Back to openings" })}
+              </Link>
             </GradientButton>
           }
         />
@@ -193,7 +211,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
     opening ??
     ({
       id: openingId,
-      title: "Loading opening…",
+      title: t("hr.opening_detail.loading_opening", { defaultValue: "Loading opening…" }),
       status: "ACTIVE",
       created_at: new Date().toISOString(),
       department: "—",
@@ -236,11 +254,16 @@ export default function HROpeningDetailPage(_props: PageProps) {
     const hasUnassigned = (appsQ.list.data ?? []).some((a) => !a.stage_id);
     return hasUnassigned
       ? [
-          { id: "__unassigned__", name: "Unassigned", sort_order: -1, is_terminal: false },
+          {
+            id: "__unassigned__",
+            name: t("hr.common.unassigned", { defaultValue: "Unassigned" }),
+            sort_order: -1,
+            is_terminal: false,
+          },
           ...stages,
         ]
       : stages;
-  }, [stagesQ.data, appsQ.list.data]);
+  }, [stagesQ.data, appsQ.list.data, t]);
 
   const pipelineCardsUi: PipelineCardUi[] = React.useMemo(() => {
     return (appsQ.list.data ?? []).map((a) => ({
@@ -249,24 +272,28 @@ export default function HROpeningDetailPage(_props: PageProps) {
       title: a.resume.original_filename,
       tags: [
         a.resume.status,
-        a.status === "ACTIVE" ? "Active" : a.status,
-        a.source_run_id ? "From run" : "Manual",
+        a.status === "ACTIVE"
+          ? t("hr.pipeline_page.tag_active", { defaultValue: "Active" })
+          : a.status,
+        a.source_run_id
+          ? t("hr.pipeline_page.tag_from_run", { defaultValue: "From run" })
+          : t("hr.pipeline_page.tag_manual", { defaultValue: "Manual" }),
       ].filter(Boolean),
       application: a,
     }));
-  }, [appsQ.list.data]);
+  }, [appsQ.list.data, t]);
 
   const enqueueEmbed = useMutation({
     mutationFn: () => enqueueOpeningEmbeddings(branchId as UUID, openingId as UUID, { force: false }),
     onSuccess: (resp) => {
-      toast("Embedding queued", {
+      toast(t("hr.opening_detail.embed_queued", { defaultValue: "Embedding queued" }), {
         description: `${resp.enqueued} enqueued, ${resp.skipped} skipped`,
       });
       resumesQ.refetch();
       indexQ.refetch();
     },
     onError: (err) => {
-      toast("Could not enqueue embeddings", {
+      toast(t("hr.opening_detail.embed_queue_failed", { defaultValue: "Could not enqueue embeddings" }), {
         description: err instanceof Error ? err.message : "Unknown error",
       });
     },
@@ -288,7 +315,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
 
   React.useEffect(() => {
     if (!batchQ.done) return;
-    toast("Parsing completed", {
+    toast(t("hr.opening_detail.parsing_completed", { defaultValue: "Parsing completed" }), {
       description: `${batchQ.data?.parsed_count ?? 0} parsed, ${batchQ.data?.failed_count ?? 0} failed`,
     });
     // Refresh resume list once batch is done.
@@ -328,20 +355,22 @@ export default function HROpeningDetailPage(_props: PageProps) {
               ) : (
                 <Sparkles className="h-4 w-4" />
               )}
-              Run Screening
+              {t("hr.overview_page.run_screening", { defaultValue: "Run Screening" })}
             </GradientButton>
             <Button
               type="button"
               variant="outline"
               className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
               onClick={() =>
-                toast("Tip", {
-                  description: "Use the Resumes tab to upload files.",
+                toast(t("hr.opening_detail.tip_title", { defaultValue: "Tip" }), {
+                  description: t("hr.opening_detail.tip_upload_via_tab", {
+                    defaultValue: "Use the Resumes tab to upload files.",
+                  }),
                 })
               }
             >
               <UploadCloud className="h-4 w-4" />
-              Upload Resumes
+              {t("hr.overview_page.upload_resumes", { defaultValue: "Upload Resumes" })}
             </Button>
           </>
         }
@@ -350,16 +379,16 @@ export default function HROpeningDetailPage(_props: PageProps) {
       <Tabs defaultValue="overview">
         <TabsList className="w-full justify-start gap-2 rounded-2xl bg-white/[0.03] p-1 ring-1 ring-white/10">
           <TabsTrigger value="overview" className="rounded-xl">
-            Overview
+            {t("hr.common.overview", { defaultValue: "Overview" })}
           </TabsTrigger>
           <TabsTrigger value="resumes" className="rounded-xl">
-            Resumes
+            {t("hr.common.resumes", { defaultValue: "Resumes" })}
           </TabsTrigger>
           <TabsTrigger value="screening" className="rounded-xl">
-            Screening
+            {t("hr.common.screening", { defaultValue: "Screening" })}
           </TabsTrigger>
           <TabsTrigger value="pipeline" className="rounded-xl">
-            Pipeline
+            {t("hr.common.pipeline", { defaultValue: "Pipeline" })}
           </TabsTrigger>
         </TabsList>
 
@@ -371,25 +400,49 @@ export default function HROpeningDetailPage(_props: PageProps) {
             className="grid grid-cols-1 gap-4 md:grid-cols-3"
           >
             <motion.div variants={staggerItem(reducedMotion)}>
-              <StatCard label="Resumes" value={openingUi.resumes_count} icon={ClipboardList} loading={loading} />
+              <StatCard
+                label={t("hr.common.resumes", { defaultValue: "Resumes" })}
+                value={openingUi.resumes_count}
+                icon={ClipboardList}
+                loading={loading}
+              />
             </motion.div>
             <motion.div variants={staggerItem(reducedMotion)}>
-              <StatCard label="In Pipeline" value={openingUi.in_pipeline_count} icon={Sparkles} loading={loading} />
+              <StatCard
+                label={t("hr.overview_page.stats_in_pipeline", { defaultValue: "In Pipeline" })}
+                value={openingUi.in_pipeline_count}
+                icon={Sparkles}
+                loading={loading}
+              />
             </motion.div>
             <motion.div variants={staggerItem(reducedMotion)}>
-              <StatCard label="Last Run" value={lastRun?.status ?? "—"} icon={Sparkles} loading={loading} />
+              <StatCard
+                label={t("hr.opening_detail.last_run", { defaultValue: "Last Run" })}
+                value={lastRun?.status ?? "—"}
+                icon={Sparkles}
+                loading={loading}
+              />
             </motion.div>
           </motion.div>
 
-          <PanelCard title="Top candidates" description="From the most recent screening run (mock).">
+          <PanelCard
+            title={t("hr.opening_detail.top_candidates_title", { defaultValue: "Top candidates" })}
+            description={t("hr.opening_detail.top_candidates_description", {
+              defaultValue: "From the most recent screening run (mock).",
+            })}
+          >
             {topCandidates.length === 0 && !loading ? (
               <EmptyStateCard
-                title="No run results yet"
-                description="Run screening to generate ranked candidates."
+                title={t("hr.opening_detail.no_run_results_title", { defaultValue: "No run results yet" })}
+                description={t("hr.opening_detail.no_run_results_description", {
+                  defaultValue: "Run screening to generate ranked candidates.",
+                })}
                 icon={Sparkles}
                 actions={
                   <GradientButton asChild>
-                    <Link href="/hr/runs">Run Screening</Link>
+                    <Link href="/hr/runs">
+                      {t("hr.overview_page.run_screening", { defaultValue: "Run Screening" })}
+                    </Link>
                   </GradientButton>
                 }
               />
@@ -420,7 +473,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
         <TabsContent value="resumes" className="mt-4 space-y-6">
           {openingQ.isError ? (
             <EmptyStateCard
-              title="Could not load opening"
+              title={t("hr.opening_detail.load_opening_failed", { defaultValue: "Could not load opening" })}
               description={openingQ.error instanceof Error ? openingQ.error.message : "Unknown error"}
               icon={UploadCloud}
               actions={
@@ -430,7 +483,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
                   className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
                   onClick={() => openingQ.refetch()}
                 >
-                  Retry
+                  {t("hr.common.retry", { defaultValue: "Retry" })}
                 </Button>
               }
             />
@@ -439,9 +492,14 @@ export default function HROpeningDetailPage(_props: PageProps) {
               <ResumeDropzone
                 uploading={uploadMutation.isPending}
                 disabled={openingQ.isPending}
-                helperText="Select multiple files. We'll parse them in the background and update statuses live."
+                helperText={t("hr.opening_detail.upload_helper", {
+                  defaultValue:
+                    "Select multiple files. We'll parse them in the background and update statuses live.",
+                })}
                 onFilesSelected={(files) => {
-                  toast("Upload started", { description: `${files.length} file(s)` });
+                  toast(t("hr.opening_detail.upload_started", { defaultValue: "Upload started" }), {
+                    description: `${files.length} file(s)`,
+                  });
                   uploadMutation.mutate(
                     { files },
                     {
@@ -449,12 +507,12 @@ export default function HROpeningDetailPage(_props: PageProps) {
                         setActiveBatchId(resp.batch_id);
                         batchQ.resetDone();
                         resumesQ.refetch();
-                        toast("Uploaded", {
+                        toast(t("hr.opening_detail.uploaded", { defaultValue: "Uploaded" }), {
                           description: `Batch ${resp.batch_id} • ${resp.resume_ids.length} resume(s) queued`,
                         });
                       },
                       onError: (err) => {
-                        toast("Upload failed", {
+                        toast(t("hr.opening_detail.upload_failed", { defaultValue: "Upload failed" }), {
                           description: err instanceof Error ? err.message : "Unknown error",
                         });
                       },
@@ -464,8 +522,10 @@ export default function HROpeningDetailPage(_props: PageProps) {
               />
 
               <PanelCard
-                title="Embeddings"
-                description="Generate embeddings used by screening runs."
+                title={t("hr.opening_detail.embeddings_title", { defaultValue: "Embeddings" })}
+                description={t("hr.opening_detail.embeddings_description", {
+                  defaultValue: "Generate embeddings used by screening runs.",
+                })}
               >
                 <div className="rounded-2xl bg-white/[0.02] p-4 text-sm text-muted-foreground ring-1 ring-white/5">
                   {indexQ.isPending ? (
@@ -474,11 +534,15 @@ export default function HROpeningDetailPage(_props: PageProps) {
                       <div className="h-3 w-44 rounded bg-white/10" />
                     </div>
                   ) : indexQ.isError ? (
-                    <div>Could not load embedding status.</div>
+                    <div>
+                      {t("hr.opening_detail.embed_status_failed", {
+                        defaultValue: "Could not load embedding status.",
+                      })}
+                    </div>
                   ) : indexQ.data ? (
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        Parsed{" "}
+                        {t("hr.opening_detail.parsed_label", { defaultValue: "Parsed" })}{" "}
                         <span className="text-foreground/90 tabular-nums">
                           {indexQ.data.parsed_resumes}
                         </span>{" "}
@@ -505,7 +569,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
                           {enqueueEmbed.isPending ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
-                            "Embed resumes"
+                            t("hr.opening_detail.embed_resumes", { defaultValue: "Embed resumes" })
                           )}
                         </Button>
                         <Button
@@ -514,7 +578,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
                           className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
                           onClick={() => indexQ.refetch()}
                         >
-                          Refresh
+                          {t("hr.opening_detail.refresh", { defaultValue: "Refresh" })}
                         </Button>
                       </div>
                     </div>
@@ -522,10 +586,17 @@ export default function HROpeningDetailPage(_props: PageProps) {
                 </div>
               </PanelCard>
 
-              <PanelCard title="Batch progress" description="Resume parsing status (live).">
+              <PanelCard
+                title={t("hr.opening_detail.batch_progress_title", { defaultValue: "Batch progress" })}
+                description={t("hr.opening_detail.batch_progress_description", {
+                  defaultValue: "Resume parsing status (live).",
+                })}
+              >
                 {activeBatchId && batchQ.data ? (
                   <div className="mb-3 rounded-2xl bg-white/[0.02] p-4 text-sm text-muted-foreground ring-1 ring-white/5">
-                    Total: <span className="text-foreground/90 tabular-nums">{batchQ.data.total_count}</span> • Parsed:{" "}
+                    {t("hr.opening_detail.total", { defaultValue: "Total:" })}{" "}
+                    <span className="text-foreground/90 tabular-nums">{batchQ.data.total_count}</span> •{" "}
+                    {t("hr.opening_detail.parsed_label", { defaultValue: "Parsed" })}:{" "}
                     <span className="text-foreground/90 tabular-nums">{batchQ.data.parsed_count}</span> • Parsing:{" "}
                     <span className="text-foreground/90 tabular-nums">{batchQ.data.parsing_count}</span> • Failed:{" "}
                     <span className="text-foreground/90 tabular-nums">{batchQ.data.failed_count}</span>
@@ -543,7 +614,9 @@ export default function HROpeningDetailPage(_props: PageProps) {
                         <div key={it.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white/[0.02] p-3 ring-1 ring-white/5">
                           <div className="min-w-0">
                             <div className="truncate text-sm font-medium">{it.filename}</div>
-                            <div className="text-xs text-muted-foreground">Parsed</div>
+                            <div className="text-xs text-muted-foreground">
+                              {t("hr.opening_detail.parsed_label", { defaultValue: "Parsed" })}
+                            </div>
                           </div>
                           <Button
                             type="button"
@@ -555,7 +628,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
                               setParsedOpen(true);
                             }}
                           >
-                            View Parsed
+                            {t("hr.opening_detail.view_parsed", { defaultValue: "View Parsed" })}
                           </Button>
                         </div>
                       ))}
@@ -574,7 +647,12 @@ export default function HROpeningDetailPage(_props: PageProps) {
         </TabsContent>
 
         <TabsContent value="screening" className="mt-4 space-y-6">
-          <PanelCard title="Run configuration" description="Tune top-K and reranking (mock).">
+          <PanelCard
+            title={t("hr.opening_detail.run_config_title", { defaultValue: "Run configuration" })}
+            description={t("hr.opening_detail.run_config_description", {
+              defaultValue: "Tune top-K and reranking (mock).",
+            })}
+          >
             <div className="rounded-2xl bg-white/[0.02] p-4 text-sm text-muted-foreground ring-1 ring-white/5">
               View types: <span className="text-foreground/90">skills, experience, full</span> • Pool size:{" "}
               <span className="text-foreground/90">400</span> • Top N: <span className="text-foreground/90">200</span>
@@ -590,24 +668,35 @@ export default function HROpeningDetailPage(_props: PageProps) {
                 ) : (
                   <Sparkles className="h-4 w-4" />
                 )}
-                Create Run
+                {t("hr.opening_detail.create_run", { defaultValue: "Create Run" })}
               </GradientButton>
               <Button
                 type="button"
                 variant="outline"
                 className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
-                onClick={() => toast("Coming soon", { description: "Edit config" })}
+                onClick={() =>
+                  toast(t("common.coming_soon", { defaultValue: "Coming soon" }), {
+                    description: t("hr.opening_detail.edit_config", { defaultValue: "Edit config" }),
+                  })
+                }
               >
-                Edit config
+                {t("hr.opening_detail.edit_config", { defaultValue: "Edit config" })}
               </Button>
             </div>
           </PanelCard>
 
-          <PanelCard title="Latest run" description="Most recent run for this opening.">
+          <PanelCard
+            title={t("hr.opening_detail.latest_run_title", { defaultValue: "Latest run" })}
+            description={t("hr.opening_detail.latest_run_description", {
+              defaultValue: "Most recent run for this opening.",
+            })}
+          >
             {!lastRunId ? (
               <EmptyStateCard
-                title="No runs yet"
-                description="Create a run to generate ranked candidates."
+                title={t("hr.runs_page.empty_title", { defaultValue: "No runs yet" })}
+                description={t("hr.opening_detail.no_runs_description", {
+                  defaultValue: "Create a run to generate ranked candidates.",
+                })}
                 icon={Sparkles}
                 actions={
                   <GradientButton
@@ -620,7 +709,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
                     ) : (
                       <Sparkles className="h-4 w-4" />
                     )}
-                    Create Run
+                    {t("hr.opening_detail.create_run", { defaultValue: "Create Run" })}
                   </GradientButton>
                 }
               />
@@ -631,7 +720,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
               </div>
             ) : lastRunQ.isError ? (
               <EmptyStateCard
-                title="Could not load run"
+                title={t("hr.opening_detail.run_load_failed", { defaultValue: "Could not load run" })}
                 description={
                   lastRunQ.error instanceof Error
                     ? lastRunQ.error.message
@@ -645,7 +734,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
                     className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
                     onClick={() => lastRunQ.refetch()}
                   >
-                    Retry
+                    {t("hr.common.retry", { defaultValue: "Retry" })}
                   </Button>
                 }
               />
@@ -659,7 +748,9 @@ export default function HROpeningDetailPage(_props: PageProps) {
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <GradientButton asChild>
-                    <Link href={`/hr/runs/${lastRunId}`}>Open run</Link>
+                    <Link href={`/hr/runs/${lastRunId}`}>
+                      {t("hr.opening_detail.open_run", { defaultValue: "Open run" })}
+                    </Link>
                   </GradientButton>
                   <Button
                     type="button"
@@ -667,7 +758,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
                     className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
                     onClick={() => {
                       if (lastRunQ.data?.status !== "DONE") {
-                        toast("Run not done yet");
+                        toast(t("hr.opening_detail.run_not_done", { defaultValue: "Run not done yet" }));
                         return;
                       }
                       enqueueExplain.mutate();
@@ -676,7 +767,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
                       enqueueExplain.isPending || lastRunQ.data?.status !== "DONE"
                     }
                   >
-                    Generate explanations
+                    {t("hr.run_detail.generate_explanations", { defaultValue: "Generate Explanations" })}
                   </Button>
                 </div>
               </div>
@@ -687,7 +778,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
         <TabsContent value="pipeline" className="mt-4 space-y-6">
           {stagesQ.isError ? (
             <EmptyStateCard
-              title="Could not load pipeline"
+              title={t("hr.pipeline_page.load_failed_title", { defaultValue: "Could not load pipeline" })}
               description={
                 stagesQ.error instanceof Error
                   ? stagesQ.error.message
@@ -704,14 +795,17 @@ export default function HROpeningDetailPage(_props: PageProps) {
                     appsQ.list.refetch();
                   }}
                 >
-                  Retry
+                  {t("hr.common.retry", { defaultValue: "Retry" })}
                 </Button>
               }
             />
           ) : (stagesQ.data?.length ?? 0) === 0 && !stagesQ.isPending ? (
             <EmptyStateCard
-              title="No pipeline stages found"
-              description="This opening has no stages yet. Try refreshing or recreate the opening defaults."
+              title={t("hr.pipeline_page.no_stages_title", { defaultValue: "No pipeline stages found" })}
+              description={t("hr.pipeline_page.no_stages_description", {
+                defaultValue:
+                  "This opening has no stages yet. Try refreshing or recreate the opening defaults.",
+              })}
               icon={Sparkles}
               actions={
                 <Button
@@ -720,7 +814,7 @@ export default function HROpeningDetailPage(_props: PageProps) {
                   className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
                   onClick={() => stagesQ.refetch()}
                 >
-                  Retry
+                  {t("hr.common.retry", { defaultValue: "Retry" })}
                 </Button>
               }
             />
@@ -733,9 +827,10 @@ export default function HROpeningDetailPage(_props: PageProps) {
                   appsQ.moveStage.mutate(
                     { applicationId: cardId as UUID, stageId: stageId as UUID },
                     {
-                      onSuccess: () => toast("Moved"),
+                      onSuccess: () =>
+                        toast(t("hr.pipeline_page.moved_toast", { defaultValue: "Moved" })),
                       onError: (err) =>
-                        toast("Could not move", {
+                        toast(t("hr.pipeline_page.move_failed", { defaultValue: "Could not move" }), {
                           description:
                             err instanceof Error ? err.message : "Unknown error",
                         }),
@@ -757,9 +852,10 @@ export default function HROpeningDetailPage(_props: PageProps) {
                   appsQ.moveStage.mutate(
                     { applicationId, stageId },
                     {
-                      onSuccess: () => toast("Moved"),
+                      onSuccess: () =>
+                        toast(t("hr.pipeline_page.moved_toast", { defaultValue: "Moved" })),
                       onError: (err) =>
-                        toast("Could not move", {
+                        toast(t("hr.pipeline_page.move_failed", { defaultValue: "Could not move" }), {
                           description:
                             err instanceof Error ? err.message : "Unknown error",
                         }),
@@ -768,9 +864,10 @@ export default function HROpeningDetailPage(_props: PageProps) {
                 }}
                 onReject={(applicationId) => {
                   appsQ.reject.mutate(applicationId, {
-                    onSuccess: () => toast("Rejected"),
+                    onSuccess: () =>
+                      toast(t("hr.pipeline_page.rejected_toast", { defaultValue: "Rejected" })),
                     onError: (err) =>
-                      toast("Could not reject", {
+                      toast(t("hr.pipeline_page.reject_failed", { defaultValue: "Could not reject" }), {
                         description:
                           err instanceof Error ? err.message : "Unknown error",
                       }),
@@ -778,9 +875,10 @@ export default function HROpeningDetailPage(_props: PageProps) {
                 }}
                 onHire={(applicationId) => {
                   appsQ.hire.mutate(applicationId, {
-                    onSuccess: () => toast("Marked as hired"),
+                    onSuccess: () =>
+                      toast(t("hr.pipeline_page.hired_toast", { defaultValue: "Marked as hired" })),
                     onError: (err) =>
-                      toast("Could not hire", {
+                      toast(t("hr.pipeline_page.hire_failed", { defaultValue: "Could not hire" }), {
                         description:
                           err instanceof Error ? err.message : "Unknown error",
                       }),

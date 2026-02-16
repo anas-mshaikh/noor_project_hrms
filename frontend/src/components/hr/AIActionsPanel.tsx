@@ -87,7 +87,7 @@ export function AIActionsPanel({ className }: { className?: string }) {
                 })
               }
               className={cn(
-                "h-auto flex-col items-start gap-2 rounded-2xl bg-white/[0.02] p-3 text-left ring-1 ring-white/5",
+                "h-auto flex-col items-start gap-2 rounded-2xl bg-white/[0.02] p-3 text-start ring-1 ring-white/5",
                 "hover:bg-white/[0.05] hover:text-white",
                 "focus-visible:ring-2 focus-visible:ring-violet-400/50"
               )}
@@ -111,4 +111,3 @@ export function AIActionsPanel({ className }: { className?: string }) {
     </GlassCard>
   );
 }
-

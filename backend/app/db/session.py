@@ -5,6 +5,14 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
+from app.auth import models as _iam_models  # noqa: F401
+from app.domains.hr_core import models as _hr_core_models  # noqa: F401
+from app.domains.tenancy import models as _tenancy_models  # noqa: F401
+from app.models import models as _app_models  # noqa: F401
+
+# Load all mapped tables into shared metadata for every process (API + workers).
+# Without this, worker-only processes can fail FK resolution on flush/commit for
+# models that reference canonical vNext schemas (tenancy/iam/hr_core).
 
 engine = create_engine(
     settings.database_url,

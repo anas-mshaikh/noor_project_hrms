@@ -1,0 +1,516 @@
+{
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "ar": "Arabic",
+    "de": "German",
+    "fr": "French"
+  },
+  "common": {
+    "coming_soon": "Coming soon",
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "sign_in": "Sign in",
+    "sign_out": "Sign out"
+  },
+  "picker": {
+    "tenant": "Tenant",
+    "company": "Company",
+    "branch": "Branch",
+    "camera": "Camera",
+    "select_tenant": "Select tenant...",
+    "select_company": "Select company...",
+    "select_branch": "Select branch...",
+    "select_camera": "Select camera...",
+    "select_tenant_first": "Select tenant first",
+    "select_company_first": "Select company first",
+    "select_branch_first": "Select branch first",
+    "tenant_required": "Required for multi-tenant users.",
+    "failed_companies": "Failed to load companies",
+    "failed_branches": "Failed to load branches",
+    "failed_cameras": "Failed to load cameras"
+  },
+  "shell": {
+    "notifications": "Notifications",
+    "help": "Help",
+    "account": "Account",
+    "profile": "Profile",
+    "settings": "Settings",
+    "signed_in_as": "Signed in as",
+    "open_menu": "Open menu",
+    "go_module_home": "Go to module home",
+    "notifications_panel": "Notifications panel",
+    "sign_in_to_view_notifications": "Sign in to view notifications",
+    "help_shortcuts": "Help and shortcuts",
+    "profile_page": "Profile page",
+    "signed_out": "Signed out",
+    "menu": "Menu",
+    "menu_switch_modules": "Switch modules and navigate.",
+    "modules": "Modules",
+    "context": "Context",
+    "context_select": "Select tenant, company, branch, and camera.",
+    "select_branch": "Select a branch"
+  },
+  "nav": {
+    "modules": {
+      "attendance": "Attendance",
+      "hr": "HR",
+      "tasks": "Tasks",
+      "inbox": "Inbox",
+      "notes": "Notes",
+      "settings": "Settings"
+    },
+    "items": {
+      "dashboard": {
+        "title": "Dashboard",
+        "description": "High-level attendance metrics"
+      },
+      "setup": {
+        "title": "Setup",
+        "description": "Tenancy, branches, cameras"
+      },
+      "employees": {
+        "title": "Employees",
+        "description": "Roster and face enrollment"
+      },
+      "videos": {
+        "title": "Videos",
+        "description": "Uploads and processing"
+      },
+      "admin-import": {
+        "title": "Admin Import",
+        "description": "Upload monthly excel"
+      },
+      "hr-overview": {
+        "title": "HR Overview",
+        "description": "Hiring performance and tasks"
+      },
+      "hr-openings": {
+        "title": "Openings",
+        "description": "Job openings and JDs"
+      },
+      "hr-runs": {
+        "title": "Runs",
+        "description": "Screening runs and results"
+      },
+      "hr-pipeline": {
+        "title": "Pipeline",
+        "description": "Stages and movements"
+      },
+      "hr-onboarding": {
+        "title": "Onboarding",
+        "description": "New hires checklist"
+      },
+      "tasks-my": {
+        "title": "My Tasks",
+        "description": "Assigned to you"
+      },
+      "tasks-team": {
+        "title": "Team Queue",
+        "description": "All pending tasks"
+      },
+      "tasks-approvals": {
+        "title": "Approvals",
+        "description": "Review and sign off"
+      },
+      "inbox-all": {
+        "title": "All Messages",
+        "description": "Team and system threads"
+      },
+      "inbox-groups": {
+        "title": "Groups",
+        "description": "Channels and groups"
+      },
+      "inbox-mentions": {
+        "title": "Mentions",
+        "description": "Where you were tagged"
+      },
+      "notes-all": {
+        "title": "All Notes",
+        "description": "Your notes and docs"
+      },
+      "notes-templates": {
+        "title": "Templates",
+        "description": "Reusable forms"
+      },
+      "notes-library": {
+        "title": "Library",
+        "description": "Policies and SOPs"
+      },
+      "settings-general": {
+        "title": "General",
+        "description": "Org preferences"
+      },
+      "settings-org": {
+        "title": "Organization",
+        "description": "Company profile"
+      },
+      "settings-access": {
+        "title": "Roles and Access",
+        "description": "Permissions"
+      },
+      "settings-integrations": {
+        "title": "Integrations",
+        "description": "External services"
+      }
+    }
+  },
+  "page": {
+    "login": {
+      "title": "Sign in",
+      "subtitle": "Use your admin/HR credentials to access the dashboard.",
+      "card_title": "Login",
+      "bootstrap_hint": "If this is a fresh DB, you may need to bootstrap first.",
+      "email": "Email",
+      "password": "Password",
+      "email_required": "Email is required.",
+      "password_required": "Password is required.",
+      "signing_in": "Signing in..."
+    },
+    "settings": {
+      "title": "Settings",
+      "subtitle": "Organization preferences. (UI scaffold)",
+      "language_title": "Language",
+      "language_body": "Select application language for this device."
+    },
+    "setup": {
+      "subtitle": "Bootstrap tenancy (optional) and manage branch cameras.",
+      "current_context": "Current Context",
+      "current_context_desc": "Tenant/company/branch/camera selection.",
+      "calibration_required": "Calibration is required before running jobs.",
+      "calibrate_camera": "Calibrate this camera",
+      "bootstrap_title": "Bootstrap (Optional)",
+      "bootstrap_desc": "Create a new tenant/company/branch and an admin user. This is meant for local/dev environments.",
+      "tenant_name": "Tenant name",
+      "company_name": "Company name",
+      "branch_name": "Branch name",
+      "branch_code": "Branch code",
+      "timezone": "Timezone",
+      "currency": "Currency",
+      "admin_email": "Admin email",
+      "admin_password": "Admin password",
+      "bootstrapping": "Bootstrapping...",
+      "bootstrap_cta": "Bootstrap",
+      "create_camera_title": "Create Camera",
+      "create_camera_desc": "Cameras are branch-scoped. Select a branch above first.",
+      "camera_name": "Camera name",
+      "camera_name_placeholder": "e.g. Entrance",
+      "camera_placement": "Placement (optional)",
+      "camera_placement_placeholder": "e.g. Door top-left",
+      "creating": "Creating...",
+      "create": "Create"
+    },
+    "videos": {
+      "subtitle": "Upload a clip for a specific business date and run the worker job."
+    },
+    "dashboard": {
+      "subtitle": "Branch-scoped attendance summary across a date range."
+    },
+    "employees": {
+      "subtitle": "HR directory + face enrollment + mobile provisioning (permission-driven).",
+      "select_scope": "Select a tenant + company + branch first."
+    },
+    "import": {
+      "subtitle": "Upload a monthly XLSX (POS + Attendance). Postgres is the source of truth; publish optionally syncs to Firebase."
+    },
+    "jobs": {
+      "status": "Job Status"
+    },
+    "reports": {
+      "title": "Report"
+    },
+    "calibration": {
+      "title": "Calibration"
+    }
+  },
+  "hr": {
+    "common": {
+      "select_branch": "Select a branch",
+      "select_branch_first": "Select a branch first",
+      "retry": "Retry",
+      "filters": "Filters",
+      "overview": "Overview",
+      "resumes": "Resumes",
+      "screening": "Screening",
+      "pipeline": "Pipeline",
+      "unassigned": "Unassigned"
+    },
+    "overview_page": {
+      "title": "HR Overview",
+      "subtitle": "AI-powered hiring → pipeline → onboarding.",
+      "run_screening": "Run Screening",
+      "create_opening": "Create Opening",
+      "upload_resumes": "Upload Resumes",
+      "top_opening_prefix": "Top opening:",
+      "last_run_chip": "Last run: Cashier (DONE)",
+      "empty_title": "Select a branch to manage HR",
+      "empty_description": "HR data is branch-scoped. Pick a branch to view openings and uploads.",
+      "error_title": "Could not load HR data",
+      "no_openings_title": "No openings yet",
+      "no_openings_description": "Create your first opening and upload resumes to start screening candidates.",
+      "stats_active_openings": "Active Openings",
+      "stats_screened_7d": "Candidates Screened (7d)",
+      "stats_in_pipeline": "In Pipeline",
+      "stats_onboarding_active": "Onboarding Active",
+      "insights_title": "AI Insights",
+      "insights_actual": "Actual",
+      "insights_ai_projected": "AI Projected",
+      "insights_review_top": "Review Top Matches",
+      "insights_body": "Throughput is trending up. Tighten the “Applied → Screened” SLA to 24h for high-volume openings to improve candidate response rates.",
+      "activity_title": "Recent Activity",
+      "activity_1": "Screening run completed — Cashier",
+      "activity_2": "12 candidates moved to Interview",
+      "activity_3": "Offer sent — Sales Associate",
+      "when_2m": "2m ago",
+      "when_1h": "1h ago",
+      "when_yesterday": "Yesterday",
+      "priority_tasks_title": "Priority tasks",
+      "priority_tasks_action": "See all",
+      "priority_tasks_action_desc": "See all tasks",
+      "priority_tasks_description": "Today’s high-signal actions.",
+      "task_followups_title": "Follow-ups",
+      "task_followups_subtitle": "Candidate outreach",
+      "task_contract_title": "Contract Review",
+      "task_contract_subtitle": "Offer letter",
+      "task_interviews_title": "Interviews",
+      "task_interviews_subtitle": "Scheduled today",
+      "assistant_title": "Assistant",
+      "assistant_description": "Quick actions to accelerate your hiring loop (mock).",
+      "assistant_action_summary": "Candidate Summary",
+      "assistant_action_questions": "Interview Questions",
+      "assistant_action_gaps": "Find Skill Gaps",
+      "assistant_action_offer": "Draft Offer Email"
+    },
+    "openings_page": {
+      "title": "Openings",
+      "subtitle": "Create openings, upload resumes, and run AI screening.",
+      "create_opening": "Create Opening",
+      "empty_title": "Select a branch to manage openings",
+      "empty_description": "HR Openings are branch-scoped. Pick a branch to view and create openings.",
+      "error_title": "Could not load openings",
+      "no_openings_title": "No openings found",
+      "no_openings_description": "Create an opening to start collecting resumes and screening candidates.",
+      "top_by_volume_title": "Top openings by volume",
+      "top_by_volume_description": "Highest resume volume (mock).",
+      "recent_runs_title": "Recent runs",
+      "recent_runs_action": "See runs"
+    },
+    "opening_card": {
+      "resumes_suffix": "resumes",
+      "in_pipeline_suffix": "in pipeline"
+    },
+    "openings_new_page": {
+      "title": "Create Opening",
+      "subtitle": "Draft an opening and start collecting resumes.",
+      "empty_title": "Select a branch to continue",
+      "empty_description": "HR Openings are branch-scoped. Pick a branch to create and manage openings.",
+      "toast_created": "Opening created",
+      "toast_failed": "Failed to create opening",
+      "untitled_opening": "Untitled opening"
+    },
+    "opening_wizard": {
+      "steps": {
+        "basics": "Basics",
+        "jd": "Job Description",
+        "requirements": "Requirements"
+      },
+      "title_label": "Title",
+      "title_placeholder": "e.g. Cashier",
+      "department_label": "Department",
+      "department_placeholder": "e.g. Front Desk",
+      "location_label": "Location",
+      "location_placeholder": "e.g. Riyadh",
+      "jd_label": "Job description",
+      "jd_placeholder": "Paste the job description here…",
+      "add_requirement_label": "Add requirement",
+      "add_requirement_placeholder": "e.g. Weekend shifts",
+      "add": "Add",
+      "back": "Back",
+      "next": "Next",
+      "saving": "Saving…",
+      "save_opening": "Save Opening",
+      "preview_title": "Preview",
+      "preview_description": "This is how the opening will appear in the HR list.",
+      "untitled_opening": "Untitled opening",
+      "department_fallback": "Department",
+      "location_fallback": "Location"
+    },
+    "resume_dropzone": {
+      "title": "Upload resumes",
+      "helper": "Drag & drop or select files. Parsing will start automatically.",
+      "uploading": "Uploading…",
+      "select_files": "Select files",
+      "drop_here": "Drop files here",
+      "supported": "Supported: PDF, DOCX, images (later)."
+    },
+    "opening_detail": {
+      "missing_opening_id": "Missing opening id",
+      "select_branch_title": "Select a branch to continue",
+      "select_branch_description": "HR data is branch-scoped. Pick a branch to view this opening.",
+      "loading_opening": "Loading opening…",
+      "preparing_route": "Preparing route context.",
+      "not_found_title": "Opening not found",
+      "not_found_description": "The requested opening was not returned from the backend.",
+      "back_to_openings": "Back to openings",
+      "run_started": "Screening run started",
+      "run_start_failed": "Could not start run",
+      "tip_title": "Tip",
+      "tip_upload_via_tab": "Use the Resumes tab to upload files.",
+      "last_run": "Last Run",
+      "top_candidates_title": "Top candidates",
+      "top_candidates_description": "From the most recent screening run (mock).",
+      "no_run_results_title": "No run results yet",
+      "no_run_results_description": "Run screening to generate ranked candidates.",
+      "load_opening_failed": "Could not load opening",
+      "upload_helper": "Select multiple files. We'll parse them in the background and update statuses live.",
+      "upload_started": "Upload started",
+      "uploaded": "Uploaded",
+      "upload_failed": "Upload failed",
+      "embeddings_title": "Embeddings",
+      "embeddings_description": "Generate embeddings used by screening runs.",
+      "embed_status_failed": "Could not load embedding status.",
+      "parsed_label": "Parsed",
+      "embed_resumes": "Embed resumes",
+      "refresh": "Refresh",
+      "embed_queued": "Embedding queued",
+      "embed_queue_failed": "Could not enqueue embeddings",
+      "parsing_completed": "Parsing completed",
+      "batch_progress_title": "Batch progress",
+      "batch_progress_description": "Resume parsing status (live).",
+      "total": "Total:",
+      "view_parsed": "View Parsed",
+      "run_config_title": "Run configuration",
+      "run_config_description": "Tune top-K and reranking (mock).",
+      "create_run": "Create Run",
+      "edit_config": "Edit config",
+      "latest_run_title": "Latest run",
+      "latest_run_description": "Most recent run for this opening.",
+      "no_runs_description": "Create a run to generate ranked candidates.",
+      "run_load_failed": "Could not load run",
+      "open_run": "Open run",
+      "run_not_done": "Run not done yet"
+    },
+    "pipeline_page": {
+      "title": "Pipeline",
+      "subtitle": "ATS-style board for candidate progression.",
+      "select_opening": "Select opening",
+      "branch_description": "Choose a branch to manage openings and pipeline.",
+      "loading_openings": "Loading openings…",
+      "fetching_openings": "Fetching your openings.",
+      "no_openings_description": "Create an opening first, then upload resumes and run screening.",
+      "select_opening_title": "Select an opening",
+      "select_opening_description": "Pick an opening to view its pipeline.",
+      "load_failed_title": "Could not load pipeline",
+      "no_stages_title": "No pipeline stages found",
+      "no_stages_description": "This opening has no stages yet. Try refreshing or recreate the opening defaults.",
+      "stage_conversion_title": "Stage conversion",
+      "stage_conversion_description": "Mock funnel stats.",
+      "conv_screened_interview": "Screened → Interview:",
+      "conv_interview_offer": "Interview → Offer:",
+      "conv_offer_hired": "Offer → Hired:",
+      "tag_active": "Active",
+      "tag_from_run": "From run",
+      "tag_manual": "Manual",
+      "moved_toast": "Moved",
+      "move_failed": "Could not move",
+      "rejected_toast": "Rejected",
+      "reject_failed": "Could not reject",
+      "hired_toast": "Marked as hired",
+      "hire_failed": "Could not hire"
+    },
+    "runs_page": {
+      "title": "Screening Runs",
+      "subtitle": "Async screening runs (retrieve + rerank + explain) — UI-only for now.",
+      "new_run": "New Run",
+      "templates": "Templates",
+      "create_run": "Create run",
+      "run_templates": "Run templates",
+      "col_run": "Run",
+      "col_status": "Status",
+      "col_progress": "Progress",
+      "empty_title": "No runs yet",
+      "empty_description": "Create a screening run to generate ranked candidates.",
+      "how_title": "How runs work",
+      "how_description": "Demo-focused overview.",
+      "how_step_1": "Retrieve top-K via embeddings (BGE-M3)",
+      "how_step_2": "Rerank with bge-reranker-v2-m3",
+      "how_step_3": "Generate structured explanations (Gemini)"
+    },
+    "run_detail": {
+      "title": "Screening Run",
+      "loading_title": "Loading run…",
+      "preparing_route": "Preparing route context.",
+      "select_branch_subtitle": "Select a branch…",
+      "select_branch_title": "Select a branch to continue",
+      "select_branch_description": "Runs are branch-scoped. Pick a branch to view this run.",
+      "load_failed_subtitle": "Could not load run.",
+      "not_found_title": "Run not found",
+      "not_found_inline": "Run not found.",
+      "generate_explanations": "Generate Explanations",
+      "export": "Export",
+      "search_placeholder": "Search candidates…",
+      "search_aria": "Search candidates",
+      "min_score": "Min score",
+      "min_score_aria": "Minimum score",
+      "results_load_failed": "Could not load results",
+      "no_results_title": "No results",
+      "no_results_description": "No candidates matched the current filters.",
+      "open_result_prefix": "Open result",
+      "resume_status_prefix": "resume_status:",
+      "embedding_prefix": "embedding:",
+      "run_failed_title": "Run failed",
+      "run_failed_fallback": "The backend reported a failure.",
+      "retry_run": "Retry run",
+      "run_cancelled_title": "Run cancelled",
+      "run_cancelled_description": "This run was cancelled. You can start a new one from the Opening.",
+      "results_not_ready_title": "Results not ready",
+      "starting_up": "This run is starting up (model load/download). First run can take a couple minutes on CPU — keep this page open.",
+      "still_processing": "This run is still processing. Keep this page open — it will update automatically.",
+      "showing_prefix": "Showing",
+      "of": "of",
+      "prev": "Prev",
+      "next": "Next",
+      "status_title": "Run status",
+      "status_description": "Progress and quick actions.",
+      "cancel": "Cancel",
+      "add_top_10": "Add top 10 to pipeline",
+      "tip_title": "Tip",
+      "tip_description": "Try filtering by a higher score to reduce noise.",
+      "tip_body": "Open any candidate to see matched/missing requirements and evidence quotes (mock).",
+      "toast_cancelled": "Run cancelled",
+      "toast_cancel_failed": "Could not cancel run",
+      "toast_retry_started": "Retry started",
+      "toast_retry_failed": "Could not retry run",
+      "toast_added_to_pipeline": "Added to pipeline",
+      "toast_add_to_pipeline_failed": "Could not add to pipeline",
+      "toast_explanations_queued": "Explanations queued",
+      "toast_generating_top": "Generating for top candidates…",
+      "toast_explanations_failed": "Could not enqueue explanations"
+    },
+    "pipeline": {
+      "no_candidates": "No candidates yet.",
+      "open_application_prefix": "Open application",
+      "move_candidate": "Move candidate",
+      "coming_soon_notes": "Coming soon: Notes"
+    },
+    "application_drawer": {
+      "title_fallback": "Application",
+      "select_prompt": "Select an application to preview.",
+      "resume_status_prefix": "resume:",
+      "move_stage": "Move stage",
+      "move_to_prefix": "Move to",
+      "view_parsed": "View parsed",
+      "reject": "Reject",
+      "hire": "Hire",
+      "notes_title": "Notes",
+      "notes_load_failed": "Could not load notes.",
+      "notes_empty": "No notes yet. Add one below.",
+      "note_placeholder": "Add a note…",
+      "note_empty_toast": "Note is empty",
+      "note_added_toast": "Note added",
+      "note_add_failed": "Could not add note",
+      "add": "Add"
+    }
+  }
+}

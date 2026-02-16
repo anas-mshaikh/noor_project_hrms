@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { useTranslation } from "@/lib/i18n";
 
 import { apiJson } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -23,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const router = useRouter();
   const setFromTokenResponse = useAuth((s) => s.setFromTokenResponse);
 
@@ -35,8 +37,16 @@ export default function LoginPage() {
 
   const loginM = useMutation({
     mutationFn: async () => {
-      if (!email.trim()) throw new Error("Email is required.");
-      if (!password) throw new Error("Password is required.");
+      if (!email.trim()) {
+        throw new Error(
+          t("page.login.email_required", { defaultValue: "Email is required." })
+        );
+      }
+      if (!password) {
+        throw new Error(
+          t("page.login.password_required", { defaultValue: "Password is required." })
+        );
+      }
 
       return apiJson<TokenResponse>("/api/v1/auth/login", {
         method: "POST",
@@ -58,33 +68,46 @@ export default function LoginPage() {
   return (
     <div className="mx-auto max-w-xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {t("page.login.title", { defaultValue: "Sign in" })}
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Use your admin/HR credentials to access the dashboard.
+          {t("page.login.subtitle", {
+            defaultValue: "Use your admin/HR credentials to access the dashboard.",
+          })}
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Login</CardTitle>
+          <CardTitle>{t("page.login.card_title", { defaultValue: "Login" })}</CardTitle>
           <CardDescription>
-            If this is a fresh DB, you may need to <Link className="underline" href="/setup">bootstrap</Link> first.
+            {t("page.login.bootstrap_hint", {
+              defaultValue: "If this is a fresh DB, you may need to bootstrap first.",
+            })}{" "}
+            <Link className="underline" href="/setup">
+              bootstrap
+            </Link>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">
+              {t("page.login.email", { defaultValue: "Email" })}
+            </Label>
             <Input
               id="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@example.com"
+              placeholder={t("page.login.email", { defaultValue: "Email" })}
               autoComplete="email"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">
+              {t("page.login.password", { defaultValue: "Password" })}
+            </Label>
             <Input
               id="password"
               type="password"
@@ -97,7 +120,9 @@ export default function LoginPage() {
 
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" onClick={() => loginM.mutate()} disabled={loginM.isPending}>
-              {loginM.isPending ? "Signing in…" : "Sign in"}
+              {loginM.isPending
+                ? t("page.login.signing_in", { defaultValue: "Signing in..." })
+                : t("common.sign_in", { defaultValue: "Sign in" })}
             </Button>
 
             {loginM.isError ? (
@@ -111,4 +136,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

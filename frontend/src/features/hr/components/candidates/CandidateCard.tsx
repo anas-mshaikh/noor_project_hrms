@@ -27,7 +27,7 @@ export function CandidateCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "w-full rounded-2xl bg-white/[0.02] p-4 text-left ring-1 ring-white/5",
+        "w-full rounded-2xl bg-white/[0.02] p-4 text-start ring-1 ring-white/5",
         "hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/60",
         className
       )}
@@ -66,4 +66,3 @@ export function CandidateCard({
     </button>
   );
 }
-

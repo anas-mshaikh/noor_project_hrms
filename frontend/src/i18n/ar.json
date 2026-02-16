@@ -1,0 +1,516 @@
+{
+  "language": {
+    "label": "اللغة",
+    "en": "English",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "fr": "Français"
+  },
+  "common": {
+    "coming_soon": "قريبًا",
+    "loading": "جار التحميل...",
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "sign_in": "تسجيل الدخول",
+    "sign_out": "تسجيل الخروج"
+  },
+  "picker": {
+    "tenant": "المستأجر",
+    "company": "الشركة",
+    "branch": "الفرع",
+    "camera": "الكاميرا",
+    "select_tenant": "اختر مستأجرًا...",
+    "select_company": "اختر شركة...",
+    "select_branch": "اختر فرعًا...",
+    "select_camera": "اختر كاميرا...",
+    "select_tenant_first": "اختر المستأجر أولًا",
+    "select_company_first": "اختر الشركة أولًا",
+    "select_branch_first": "اختر الفرع أولًا",
+    "tenant_required": "مطلوب للمستخدمين متعددي المستأجرين.",
+    "failed_companies": "تعذر تحميل الشركات",
+    "failed_branches": "تعذر تحميل الفروع",
+    "failed_cameras": "تعذر تحميل الكاميرات"
+  },
+  "shell": {
+    "notifications": "الإشعارات",
+    "help": "المساعدة",
+    "account": "الحساب",
+    "profile": "الملف الشخصي",
+    "settings": "الإعدادات",
+    "signed_in_as": "تم تسجيل الدخول باسم",
+    "open_menu": "فتح القائمة",
+    "go_module_home": "الانتقال إلى الصفحة الرئيسية للوحدة",
+    "notifications_panel": "لوحة الإشعارات",
+    "sign_in_to_view_notifications": "سجل الدخول لعرض الإشعارات",
+    "help_shortcuts": "المساعدة والاختصارات",
+    "profile_page": "صفحة الملف الشخصي",
+    "signed_out": "تم تسجيل الخروج",
+    "menu": "القائمة",
+    "menu_switch_modules": "بدّل بين الوحدات وتنقّل.",
+    "modules": "الوحدات",
+    "context": "السياق",
+    "context_select": "اختر المستأجر والشركة والفرع والكاميرا.",
+    "select_branch": "اختر فرعًا"
+  },
+  "nav": {
+    "modules": {
+      "attendance": "الحضور",
+      "hr": "الموارد البشرية",
+      "tasks": "المهام",
+      "inbox": "البريد",
+      "notes": "الملاحظات",
+      "settings": "الإعدادات"
+    },
+    "items": {
+      "dashboard": {
+        "title": "لوحة التحكم",
+        "description": "مؤشرات الحضور العامة"
+      },
+      "setup": {
+        "title": "الإعداد",
+        "description": "المستأجر والفروع والكاميرات"
+      },
+      "employees": {
+        "title": "الموظفون",
+        "description": "القائمة والتسجيل الوجهي"
+      },
+      "videos": {
+        "title": "الفيديوهات",
+        "description": "الرفع والمعالجة"
+      },
+      "admin-import": {
+        "title": "استيراد المدير",
+        "description": "رفع ملف إكسل الشهري"
+      },
+      "hr-overview": {
+        "title": "نظرة عامة للموارد البشرية",
+        "description": "أداء التوظيف والمهام"
+      },
+      "hr-openings": {
+        "title": "الشواغر",
+        "description": "الوظائف المفتوحة والوصف الوظيفي"
+      },
+      "hr-runs": {
+        "title": "الجولات",
+        "description": "جولات الفرز والنتائج"
+      },
+      "hr-pipeline": {
+        "title": "خط التوظيف",
+        "description": "المراحل والتنقلات"
+      },
+      "hr-onboarding": {
+        "title": "التهيئة",
+        "description": "قائمة مهام الموظفين الجدد"
+      },
+      "tasks-my": {
+        "title": "مهامي",
+        "description": "المهام المسندة لك"
+      },
+      "tasks-team": {
+        "title": "طابور الفريق",
+        "description": "كل المهام المعلقة"
+      },
+      "tasks-approvals": {
+        "title": "الموافقات",
+        "description": "المراجعة والاعتماد"
+      },
+      "inbox-all": {
+        "title": "كل الرسائل",
+        "description": "محادثات الفريق والنظام"
+      },
+      "inbox-groups": {
+        "title": "المجموعات",
+        "description": "القنوات والمجموعات"
+      },
+      "inbox-mentions": {
+        "title": "الإشارات",
+        "description": "الأماكن التي تم ذكرك فيها"
+      },
+      "notes-all": {
+        "title": "كل الملاحظات",
+        "description": "ملاحظاتك ووثائقك"
+      },
+      "notes-templates": {
+        "title": "القوالب",
+        "description": "نماذج قابلة لإعادة الاستخدام"
+      },
+      "notes-library": {
+        "title": "المكتبة",
+        "description": "السياسات وإجراءات العمل"
+      },
+      "settings-general": {
+        "title": "عام",
+        "description": "تفضيلات المؤسسة"
+      },
+      "settings-org": {
+        "title": "المؤسسة",
+        "description": "ملف الشركة"
+      },
+      "settings-access": {
+        "title": "الأدوار والصلاحيات",
+        "description": "الأذونات"
+      },
+      "settings-integrations": {
+        "title": "التكاملات",
+        "description": "الخدمات الخارجية"
+      }
+    }
+  },
+  "page": {
+    "login": {
+      "title": "تسجيل الدخول",
+      "subtitle": "استخدم بيانات المدير أو الموارد البشرية للوصول إلى لوحة التحكم.",
+      "card_title": "الدخول",
+      "bootstrap_hint": "إذا كانت قاعدة البيانات جديدة، قد تحتاج إلى التهيئة أولًا.",
+      "email": "البريد الإلكتروني",
+      "password": "كلمة المرور",
+      "email_required": "البريد الإلكتروني مطلوب.",
+      "password_required": "كلمة المرور مطلوبة.",
+      "signing_in": "جار تسجيل الدخول..."
+    },
+    "settings": {
+      "title": "الإعدادات",
+      "subtitle": "تفضيلات المؤسسة. (واجهة أولية)",
+      "language_title": "اللغة",
+      "language_body": "اختر لغة التطبيق لهذا الجهاز."
+    },
+    "setup": {
+      "subtitle": "تهيئة المستأجر (اختياري) وإدارة كاميرات الفروع.",
+      "current_context": "السياق الحالي",
+      "current_context_desc": "تحديد المستأجر/الشركة/الفرع/الكاميرا.",
+      "calibration_required": "المعايرة مطلوبة قبل تشغيل المهام.",
+      "calibrate_camera": "عاير هذه الكاميرا",
+      "bootstrap_title": "التهيئة (اختياري)",
+      "bootstrap_desc": "أنشئ مستأجرًا جديدًا وشركة وفرعًا ومستخدم مدير. مخصص للبيئات المحلية والتطويرية.",
+      "tenant_name": "اسم المستأجر",
+      "company_name": "اسم الشركة",
+      "branch_name": "اسم الفرع",
+      "branch_code": "رمز الفرع",
+      "timezone": "المنطقة الزمنية",
+      "currency": "العملة",
+      "admin_email": "بريد المدير",
+      "admin_password": "كلمة مرور المدير",
+      "bootstrapping": "جار التهيئة...",
+      "bootstrap_cta": "تهيئة",
+      "create_camera_title": "إنشاء كاميرا",
+      "create_camera_desc": "الكاميرات مرتبطة بالفرع. اختر فرعًا أولًا.",
+      "camera_name": "اسم الكاميرا",
+      "camera_name_placeholder": "مثال: المدخل",
+      "camera_placement": "الموضع (اختياري)",
+      "camera_placement_placeholder": "مثال: أعلى يسار الباب",
+      "creating": "جار الإنشاء...",
+      "create": "إنشاء"
+    },
+    "videos": {
+      "subtitle": "ارفع مقطعًا لتاريخ عمل محدد وشغّل مهمة المعالجة."
+    },
+    "dashboard": {
+      "subtitle": "ملخص حضور مرتبط بالفرع عبر نطاق تاريخي."
+    },
+    "employees": {
+      "subtitle": "دليل الموارد البشرية + تسجيل الوجوه + تهيئة الجوال (وفق الصلاحيات).",
+      "select_scope": "اختر المستأجر + الشركة + الفرع أولًا."
+    },
+    "import": {
+      "subtitle": "ارفع ملف XLSX شهريًا (المبيعات + الحضور). PostgreSQL هو مصدر الحقيقة، ويمكن مزامنة Firebase اختياريًا."
+    },
+    "jobs": {
+      "status": "حالة المهمة"
+    },
+    "reports": {
+      "title": "التقرير"
+    },
+    "calibration": {
+      "title": "المعايرة"
+    }
+  },
+  "hr": {
+    "common": {
+      "select_branch": "اختر فرعًا",
+      "select_branch_first": "اختر فرعًا أولًا",
+      "retry": "إعادة المحاولة",
+      "filters": "تصفية",
+      "overview": "نظرة عامة",
+      "resumes": "السير الذاتية",
+      "screening": "الفرز",
+      "pipeline": "خط التوظيف",
+      "unassigned": "غير مُعيَّن"
+    },
+    "overview_page": {
+      "title": "نظرة عامة للموارد البشرية",
+      "subtitle": "توظيف مدعوم بالذكاء الاصطناعي → خط التوظيف → التهيئة.",
+      "run_screening": "تشغيل الفرز",
+      "create_opening": "إنشاء شاغر",
+      "upload_resumes": "رفع السير الذاتية",
+      "top_opening_prefix": "أبرز شاغر:",
+      "last_run_chip": "آخر جولة: أمين صندوق (مكتمل)",
+      "empty_title": "اختر فرعًا لإدارة الموارد البشرية",
+      "empty_description": "بيانات الموارد البشرية مرتبطة بالفرع. اختر فرعًا لعرض الشواغر والرفع.",
+      "error_title": "تعذر تحميل بيانات الموارد البشرية",
+      "no_openings_title": "لا توجد شواغر بعد",
+      "no_openings_description": "أنشئ أول شاغر لك وارفع السير الذاتية لبدء فرز المرشحين.",
+      "stats_active_openings": "الشواغر النشطة",
+      "stats_screened_7d": "مرشحون تم فرزهم (7 أيام)",
+      "stats_in_pipeline": "في خط التوظيف",
+      "stats_onboarding_active": "تهيئة نشطة",
+      "insights_title": "رؤى الذكاء الاصطناعي",
+      "insights_actual": "فعلي",
+      "insights_ai_projected": "متوقع بالذكاء الاصطناعي",
+      "insights_review_top": "مراجعة أفضل المطابقات",
+      "insights_body": "الإنتاجية تتحسن. شدّد اتفاقية مستوى الخدمة بين \"تم التقديم → تم الفرز\" إلى 24 ساعة للشواغر ذات الحجم العالي لتحسين معدلات استجابة المرشحين.",
+      "activity_title": "النشاط الأخير",
+      "activity_1": "اكتملت جولة الفرز — أمين صندوق",
+      "activity_2": "تم نقل 12 مرشحًا إلى المقابلة",
+      "activity_3": "تم إرسال عرض — مساعد مبيعات",
+      "when_2m": "منذ دقيقتين",
+      "when_1h": "منذ ساعة",
+      "when_yesterday": "أمس",
+      "priority_tasks_title": "المهام ذات الأولوية",
+      "priority_tasks_action": "عرض الكل",
+      "priority_tasks_action_desc": "عرض كل المهام",
+      "priority_tasks_description": "إجراءات اليوم الأكثر أهمية.",
+      "task_followups_title": "متابعات",
+      "task_followups_subtitle": "التواصل مع المرشحين",
+      "task_contract_title": "مراجعة العقد",
+      "task_contract_subtitle": "خطاب العرض",
+      "task_interviews_title": "المقابلات",
+      "task_interviews_subtitle": "مجدولة اليوم",
+      "assistant_title": "المساعد",
+      "assistant_description": "إجراءات سريعة لتسريع دورة التوظيف (تجريبي).",
+      "assistant_action_summary": "ملخص المرشح",
+      "assistant_action_questions": "أسئلة المقابلة",
+      "assistant_action_gaps": "اكتشاف فجوات المهارات",
+      "assistant_action_offer": "صياغة بريد العرض الوظيفي"
+    },
+    "openings_page": {
+      "title": "الشواغر",
+      "subtitle": "أنشئ شواغر، ارفع السير الذاتية، وشغّل الفرز بالذكاء الاصطناعي.",
+      "create_opening": "إنشاء شاغر",
+      "empty_title": "اختر فرعًا لإدارة الشواغر",
+      "empty_description": "الشواغر مرتبطة بالفرع. اختر فرعًا لعرض الشواغر وإنشائها.",
+      "error_title": "تعذر تحميل الشواغر",
+      "no_openings_title": "لا توجد شواغر",
+      "no_openings_description": "أنشئ شاغرًا لبدء جمع السير الذاتية وفرز المرشحين.",
+      "top_by_volume_title": "أكثر الشواغر من حيث الحجم",
+      "top_by_volume_description": "أعلى حجم سير ذاتية (تجريبي).",
+      "recent_runs_title": "الجولات الأخيرة",
+      "recent_runs_action": "عرض الجولات"
+    },
+    "opening_card": {
+      "resumes_suffix": "سير ذاتية",
+      "in_pipeline_suffix": "في خط التوظيف"
+    },
+    "openings_new_page": {
+      "title": "إنشاء شاغر",
+      "subtitle": "اكتب مسودة شاغر وابدأ جمع السير الذاتية.",
+      "empty_title": "اختر فرعًا للمتابعة",
+      "empty_description": "الشواغر مرتبطة بالفرع. اختر فرعًا لإنشاء الشواغر وإدارتها.",
+      "toast_created": "تم إنشاء الشاغر",
+      "toast_failed": "تعذر إنشاء الشاغر",
+      "untitled_opening": "شاغر بدون عنوان"
+    },
+    "opening_wizard": {
+      "steps": {
+        "basics": "الأساسيات",
+        "jd": "الوصف الوظيفي",
+        "requirements": "المتطلبات"
+      },
+      "title_label": "المسمى الوظيفي",
+      "title_placeholder": "مثال: أمين صندوق",
+      "department_label": "القسم",
+      "department_placeholder": "مثال: خدمة العملاء",
+      "location_label": "الموقع",
+      "location_placeholder": "مثال: الرياض",
+      "jd_label": "الوصف الوظيفي",
+      "jd_placeholder": "الصق الوصف الوظيفي هنا…",
+      "add_requirement_label": "أضف متطلبًا",
+      "add_requirement_placeholder": "مثال: مناوبات نهاية الأسبوع",
+      "add": "إضافة",
+      "back": "رجوع",
+      "next": "التالي",
+      "saving": "جار الحفظ…",
+      "save_opening": "حفظ الشاغر",
+      "preview_title": "معاينة",
+      "preview_description": "هكذا سيظهر الشاغر في قائمة الموارد البشرية.",
+      "untitled_opening": "شاغر بدون عنوان",
+      "department_fallback": "القسم",
+      "location_fallback": "الموقع"
+    },
+    "resume_dropzone": {
+      "title": "رفع السير الذاتية",
+      "helper": "اسحب وأفلت أو اختر ملفات. ستبدأ عملية التحليل تلقائيًا.",
+      "uploading": "جار الرفع…",
+      "select_files": "اختر ملفات",
+      "drop_here": "أفلت الملفات هنا",
+      "supported": "المدعوم: PDF و DOCX (والصور لاحقًا)."
+    },
+    "opening_detail": {
+      "missing_opening_id": "معرّف الشاغر مفقود",
+      "select_branch_title": "اختر فرعًا للمتابعة",
+      "select_branch_description": "بيانات الموارد البشرية مرتبطة بالفرع. اختر فرعًا لعرض هذا الشاغر.",
+      "loading_opening": "جار تحميل الشاغر…",
+      "preparing_route": "جار تجهيز سياق المسار.",
+      "not_found_title": "لم يتم العثور على الشاغر",
+      "not_found_description": "لم يُرجع النظام الخلفي الشاغر المطلوب.",
+      "back_to_openings": "العودة إلى الشواغر",
+      "run_started": "بدأت جولة الفرز",
+      "run_start_failed": "تعذر بدء الجولة",
+      "tip_title": "نصيحة",
+      "tip_upload_via_tab": "استخدم تبويب \"السير الذاتية\" لرفع الملفات.",
+      "last_run": "آخر جولة",
+      "top_candidates_title": "أفضل المرشحين",
+      "top_candidates_description": "من أحدث جولة فرز (تجريبي).",
+      "no_run_results_title": "لا توجد نتائج بعد",
+      "no_run_results_description": "شغّل الفرز لتوليد مرشحين مرتبين.",
+      "load_opening_failed": "تعذر تحميل الشاغر",
+      "upload_helper": "اختر عدة ملفات. سنحللها في الخلفية ونحدّث الحالات مباشرة.",
+      "upload_started": "بدأ الرفع",
+      "uploaded": "تم الرفع",
+      "upload_failed": "فشل الرفع",
+      "embeddings_title": "التضمينات",
+      "embeddings_description": "توليد التضمينات المستخدمة في جولات الفرز.",
+      "embed_status_failed": "تعذر تحميل حالة التضمين.",
+      "parsed_label": "تم التحليل",
+      "embed_resumes": "تضمين السير الذاتية",
+      "refresh": "تحديث",
+      "embed_queued": "تمت جدولة التضمين",
+      "embed_queue_failed": "تعذر جدولة التضمينات",
+      "parsing_completed": "اكتمل التحليل",
+      "batch_progress_title": "تقدم الدفعة",
+      "batch_progress_description": "حالة تحليل السير الذاتية (مباشر).",
+      "total": "الإجمالي:",
+      "view_parsed": "عرض التحليل",
+      "run_config_title": "إعدادات الجولة",
+      "run_config_description": "ضبط top-K وإعادة الترتيب (تجريبي).",
+      "create_run": "إنشاء جولة",
+      "edit_config": "تعديل الإعدادات",
+      "latest_run_title": "أحدث جولة",
+      "latest_run_description": "أحدث جولة لهذا الشاغر.",
+      "no_runs_description": "أنشئ جولة لتوليد مرشحين مرتبين.",
+      "run_load_failed": "تعذر تحميل الجولة",
+      "open_run": "فتح الجولة",
+      "run_not_done": "لم تكتمل الجولة بعد"
+    },
+    "pipeline_page": {
+      "title": "خط التوظيف",
+      "subtitle": "لوحة بأسلوب ATS لتقدم المرشحين.",
+      "select_opening": "اختر شاغرًا",
+      "branch_description": "اختر فرعًا لإدارة الشواغر وخط التوظيف.",
+      "loading_openings": "جار تحميل الشواغر…",
+      "fetching_openings": "جار جلب الشواغر.",
+      "no_openings_description": "أنشئ شاغرًا أولًا، ثم ارفع السير الذاتية وشغّل الفرز.",
+      "select_opening_title": "اختر شاغرًا",
+      "select_opening_description": "اختر شاغرًا لعرض خط التوظيف الخاص به.",
+      "load_failed_title": "تعذر تحميل خط التوظيف",
+      "no_stages_title": "لم يتم العثور على مراحل",
+      "no_stages_description": "لا يحتوي هذا الشاغر على مراحل بعد. جرّب التحديث أو إعادة إنشاء الإعدادات الافتراضية.",
+      "stage_conversion_title": "تحويل المراحل",
+      "stage_conversion_description": "إحصاءات تجريبية للقمع.",
+      "conv_screened_interview": "تم الفرز → مقابلة:",
+      "conv_interview_offer": "مقابلة → عرض:",
+      "conv_offer_hired": "عرض → توظيف:",
+      "tag_active": "نشط",
+      "tag_from_run": "من جولة",
+      "tag_manual": "يدوي",
+      "moved_toast": "تم النقل",
+      "move_failed": "تعذر النقل",
+      "rejected_toast": "تم الرفض",
+      "reject_failed": "تعذر الرفض",
+      "hired_toast": "تم وضعه كـ مُوظف",
+      "hire_failed": "تعذر التوظيف"
+    },
+    "runs_page": {
+      "title": "جولات الفرز",
+      "subtitle": "جولات فرز غير متزامنة (استرجاع + إعادة ترتيب + شرح) — واجهة فقط حاليًا.",
+      "new_run": "جولة جديدة",
+      "templates": "قوالب",
+      "create_run": "إنشاء جولة",
+      "run_templates": "قوالب الجولات",
+      "col_run": "الجولة",
+      "col_status": "الحالة",
+      "col_progress": "التقدم",
+      "empty_title": "لا توجد جولات بعد",
+      "empty_description": "أنشئ جولة فرز لتوليد مرشحين مرتبين.",
+      "how_title": "كيف تعمل الجولات",
+      "how_description": "نظرة عامة موجهة للعرض التوضيحي.",
+      "how_step_1": "استرجاع أفضل K عبر التضمينات (BGE-M3)",
+      "how_step_2": "إعادة ترتيب عبر bge-reranker-v2-m3",
+      "how_step_3": "توليد شروحات منظمة (Gemini)"
+    },
+    "run_detail": {
+      "title": "جولة الفرز",
+      "loading_title": "جار تحميل الجولة…",
+      "preparing_route": "جار تجهيز سياق المسار.",
+      "select_branch_subtitle": "اختر فرعًا…",
+      "select_branch_title": "اختر فرعًا للمتابعة",
+      "select_branch_description": "الجولات مرتبطة بالفرع. اختر فرعًا لعرض هذه الجولة.",
+      "load_failed_subtitle": "تعذر تحميل الجولة.",
+      "not_found_title": "لم يتم العثور على الجولة",
+      "not_found_inline": "لم يتم العثور على الجولة.",
+      "generate_explanations": "توليد الشروحات",
+      "export": "تصدير",
+      "search_placeholder": "ابحث عن المرشحين…",
+      "search_aria": "البحث عن المرشحين",
+      "min_score": "الحد الأدنى للنقاط",
+      "min_score_aria": "الحد الأدنى للنقاط",
+      "results_load_failed": "تعذر تحميل النتائج",
+      "no_results_title": "لا توجد نتائج",
+      "no_results_description": "لا يوجد مرشحون يطابقون عوامل التصفية الحالية.",
+      "open_result_prefix": "فتح النتيجة",
+      "resume_status_prefix": "حالة السيرة:",
+      "embedding_prefix": "التضمين:",
+      "run_failed_title": "فشلت الجولة",
+      "run_failed_fallback": "أفاد النظام الخلفي بوجود فشل.",
+      "retry_run": "إعادة المحاولة",
+      "run_cancelled_title": "تم إلغاء الجولة",
+      "run_cancelled_description": "تم إلغاء هذه الجولة. يمكنك بدء جولة جديدة من صفحة الشاغر.",
+      "results_not_ready_title": "النتائج غير جاهزة",
+      "starting_up": "تبدأ الجولة الآن (تحميل/تنزيل النموذج). قد تستغرق الجولة الأولى بضع دقائق على CPU — اترك هذه الصفحة مفتوحة.",
+      "still_processing": "لا تزال الجولة قيد المعالجة. اترك هذه الصفحة مفتوحة — سيتم تحديثها تلقائيًا.",
+      "showing_prefix": "عرض",
+      "of": "من",
+      "prev": "السابق",
+      "next": "التالي",
+      "status_title": "حالة الجولة",
+      "status_description": "التقدم وإجراءات سريعة.",
+      "cancel": "إلغاء",
+      "add_top_10": "إضافة أفضل 10 إلى خط التوظيف",
+      "tip_title": "نصيحة",
+      "tip_description": "جرّب رفع الحد الأدنى للنقاط لتقليل الضجيج.",
+      "tip_body": "افتح أي مرشح لرؤية المتطلبات المطابقة/الناقصة واقتباسات الأدلة (تجريبي).",
+      "toast_cancelled": "تم إلغاء الجولة",
+      "toast_cancel_failed": "تعذر إلغاء الجولة",
+      "toast_retry_started": "بدأت إعادة المحاولة",
+      "toast_retry_failed": "تعذر إعادة المحاولة",
+      "toast_added_to_pipeline": "تمت الإضافة إلى خط التوظيف",
+      "toast_add_to_pipeline_failed": "تعذر الإضافة إلى خط التوظيف",
+      "toast_explanations_queued": "تمت جدولة الشروحات",
+      "toast_generating_top": "جار التوليد لأفضل المرشحين…",
+      "toast_explanations_failed": "تعذر جدولة الشروحات"
+    },
+    "pipeline": {
+      "no_candidates": "لا يوجد مرشحون بعد.",
+      "open_application_prefix": "فتح الطلب",
+      "move_candidate": "نقل المرشح",
+      "coming_soon_notes": "قريبًا: ملاحظات"
+    },
+    "application_drawer": {
+      "title_fallback": "طلب",
+      "select_prompt": "اختر طلبًا للمعاينة.",
+      "resume_status_prefix": "حالة السيرة:",
+      "move_stage": "نقل المرحلة",
+      "move_to_prefix": "انقل إلى",
+      "view_parsed": "عرض التحليل",
+      "reject": "رفض",
+      "hire": "توظيف",
+      "notes_title": "ملاحظات",
+      "notes_load_failed": "تعذر تحميل الملاحظات.",
+      "notes_empty": "لا توجد ملاحظات بعد. أضف واحدة أدناه.",
+      "note_placeholder": "أضف ملاحظة…",
+      "note_empty_toast": "الملاحظة فارغة",
+      "note_added_toast": "تمت إضافة الملاحظة",
+      "note_add_failed": "تعذر إضافة الملاحظة",
+      "add": "إضافة"
+    }
+  }
+}

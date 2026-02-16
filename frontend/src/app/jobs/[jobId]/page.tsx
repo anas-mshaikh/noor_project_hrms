@@ -17,6 +17,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useTranslation } from "@/lib/i18n";
 
 import { apiJson } from "@/lib/api";
 import type { JobReadResponse } from "@/lib/types";
@@ -45,6 +46,7 @@ const TERMINAL = new Set(["DONE", "FAILED", "CANCELED"]);
 // }
 
 export default function JobPage() {
+  const { t } = useTranslation();
   const params = useParams<{ jobId: string }>();
   const jobId = Array.isArray(params?.jobId) ? params.jobId[0] : params?.jobId;
 
@@ -126,7 +128,9 @@ export default function JobPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Job Status</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {t("page.jobs.status", { defaultValue: "Job Status" })}
+          </h1>
           <div className="mt-1 text-sm text-muted-foreground">
             job_id: <code className="text-xs">{jobId}</code>
           </div>

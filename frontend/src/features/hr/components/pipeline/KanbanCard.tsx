@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { MoreHorizontal } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ type KanbanCardProps = {
 };
 
 export function KanbanCard({ card, stages, onMove, onOpen }: KanbanCardProps) {
+  const { t } = useTranslation();
   return (
     <div
       className={cn(
@@ -38,8 +40,8 @@ export function KanbanCard({ card, stages, onMove, onOpen }: KanbanCardProps) {
         <button
           type="button"
           onClick={onOpen}
-          className="min-w-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-violet-300/60 rounded-lg"
-          aria-label={`Open application ${card.title}`}
+          className="min-w-0 text-start outline-none focus-visible:ring-2 focus-visible:ring-violet-300/60 rounded-lg"
+          aria-label={`${t("hr.pipeline.open_application_prefix", { defaultValue: "Open application" })} ${card.title}`}
         >
           <div className="truncate text-sm font-medium">{card.title}</div>
           <div className="mt-1 flex flex-wrap gap-2">
@@ -61,7 +63,7 @@ export function KanbanCard({ card, stages, onMove, onOpen }: KanbanCardProps) {
                   size="icon"
                   variant="ghost"
                   className="h-8 w-8 rounded-xl text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
-                  aria-label="Move candidate"
+                  aria-label={t("hr.pipeline.move_candidate", { defaultValue: "Move candidate" })}
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
@@ -76,11 +78,13 @@ export function KanbanCard({ card, stages, onMove, onOpen }: KanbanCardProps) {
                         key={s.id}
                         onClick={() => onMove(card.id, s.id)}
                       >
-                      Move to {s.name}
+                      {t("hr.application_drawer.move_to_prefix", { defaultValue: "Move to" })} {s.name}
                     </DropdownMenuItem>
                   ))}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem disabled>Coming soon: Notes</DropdownMenuItem>
+                <DropdownMenuItem disabled>
+                  {t("hr.pipeline.coming_soon_notes", { defaultValue: "Coming soon: Notes" })}
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}

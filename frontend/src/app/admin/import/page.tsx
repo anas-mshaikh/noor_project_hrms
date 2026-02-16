@@ -15,6 +15,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { useTranslation } from "@/lib/i18n";
 
 import { apiForm, apiJson } from "@/lib/api";
 import { useSelection } from "@/lib/selection";
@@ -50,6 +51,7 @@ type PublishResponse = {
 };
 
 export default function AdminImportPage() {
+  const { t } = useTranslation();
   const branchId = useSelection((s) => s.branchId);
 
   const defaultMonthKey = useMemo(() => {
@@ -95,8 +97,10 @@ export default function AdminImportPage() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Admin Import</CardTitle>
-          <CardDescription>Select a branch first.</CardDescription>
+          <CardTitle>{t("nav.items.admin-import.title", { defaultValue: "Admin Import" })}</CardTitle>
+          <CardDescription>
+            {t("shell.select_branch", { defaultValue: "Select a branch" })}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
@@ -110,9 +114,14 @@ export default function AdminImportPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Admin Import</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {t("nav.items.admin-import.title", { defaultValue: "Admin Import" })}
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Upload a monthly XLSX (POS + Attendance). Postgres is the source of truth; publish optionally syncs to Firebase.
+          {t("page.import.subtitle", {
+            defaultValue:
+              "Upload a monthly XLSX (POS + Attendance). Postgres is the source of truth; publish optionally syncs to Firebase.",
+          })}
         </p>
       </div>
 
@@ -247,4 +256,3 @@ export default function AdminImportPage() {
     </div>
   );
 }
-

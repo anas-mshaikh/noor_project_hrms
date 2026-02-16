@@ -13,12 +13,15 @@ function shouldPoll(status: string | undefined): boolean {
 function getPollIntervalMs(status: string | undefined, progressTotal: number | null | undefined): number | false {
   if (!shouldPoll(status)) return false;
 
+  // Queue wait state does not need sub-second polling.
+  if (status === "QUEUED") return 5000;
+
   // Reduce spam while the worker is in its "startup" phase (model load / downloads),
   // where `progress_total` is still 0 and the UI can't show meaningful progress yet.
   if (status === "RUNNING" && (progressTotal ?? 0) === 0) return 5000;
 
   // Normal cadence for interactive status updates.
-  return 1500;
+  return 2000;
 }
 
 /**

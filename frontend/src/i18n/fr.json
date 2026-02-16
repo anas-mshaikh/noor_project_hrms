@@ -1,0 +1,57 @@
+{
+  "language": {
+    "label": "Langue",
+    "en": "English",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "fr": "Français"
+  },
+  "common": {
+    "coming_soon": "Bientot disponible",
+    "loading": "Chargement...",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "sign_in": "Se connecter",
+    "sign_out": "Se deconnecter"
+  },
+  "shell": {
+    "notifications": "Notifications",
+    "help": "Aide",
+    "account": "Compte",
+    "profile": "Profil",
+    "settings": "Parametres",
+    "signed_in_as": "Connecte en tant que",
+    "open_menu": "Ouvrir le menu",
+    "go_module_home": "Aller a l'accueil du module",
+    "notifications_panel": "Panneau de notifications",
+    "sign_in_to_view_notifications": "Connectez-vous pour voir les notifications",
+    "help_shortcuts": "Aide et raccourcis",
+    "profile_page": "Page de profil",
+    "signed_out": "Deconnecte",
+    "menu": "Menu",
+    "menu_switch_modules": "Changer de module et naviguer.",
+    "modules": "Modules",
+    "context": "Contexte",
+    "context_select": "Selectionnez tenant, societe, agence et camera.",
+    "select_branch": "Selectionner une agence"
+  },
+  "page": {
+    "login": {
+      "title": "Se connecter",
+      "subtitle": "Utilisez vos identifiants admin/RH pour acceder au tableau de bord.",
+      "card_title": "Connexion",
+      "bootstrap_hint": "Si la base est neuve, vous devrez peut-etre lancer le bootstrap.",
+      "email": "Email",
+      "password": "Mot de passe",
+      "email_required": "L'email est requis.",
+      "password_required": "Le mot de passe est requis.",
+      "signing_in": "Connexion..."
+    },
+    "settings": {
+      "title": "Parametres",
+      "subtitle": "Preferences d'organisation. (UI provisoire)",
+      "language_title": "Langue",
+      "language_body": "Choisissez la langue de l'application pour cet appareil."
+    }
+  }
+}

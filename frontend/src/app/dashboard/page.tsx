@@ -9,6 +9,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "@/lib/i18n";
 
 import { apiJson } from "@/lib/api";
 import { useSelection } from "@/lib/selection";
@@ -139,6 +140,7 @@ function AttendanceBars({ rows }: { rows: AttendanceDailySummaryOut[] }) {
 }
 
 export default function DashboardPage() {
+  const { t } = useTranslation();
   const branchId = useSelection((s) => s.branchId);
 
   const [endDate, setEndDate] = useState(() => toLocalDateInput(new Date()));
@@ -214,9 +216,13 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {t("nav.items.dashboard.title", { defaultValue: "Dashboard" })}
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Branch-scoped attendance summary across a date range.
+          {t("page.dashboard.subtitle", {
+            defaultValue: "Branch-scoped attendance summary across a date range.",
+          })}
         </p>
       </div>
 

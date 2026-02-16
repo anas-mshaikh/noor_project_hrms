@@ -13,11 +13,14 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { useTranslation } from "@/lib/i18n";
 import { toast } from "sonner";
 import { Bell, CircleHelp, Menu, UserCircle2 } from "lucide-react";
 
 import { MODULES, getActiveModule } from "@/config/navigation";
 import { useAuth } from "@/lib/auth";
+import { normalizeLocale } from "@/lib/locale";
+import { useLocale } from "@/lib/useLocale";
 import { useSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -26,13 +29,19 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MobileMenuSheet } from "@/components/shell/MobileMenuSheet";
 
 function ModuleTabs({ pathname }: { pathname: string }) {
+  const { t } = useTranslation();
   const activeModule = getActiveModule(pathname);
 
   return (
@@ -58,7 +67,7 @@ function ModuleTabs({ pathname }: { pathname: string }) {
                 "bg-gradient-to-r from-violet-500/20 to-fuchsia-500/15 text-foreground shadow-[0_0_0_1px_rgba(168,85,247,0.18),0_12px_30px_-18px_rgba(168,85,247,0.6)]"
             )}
           >
-            {m.label}
+            {t(`nav.modules.${m.id}`, { defaultValue: m.label })}
           </Link>
         );
       })}
@@ -105,6 +114,8 @@ function TopBarIconButton({
 }
 
 export function TopBar() {
+  const { t } = useTranslation();
+  const { locale, setLocale } = useLocale();
   const pathname = usePathname();
   const router = useRouter();
   const activeModule = getActiveModule(pathname);
@@ -132,7 +143,7 @@ export function TopBar() {
             "hover:bg-white/[0.06] hover:text-foreground",
             "focus-visible:ring-2 focus-visible:ring-violet-500/40 focus-visible:ring-offset-0"
           )}
-          aria-label="Open menu"
+          aria-label={t("shell.open_menu", { defaultValue: "Open menu" })}
           onClick={() => setMobileOpen(true)}
         >
           <Menu className="h-5 w-5" />
@@ -142,12 +153,12 @@ export function TopBar() {
         <Link
           href={activeModule.href}
           className="flex items-center gap-2 font-semibold tracking-tight"
-          aria-label="Go to module home"
+          aria-label={t("shell.go_module_home", { defaultValue: "Go to module home" })}
         >
           <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/30 to-fuchsia-500/20 ring-1 ring-white/10">
             <activeModule.icon className="h-4 w-4 text-foreground" />
           </span>
-          <span className="hidden sm:inline">Attendance Admin</span>
+          <span className="hidden sm:inline">Noor Project</span>
         </Link>
 
         {/* Modules (desktop) */}
@@ -156,14 +167,14 @@ export function TopBar() {
         </div>
 
         {/* Right actions */}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="topbar-actions ml-auto flex items-center gap-2">
           <TopBarIconButton
-            label="Notifications"
+            label={t("shell.notifications", { defaultValue: "Notifications" })}
             onClick={() =>
-              toast("Coming soon", {
+              toast(t("common.coming_soon", { defaultValue: "Coming soon" }), {
                 description: accessToken
-                  ? "Notifications panel"
-                  : "Sign in to view notifications",
+                  ? t("shell.notifications_panel", { defaultValue: "Notifications panel" })
+                  : t("shell.sign_in_to_view_notifications", { defaultValue: "Sign in to view notifications" }),
               })
             }
           >
@@ -171,8 +182,12 @@ export function TopBar() {
           </TopBarIconButton>
 
           <TopBarIconButton
-            label="Help"
-            onClick={() => toast("Coming soon", { description: "Help & shortcuts" })}
+            label={t("shell.help", { defaultValue: "Help" })}
+            onClick={() =>
+              toast(t("common.coming_soon", { defaultValue: "Coming soon" }), {
+                description: t("shell.help_shortcuts", { defaultValue: "Help & shortcuts" }),
+              })
+            }
           >
             <CircleHelp className="h-5 w-5" />
           </TopBarIconButton>
@@ -200,24 +215,57 @@ export function TopBar() {
               <DropdownMenuLabel>
                 {userEmail ? (
                   <div className="truncate">
-                    <div className="text-xs text-muted-foreground">Signed in as</div>
+                    <div className="text-xs text-muted-foreground">
+                      {t("shell.signed_in_as", { defaultValue: "Signed in as" })}
+                    </div>
                     <div className="truncate">{userEmail}</div>
                   </div>
                 ) : (
-                  "Account"
+                  t("shell.account", { defaultValue: "Account" })
                 )}
               </DropdownMenuLabel>
+              <DropdownMenuSeparator className="bg-white/10" />
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  {t("language.label", { defaultValue: "Language" })}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="border-white/10 bg-white/[0.06] text-foreground shadow-lg backdrop-blur-xl">
+                  <DropdownMenuRadioGroup
+                    value={locale}
+                    onValueChange={(value) => {
+                      void setLocale(normalizeLocale(value));
+                    }}
+                  >
+                    <DropdownMenuRadioItem value="en">
+                      {t("language.en", { defaultValue: "English" })}
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="ar">
+                      {t("language.ar", { defaultValue: "Arabic" })}
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="de">
+                      {t("language.de", { defaultValue: "German" })}
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="fr">
+                      {t("language.fr", { defaultValue: "French" })}
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
               <DropdownMenuSeparator className="bg-white/10" />
               <DropdownMenuItem
                 onSelect={(e) => {
                   e.preventDefault();
-                  toast("Coming soon", { description: "Profile page" });
+                  toast(t("common.coming_soon", { defaultValue: "Coming soon" }), {
+                    description: t("shell.profile_page", { defaultValue: "Profile page" }),
+                  });
                 }}
               >
-                Profile
+                {t("shell.profile", { defaultValue: "Profile" })}
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/settings">Settings</Link>
+                <Link href="/settings">
+                  {t("shell.settings", { defaultValue: "Settings" })}
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-white/10" />
               {accessToken ? (
@@ -230,14 +278,16 @@ export function TopBar() {
                     clearAuth();
                     resetSelection();
                     router.push("/login");
-                    toast("Signed out");
+                    toast(t("shell.signed_out", { defaultValue: "Signed out" }));
                   }}
                 >
-                  Sign out
+                  {t("common.sign_out", { defaultValue: "Sign out" })}
                 </DropdownMenuItem>
               ) : (
                 <DropdownMenuItem asChild>
-                  <Link href="/login">Sign in</Link>
+                  <Link href="/login">
+                    {t("common.sign_in", { defaultValue: "Sign in" })}
+                  </Link>
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>

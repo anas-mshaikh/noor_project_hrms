@@ -25,6 +25,9 @@ unstructured[pdf,docx]>=0.12.0
 # We use SentenceTransformers as a thin wrapper around HuggingFace models so we can
 # switch models easily in the MVP (BGE-M3 now, others later).
 sentence-transformers>=2.6.0
+# FlagEmbedding currently expects Transformers 4.x internals.
+# Unbounded installs can pull Transformers 5.x and break reranker imports.
+transformers>=4.41,<5
 
 # --- HR (Phase 3): Reranker (local) ---
 # We use FlagEmbedding for BGE rerankers (cross-encoder style) to keep the pipeline

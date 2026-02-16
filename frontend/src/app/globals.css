@@ -124,3 +124,12 @@
     @apply bg-background text-foreground;
   }
 }
+
+html[dir="rtl"] .shell-main {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .topbar-actions {
+  margin-left: 0;
+  margin-right: auto;
+}

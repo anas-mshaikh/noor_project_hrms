@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Sparkles, Zap } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n";
 
 import { Button } from "@/components/ui/button";
 import { HrPageShell } from "@/features/hr/components/layout/HrPageShell";
@@ -17,6 +18,7 @@ import { HR_RUNS } from "@/features/hr/mock/data";
 import type { HrScreeningRun } from "@/features/hr/mock/types";
 
 export default function HRRunsPage() {
+  const { t } = useTranslation();
   const { loading } = useMockLoading(600);
 
   const runs = HR_RUNS.slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -24,22 +26,35 @@ export default function HRRunsPage() {
   return (
     <HrPageShell>
       <HrHeader
-        title="Screening Runs"
-        subtitle="Async screening runs (retrieve + rerank + explain) — UI-only for now."
+        title={t("hr.runs_page.title", { defaultValue: "Screening Runs" })}
+        subtitle={t("hr.runs_page.subtitle", {
+          defaultValue:
+            "Async screening runs (retrieve + rerank + explain) — UI-only for now.",
+        })}
         actions={
           <>
-            <GradientButton onClick={() => toast("Coming soon", { description: "Create run" })}>
+            <GradientButton
+              onClick={() =>
+                toast(t("common.coming_soon", { defaultValue: "Coming soon" }), {
+                  description: t("hr.runs_page.create_run", { defaultValue: "Create run" }),
+                })
+              }
+            >
               <Sparkles className="h-4 w-4" />
-              New Run
+              {t("hr.runs_page.new_run", { defaultValue: "New Run" })}
             </GradientButton>
             <Button
               type="button"
               variant="outline"
               className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
-              onClick={() => toast("Coming soon", { description: "Run templates" })}
+              onClick={() =>
+                toast(t("common.coming_soon", { defaultValue: "Coming soon" }), {
+                  description: t("hr.runs_page.run_templates", { defaultValue: "Run templates" }),
+                })
+              }
             >
               <Zap className="h-4 w-4" />
-              Templates
+              {t("hr.runs_page.templates", { defaultValue: "Templates" })}
             </Button>
           </>
         }
@@ -52,7 +67,7 @@ export default function HRRunsPage() {
             columns={[
               {
                 key: "run",
-                header: "Run",
+                header: t("hr.runs_page.col_run", { defaultValue: "Run" }),
                 className: "col-span-6",
                 cell: (r: HrScreeningRun) => (
                   <Link href={`/hr/runs/${r.id}`} className="text-sm font-medium hover:underline">
@@ -62,7 +77,7 @@ export default function HRRunsPage() {
               },
               {
                 key: "status",
-                header: "Status",
+                header: t("hr.runs_page.col_status", { defaultValue: "Status" }),
                 className: "col-span-2",
                 cell: (r: HrScreeningRun) => (
                   <TagChip className="bg-white/[0.03]">{r.status}</TagChip>
@@ -70,7 +85,7 @@ export default function HRRunsPage() {
               },
               {
                 key: "progress",
-                header: "Progress",
+                header: t("hr.runs_page.col_progress", { defaultValue: "Progress" }),
                 className: "col-span-4",
                 cell: (r: HrScreeningRun) => (
                   <div className="text-xs text-muted-foreground tabular-nums">
@@ -81,22 +96,31 @@ export default function HRRunsPage() {
             ]}
             rows={runs}
             rowKey={(r: HrScreeningRun) => r.id}
-            emptyTitle="No runs yet"
-            emptyDescription="Create a screening run to generate ranked candidates."
+            emptyTitle={t("hr.runs_page.empty_title", { defaultValue: "No runs yet" })}
+            emptyDescription={t("hr.runs_page.empty_description", {
+              defaultValue: "Create a screening run to generate ranked candidates.",
+            })}
           />
         </div>
 
         <div className="space-y-6 lg:col-span-4">
-          <PanelCard title="How runs work" description="Demo-focused overview.">
+          <PanelCard
+            title={t("hr.runs_page.how_title", { defaultValue: "How runs work" })}
+            description={t("hr.runs_page.how_description", { defaultValue: "Demo-focused overview." })}
+          >
             <div className="space-y-3 text-sm text-muted-foreground">
               <div className="rounded-2xl bg-white/[0.02] p-3 ring-1 ring-white/5">
-                Retrieve top-K via embeddings (BGE-M3)
+                {t("hr.runs_page.how_step_1", {
+                  defaultValue: "Retrieve top-K via embeddings (BGE-M3)",
+                })}
               </div>
               <div className="rounded-2xl bg-white/[0.02] p-3 ring-1 ring-white/5">
-                Rerank with bge-reranker-v2-m3
+                {t("hr.runs_page.how_step_2", { defaultValue: "Rerank with bge-reranker-v2-m3" })}
               </div>
               <div className="rounded-2xl bg-white/[0.02] p-3 ring-1 ring-white/5">
-                Generate structured explanations (Gemini)
+                {t("hr.runs_page.how_step_3", {
+                  defaultValue: "Generate structured explanations (Gemini)",
+                })}
               </div>
             </div>
           </PanelCard>

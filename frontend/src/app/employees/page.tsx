@@ -18,6 +18,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "@/lib/i18n";
 
 import { apiForm, apiJson } from "@/lib/api";
 import { useSelection } from "@/lib/selection";
@@ -94,6 +95,7 @@ type MobileProvisionOut = {
 };
 
 export default function EmployeesPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
 
   const companyId = useSelection((s) => s.companyId);
@@ -329,7 +331,9 @@ export default function EmployeesPage() {
         <CardHeader>
           <CardTitle>Employees</CardTitle>
           <CardDescription>
-            Select a tenant + company + branch first.
+            {t("page.employees.select_scope", {
+              defaultValue: "Select a tenant + company + branch first.",
+            })}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -349,9 +353,14 @@ export default function EmployeesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Employees</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {t("nav.items.employees.title", { defaultValue: "Employees" })}
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          HR directory + face enrollment + mobile provisioning (permission-driven).
+          {t("page.employees.subtitle", {
+            defaultValue:
+              "HR directory + face enrollment + mobile provisioning (permission-driven).",
+          })}
         </p>
       </div>
 

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Loader2, UploadCloud } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,16 +23,21 @@ export function ResumeDropzone({
   onFilesSelected,
   helperText,
 }: ResumeDropzoneProps) {
+  const { t } = useTranslation();
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
   return (
     <GlassCard className={cn("p-5", className)}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="text-sm font-semibold tracking-tight">Upload resumes</div>
+          <div className="text-sm font-semibold tracking-tight">
+            {t("hr.resume_dropzone.title", { defaultValue: "Upload resumes" })}
+          </div>
           <div className="mt-1 text-sm text-muted-foreground">
             {helperText ??
-              "Drag & drop or select files. Parsing will start automatically."}
+              t("hr.resume_dropzone.helper", {
+                defaultValue: "Drag & drop or select files. Parsing will start automatically.",
+              })}
           </div>
         </div>
         <Button
@@ -45,7 +51,9 @@ export function ResumeDropzone({
           ) : (
             <UploadCloud className="h-4 w-4" />
           )}
-          {uploading ? "Uploading…" : "Select files"}
+          {uploading
+            ? t("hr.resume_dropzone.uploading", { defaultValue: "Uploading…" })
+            : t("hr.resume_dropzone.select_files", { defaultValue: "Select files" })}
         </Button>
         <input
           ref={inputRef}
@@ -79,9 +87,13 @@ export function ResumeDropzone({
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10">
           <UploadCloud className="h-5 w-5 text-foreground/80" />
         </div>
-        <div className="mt-3 text-sm font-medium">Drop files here</div>
+        <div className="mt-3 text-sm font-medium">
+          {t("hr.resume_dropzone.drop_here", { defaultValue: "Drop files here" })}
+        </div>
         <div className="mt-1 text-xs text-muted-foreground">
-          Supported: PDF, DOCX, images (later).
+          {t("hr.resume_dropzone.supported", {
+            defaultValue: "Supported: PDF, DOCX, images (later).",
+          })}
         </div>
       </div>
     </GlassCard>

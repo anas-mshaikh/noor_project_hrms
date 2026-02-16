@@ -54,7 +54,7 @@ export function TableHead({
   return (
     <th
       className={cn(
-        "h-11 px-4 text-left align-middle font-medium text-muted-foreground",
+        "h-11 px-4 text-start align-middle font-medium text-muted-foreground",
         className
       )}
       {...props}
@@ -80,4 +80,3 @@ export function TableCaption({
     />
   );
 }
-

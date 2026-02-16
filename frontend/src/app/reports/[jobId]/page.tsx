@@ -20,6 +20,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "@/lib/i18n";
 
 import { apiJson, apiUrl } from "@/lib/api";
 import type {
@@ -48,6 +49,7 @@ import { Button } from "@/components/ui/button";
 // }
 
 export default function ReportPage() {
+  const { t } = useTranslation();
   const params = useParams<{ jobId: string }>();
   const jobId = Array.isArray(params?.jobId) ? params.jobId[0] : params?.jobId;
 
@@ -94,7 +96,9 @@ export default function ReportPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Report</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {t("page.reports.title", { defaultValue: "Report" })}
+          </h1>
           <div className="mt-1 text-sm text-muted-foreground">
             job_id: <code className="text-xs">{jobId}</code>
           </div>

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Loader2, MessageSquarePlus, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "@/lib/i18n";
 
 import type { ApplicationOut, PipelineStageOut, UUID } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -37,10 +38,14 @@ type ApplicationDrawerProps = {
   busy?: boolean;
 };
 
-function stageNameById(stages: PipelineStageOut[], stageId: UUID | null): string {
-  if (!stageId) return "Unassigned";
+function stageNameById(
+  stages: PipelineStageOut[],
+  stageId: UUID | null,
+  fallback: string
+): string {
+  if (!stageId) return fallback;
   const hit = stages.find((s) => s.id === stageId);
-  return hit?.name ?? "Unassigned";
+  return hit?.name ?? fallback;
 }
 
 export function ApplicationDrawer({
@@ -53,6 +58,7 @@ export function ApplicationDrawer({
   onHire,
   busy,
 }: ApplicationDrawerProps) {
+  const { t } = useTranslation();
   const appId = (open ? application?.id : null) as UUID | null;
   const branchId = useSelection((s) => (s.branchId as UUID | undefined) ?? null);
   const notes = useApplicationNotes(branchId, appId);
@@ -68,7 +74,11 @@ export function ApplicationDrawer({
   }, [open]);
 
   const stageName = application
-    ? stageNameById(stages, application.stage_id)
+    ? stageNameById(
+        stages,
+        application.stage_id,
+        t("hr.common.unassigned", { defaultValue: "Unassigned" })
+      )
     : "—";
 
   return (
@@ -77,12 +87,15 @@ export function ApplicationDrawer({
         <SheetContent className="w-full sm:max-w-2xl border-white/10 bg-white/[0.03] backdrop-blur-xl">
           <SheetHeader className="gap-2">
             <SheetTitle className="truncate">
-              {application?.resume.original_filename ?? "Application"}
+              {application?.resume.original_filename ??
+                t("hr.application_drawer.title_fallback", { defaultValue: "Application" })}
             </SheetTitle>
             <SheetDescription className="truncate">
               {application
                 ? `application_id: ${application.id}`
-                : "Select an application to preview."}
+                : t("hr.application_drawer.select_prompt", {
+                    defaultValue: "Select an application to preview.",
+                  })}
             </SheetDescription>
 
             {application ? (
@@ -94,7 +107,8 @@ export function ApplicationDrawer({
                   {application.status}
                 </span>
                 <span className="rounded-full bg-white/[0.04] px-2 py-0.5 text-xs text-muted-foreground ring-1 ring-white/10">
-                  resume: {application.resume.status}
+                  {t("hr.application_drawer.resume_status_prefix", { defaultValue: "resume:" })}{" "}
+                  {application.resume.status}
                 </span>
               </div>
             ) : null}
@@ -109,7 +123,7 @@ export function ApplicationDrawer({
                   className="h-9 rounded-xl border-white/10 bg-white/[0.03] px-3 text-xs hover:bg-white/[0.06]"
                   disabled={!application || !onMoveStage}
                 >
-                  Move stage
+                  {t("hr.application_drawer.move_stage", { defaultValue: "Move stage" })}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-52">
@@ -124,7 +138,8 @@ export function ApplicationDrawer({
                         onMoveStage(application.id, s.id);
                       }}
                     >
-                      Move to {s.name}
+                      {t("hr.application_drawer.move_to_prefix", { defaultValue: "Move to" })}{" "}
+                      {s.name}
                     </DropdownMenuItem>
                   ))}
               </DropdownMenuContent>
@@ -137,7 +152,7 @@ export function ApplicationDrawer({
               onClick={() => setParsedOpen(true)}
               disabled={!application}
             >
-              View parsed
+              {t("hr.application_drawer.view_parsed", { defaultValue: "View parsed" })}
             </Button>
 
             <div className="flex-1" />
@@ -156,7 +171,7 @@ export function ApplicationDrawer({
               disabled={!application || !onReject || Boolean(busy)}
             >
               <XCircle className="h-4 w-4" />
-              Reject
+              {t("hr.application_drawer.reject", { defaultValue: "Reject" })}
             </Button>
 
             <Button
@@ -168,7 +183,7 @@ export function ApplicationDrawer({
               }}
               disabled={!application || !onHire || Boolean(busy)}
             >
-              Hire
+              {t("hr.application_drawer.hire", { defaultValue: "Hire" })}
             </Button>
           </div>
 
@@ -176,7 +191,9 @@ export function ApplicationDrawer({
 
           {/* Notes */}
           <div className="space-y-3">
-            <div className="text-sm font-semibold tracking-tight">Notes</div>
+            <div className="text-sm font-semibold tracking-tight">
+              {t("hr.application_drawer.notes_title", { defaultValue: "Notes" })}
+            </div>
 
             <div className="rounded-2xl bg-white/[0.02] p-4 ring-1 ring-white/10">
               {notes.list.isFetching ? (
@@ -186,11 +203,15 @@ export function ApplicationDrawer({
                 </div>
               ) : notes.list.isError ? (
                 <div className="text-sm text-muted-foreground">
-                  Could not load notes.
+                  {t("hr.application_drawer.notes_load_failed", {
+                    defaultValue: "Could not load notes.",
+                  })}
                 </div>
               ) : (notes.list.data?.length ?? 0) === 0 ? (
                 <div className="text-sm text-muted-foreground">
-                  No notes yet. Add one below.
+                  {t("hr.application_drawer.notes_empty", {
+                    defaultValue: "No notes yet. Add one below.",
+                  })}
                 </div>
               ) : (
                 <div className="max-h-[40vh] space-y-3 overflow-auto pr-1">
@@ -213,7 +234,9 @@ export function ApplicationDrawer({
                 <textarea
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  placeholder="Add a note…"
+                  placeholder={t("hr.application_drawer.note_placeholder", {
+                    defaultValue: "Add a note…",
+                  })}
                   className={cn(
                     "min-h-[90px] w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-foreground/90",
                     "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/60"
@@ -227,18 +250,26 @@ export function ApplicationDrawer({
                   onClick={() => {
                     const text = note.trim();
                     if (!text) {
-                      toast("Note is empty");
+                      toast(
+                        t("hr.application_drawer.note_empty_toast", {
+                          defaultValue: "Note is empty",
+                        })
+                      );
                       return;
                     }
                     notes.create.mutate(
                       { note: text },
                       {
                         onSuccess: () => {
-                          toast("Note added");
+                          toast(
+                            t("hr.application_drawer.note_added_toast", {
+                              defaultValue: "Note added",
+                            })
+                          );
                           setNote("");
                         },
                         onError: (err) => {
-                          toast("Could not add note", {
+                          toast(t("hr.application_drawer.note_add_failed", { defaultValue: "Could not add note" }), {
                             description:
                               err instanceof Error ? err.message : "Unknown error",
                           });
@@ -254,7 +285,7 @@ export function ApplicationDrawer({
                   ) : (
                     <MessageSquarePlus className="h-4 w-4" />
                   )}
-                  Add
+                  {t("hr.application_drawer.add", { defaultValue: "Add" })}
                 </Button>
               </div>
             </div>

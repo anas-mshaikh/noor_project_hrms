@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useTranslation } from "@/lib/i18n";
 
 import { apiJson } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -136,6 +137,7 @@ function validate(state: CalibrationState): string[] {
 import { CalibrationCanvas, DrawMode } from "@/components/CalibrationCanvas";
 
 export default function CalibrationPage() {
+  const { t } = useTranslation();
   const params = useParams();
   const cameraId = Array.isArray(params?.cameraId)
     ? params?.cameraId[0]
@@ -220,7 +222,9 @@ export default function CalibrationPage() {
   if (!cameraId) {
     return (
       <div className="p-4">
-        <h1 className="text-xl font-semibold">Calibration</h1>
+        <h1 className="text-xl font-semibold">
+          {t("page.calibration.title", { defaultValue: "Calibration" })}
+        </h1>
         <p className="mt-2 text-destructive">cameraId missing in URL</p>
       </div>
     );
@@ -273,7 +277,7 @@ export default function CalibrationPage() {
             ).map(([m, label]) => (
               <button
                 key={m}
-                className={`rounded-md border border-border px-2 py-1 text-left text-foreground ${
+                className={`rounded-md border border-border px-2 py-1 text-start text-foreground ${
                   mode === m
                     ? "bg-white/[0.06] ring-1 ring-white/10"
                     : "bg-background/30 hover:bg-accent"
