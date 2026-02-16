@@ -26,6 +26,20 @@ Notes:
 - Persistent data and outputs live under `backend/data/` (mounted into containers).
 - Models live under `backend/models/` (mounted into containers).
 
+## Frontend i18n
+
+The web admin supports locale selection with cookie-backed persistence.
+
+- Locale cookie: `attendance-admin-locale`
+- Supported locales: `en`, `ar`, `de`, `fr`, `es`
+- SSR applies `<html lang>` and `<html dir>` from cookie/accept-language before hydration.
+- Directionality: `ar` uses RTL; all other locales use LTR.
+- Coverage:
+  - `en` + `ar`: broad UI coverage
+  - `de` + `fr`: core-surface coverage (shell, login, settings, common strings)
+  - `es`: core surfaces + end-to-end HR resume screening module coverage (openings, runs, pipeline, screening details)
+  - Non-translated keys safely fall back to English
+
 ## DB vNext (enterprise foundation)
 
 DB vNext introduces enterprise-ready HRMS foundation schemas (`tenancy`, `iam`, `hr_core`, `workflow`, `dms`) in the **same** Postgres database.

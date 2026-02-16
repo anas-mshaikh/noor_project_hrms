@@ -1,5 +1,5 @@
 export const LOCALE_COOKIE = "attendance-admin-locale";
-export const SUPPORTED_LOCALES = ["en", "ar", "de", "fr"] as const;
+export const SUPPORTED_LOCALES = ["en", "ar", "de", "fr", "es"] as const;
 
 export type AppLocale = (typeof SUPPORTED_LOCALES)[number];
 export type LocaleDir = "ltr" | "rtl";

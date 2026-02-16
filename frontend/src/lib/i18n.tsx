@@ -5,6 +5,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import ar from "@/i18n/ar.json";
 import de from "@/i18n/de.json";
 import en from "@/i18n/en.json";
+import es from "@/i18n/es.json";
 import fr from "@/i18n/fr.json";
 import {
   type AppLocale,
@@ -39,6 +40,7 @@ const resources = {
   en,
   ar,
   de,
+  es,
   fr
 } as const;
 

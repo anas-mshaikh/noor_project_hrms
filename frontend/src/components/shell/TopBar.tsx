@@ -248,6 +248,9 @@ export function TopBar() {
                     <DropdownMenuRadioItem value="fr">
                       {t("language.fr", { defaultValue: "French" })}
                     </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="es">
+                      {t("language.es", { defaultValue: "Español" })}
+                    </DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>

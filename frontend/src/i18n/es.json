@@ -1,0 +1,468 @@
+{
+  "language": {
+    "label": "Idioma",
+    "en": "English",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "fr": "Français",
+    "es": "Español"
+  },
+  "common": {
+    "coming_soon": "Próximamente",
+    "loading": "Cargando...",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "sign_in": "Iniciar sesión",
+    "sign_out": "Cerrar sesión"
+  },
+  "picker": {
+    "tenant": "Tenant",
+    "company": "Empresa",
+    "branch": "Sucursal",
+    "camera": "Cámara",
+    "select_tenant": "Selecciona tenant...",
+    "select_company": "Selecciona empresa...",
+    "select_branch": "Selecciona sucursal...",
+    "select_camera": "Selecciona cámara...",
+    "select_tenant_first": "Selecciona tenant primero",
+    "select_company_first": "Selecciona empresa primero",
+    "select_branch_first": "Selecciona sucursal primero",
+    "tenant_required": "Obligatorio para usuarios multi-tenant.",
+    "failed_companies": "No se pudieron cargar las empresas",
+    "failed_branches": "No se pudieron cargar las sucursales",
+    "failed_cameras": "No se pudieron cargar las cámaras"
+  },
+  "shell": {
+    "notifications": "Notificaciones",
+    "help": "Ayuda",
+    "account": "Cuenta",
+    "profile": "Perfil",
+    "settings": "Configuración",
+    "signed_in_as": "Conectado como",
+    "open_menu": "Abrir menú",
+    "go_module_home": "Ir al inicio del módulo",
+    "notifications_panel": "Panel de notificaciones",
+    "sign_in_to_view_notifications": "Inicia sesión para ver notificaciones",
+    "help_shortcuts": "Ayuda y atajos",
+    "profile_page": "Página de perfil",
+    "signed_out": "Sesión cerrada",
+    "menu": "Menú",
+    "menu_switch_modules": "Cambia de módulo y navega.",
+    "modules": "Módulos",
+    "context": "Contexto",
+    "context_select": "Selecciona tenant, empresa, sucursal y cámara.",
+    "select_branch": "Seleccionar sucursal"
+  },
+  "nav": {
+    "modules": {
+      "attendance": "Asistencia",
+      "hr": "RRHH",
+      "tasks": "Tareas",
+      "inbox": "Bandeja",
+      "notes": "Notas",
+      "settings": "Configuración"
+    },
+    "items": {
+      "dashboard": {
+        "title": "Tablero",
+        "description": "Métricas generales de asistencia"
+      },
+      "setup": {
+        "title": "Configuración inicial",
+        "description": "Tenants, sucursales, cámaras"
+      },
+      "employees": {
+        "title": "Empleados",
+        "description": "Plantilla y registro facial"
+      },
+      "videos": {
+        "title": "Videos",
+        "description": "Cargas y procesamiento"
+      },
+      "admin-import": {
+        "title": "Importación admin",
+        "description": "Carga mensual de Excel"
+      },
+      "hr-overview": {
+        "title": "Resumen RRHH",
+        "description": "Rendimiento de contratación y tareas"
+      },
+      "hr-openings": {
+        "title": "Vacantes",
+        "description": "Vacantes y descripciones del cargo"
+      },
+      "hr-runs": {
+        "title": "Ejecuciones",
+        "description": "Ejecuciones de cribado y resultados"
+      },
+      "hr-pipeline": {
+        "title": "Pipeline",
+        "description": "Etapas y movimientos"
+      },
+      "hr-onboarding": {
+        "title": "Onboarding",
+        "description": "Checklist de nuevos ingresos"
+      },
+      "tasks-my": {
+        "title": "Mis tareas",
+        "description": "Asignadas a ti"
+      },
+      "tasks-team": {
+        "title": "Cola del equipo",
+        "description": "Todas las tareas pendientes"
+      },
+      "tasks-approvals": {
+        "title": "Aprobaciones",
+        "description": "Revisión y aprobación"
+      },
+      "inbox-all": {
+        "title": "Todos los mensajes",
+        "description": "Hilos de equipo y sistema"
+      },
+      "inbox-groups": {
+        "title": "Grupos",
+        "description": "Canales y grupos"
+      },
+      "inbox-mentions": {
+        "title": "Menciones",
+        "description": "Donde te etiquetaron"
+      },
+      "notes-all": {
+        "title": "Todas las notas",
+        "description": "Tus notas y documentos"
+      },
+      "notes-templates": {
+        "title": "Plantillas",
+        "description": "Formularios reutilizables"
+      },
+      "notes-library": {
+        "title": "Biblioteca",
+        "description": "Políticas y procedimientos"
+      },
+      "settings-general": {
+        "title": "General",
+        "description": "Preferencias de la organización"
+      },
+      "settings-org": {
+        "title": "Organización",
+        "description": "Perfil de empresa"
+      },
+      "settings-access": {
+        "title": "Roles y accesos",
+        "description": "Permisos"
+      },
+      "settings-integrations": {
+        "title": "Integraciones",
+        "description": "Servicios externos"
+      }
+    }
+  },
+  "page": {
+    "login": {
+      "title": "Iniciar sesión",
+      "subtitle": "Usa tus credenciales de admin/RRHH para acceder al tablero.",
+      "card_title": "Acceso",
+      "bootstrap_hint": "Si la base es nueva, es posible que necesites ejecutar bootstrap primero.",
+      "email": "Correo",
+      "password": "Contraseña",
+      "email_required": "El correo es obligatorio.",
+      "password_required": "La contraseña es obligatoria.",
+      "signing_in": "Iniciando sesión..."
+    },
+    "settings": {
+      "title": "Configuración",
+      "subtitle": "Preferencias de organización. (UI provisional)",
+      "language_title": "Idioma",
+      "language_body": "Selecciona el idioma de la aplicación para este dispositivo."
+    }
+  },
+  "hr": {
+    "common": {
+      "select_branch": "Selecciona una sucursal",
+      "select_branch_first": "Selecciona una sucursal primero",
+      "retry": "Reintentar",
+      "filters": "Filtros",
+      "overview": "Resumen",
+      "resumes": "Currículos",
+      "screening": "Cribado",
+      "pipeline": "Pipeline",
+      "unassigned": "Sin asignar"
+    },
+    "overview_page": {
+      "title": "Resumen de RRHH",
+      "subtitle": "Contratación con IA → pipeline → onboarding.",
+      "run_screening": "Ejecutar cribado",
+      "create_opening": "Crear vacante",
+      "upload_resumes": "Subir currículos",
+      "top_opening_prefix": "Vacante principal:",
+      "last_run_chip": "Última ejecución: Cajero (DONE)",
+      "empty_title": "Selecciona una sucursal para gestionar RRHH",
+      "empty_description": "Los datos de RRHH son por sucursal. Elige una sucursal para ver vacantes y cargas.",
+      "error_title": "No se pudieron cargar los datos de RRHH",
+      "no_openings_title": "Aún no hay vacantes",
+      "no_openings_description": "Crea tu primera vacante y sube currículos para comenzar el cribado.",
+      "stats_active_openings": "Vacantes activas",
+      "stats_screened_7d": "Candidatos cribados (7d)",
+      "stats_in_pipeline": "En pipeline",
+      "stats_onboarding_active": "Onboarding activo",
+      "insights_title": "Insights de IA",
+      "insights_actual": "Real",
+      "insights_ai_projected": "Proyección IA",
+      "insights_review_top": "Revisar mejores coincidencias",
+      "insights_body": "El rendimiento va en aumento. Ajusta el SLA de “Aplicado → Cribado” a 24h en vacantes de alto volumen para mejorar la tasa de respuesta de candidatos.",
+      "activity_title": "Actividad reciente",
+      "activity_1": "Ejecución de cribado completada — Cajero",
+      "activity_2": "12 candidatos pasaron a Entrevista",
+      "activity_3": "Oferta enviada — Asesor de ventas",
+      "when_2m": "Hace 2 min",
+      "when_1h": "Hace 1 h",
+      "when_yesterday": "Ayer",
+      "priority_tasks_title": "Tareas prioritarias",
+      "priority_tasks_action": "Ver todo",
+      "priority_tasks_action_desc": "Ver todas las tareas",
+      "priority_tasks_description": "Acciones de alto impacto para hoy.",
+      "task_followups_title": "Seguimientos",
+      "task_followups_subtitle": "Contacto con candidatos",
+      "task_contract_title": "Revisión de contrato",
+      "task_contract_subtitle": "Carta de oferta",
+      "task_interviews_title": "Entrevistas",
+      "task_interviews_subtitle": "Programadas para hoy",
+      "assistant_title": "Asistente",
+      "assistant_description": "Acciones rápidas para acelerar tu ciclo de contratación (mock).",
+      "assistant_action_summary": "Resumen del candidato",
+      "assistant_action_questions": "Preguntas de entrevista",
+      "assistant_action_gaps": "Detectar brechas de habilidades",
+      "assistant_action_offer": "Redactar correo de oferta"
+    },
+    "openings_page": {
+      "title": "Vacantes",
+      "subtitle": "Crea vacantes, sube currículos y ejecuta cribado con IA.",
+      "create_opening": "Crear vacante",
+      "empty_title": "Selecciona una sucursal para gestionar vacantes",
+      "empty_description": "Las vacantes de RRHH son por sucursal. Elige una sucursal para ver y crear vacantes.",
+      "error_title": "No se pudieron cargar las vacantes",
+      "no_openings_title": "No se encontraron vacantes",
+      "no_openings_description": "Crea una vacante para empezar a recopilar currículos y evaluar candidatos.",
+      "top_by_volume_title": "Vacantes con mayor volumen",
+      "top_by_volume_description": "Mayor volumen de currículos (mock).",
+      "recent_runs_title": "Ejecuciones recientes",
+      "recent_runs_action": "Ver ejecuciones"
+    },
+    "opening_card": {
+      "resumes_suffix": "currículos",
+      "in_pipeline_suffix": "en pipeline"
+    },
+    "openings_new_page": {
+      "title": "Crear vacante",
+      "subtitle": "Define una vacante y empieza a recibir currículos.",
+      "empty_title": "Selecciona una sucursal para continuar",
+      "empty_description": "Las vacantes de RRHH son por sucursal. Elige una sucursal para crear y gestionar vacantes.",
+      "toast_created": "Vacante creada",
+      "toast_failed": "No se pudo crear la vacante",
+      "untitled_opening": "Vacante sin título"
+    },
+    "opening_wizard": {
+      "steps": {
+        "basics": "Básico",
+        "jd": "Descripción del cargo",
+        "requirements": "Requisitos"
+      },
+      "title_label": "Título",
+      "title_placeholder": "Ej. Cajero",
+      "department_label": "Departamento",
+      "department_placeholder": "Ej. Atención al cliente",
+      "location_label": "Ubicación",
+      "location_placeholder": "Ej. Caracas",
+      "jd_label": "Descripción del cargo",
+      "jd_placeholder": "Pega aquí la descripción del cargo…",
+      "add_requirement_label": "Agregar requisito",
+      "add_requirement_placeholder": "Ej. Disponibilidad fines de semana",
+      "add": "Agregar",
+      "back": "Atrás",
+      "next": "Siguiente",
+      "saving": "Guardando…",
+      "save_opening": "Guardar vacante",
+      "preview_title": "Vista previa",
+      "preview_description": "Así se mostrará la vacante en la lista de RRHH.",
+      "untitled_opening": "Vacante sin título",
+      "department_fallback": "Departamento",
+      "location_fallback": "Ubicación"
+    },
+    "resume_dropzone": {
+      "title": "Subir currículos",
+      "helper": "Arrastra y suelta o selecciona archivos. El análisis iniciará automáticamente.",
+      "uploading": "Subiendo…",
+      "select_files": "Seleccionar archivos",
+      "drop_here": "Suelta los archivos aquí",
+      "supported": "Formatos: PDF, DOCX, imágenes (más adelante)."
+    },
+    "opening_detail": {
+      "missing_opening_id": "Falta el ID de la vacante",
+      "select_branch_title": "Selecciona una sucursal para continuar",
+      "select_branch_description": "Los datos de RRHH son por sucursal. Elige una sucursal para ver esta vacante.",
+      "loading_opening": "Cargando vacante…",
+      "preparing_route": "Preparando el contexto de ruta.",
+      "not_found_title": "Vacante no encontrada",
+      "not_found_description": "La vacante solicitada no fue devuelta por el backend.",
+      "back_to_openings": "Volver a vacantes",
+      "run_started": "Ejecución de cribado iniciada",
+      "run_start_failed": "No se pudo iniciar la ejecución",
+      "tip_title": "Consejo",
+      "tip_upload_via_tab": "Usa la pestaña Currículos para subir archivos.",
+      "last_run": "Última ejecución",
+      "top_candidates_title": "Mejores candidatos",
+      "top_candidates_description": "De la ejecución de cribado más reciente (mock).",
+      "no_run_results_title": "Aún no hay resultados",
+      "no_run_results_description": "Ejecuta cribado para generar candidatos ordenados.",
+      "load_opening_failed": "No se pudo cargar la vacante",
+      "upload_helper": "Selecciona varios archivos. Los analizaremos en segundo plano y actualizaremos estados en vivo.",
+      "upload_started": "Carga iniciada",
+      "uploaded": "Cargado",
+      "upload_failed": "Falló la carga",
+      "embeddings_title": "Embeddings",
+      "embeddings_description": "Genera embeddings para las ejecuciones de cribado.",
+      "embed_status_failed": "No se pudo cargar el estado de embeddings.",
+      "parsed_label": "Analizados",
+      "embed_resumes": "Generar embeddings",
+      "refresh": "Actualizar",
+      "embed_queued": "Embeddings en cola",
+      "embed_queue_failed": "No se pudo encolar embeddings",
+      "parsing_completed": "Análisis completado",
+      "batch_progress_title": "Progreso del lote",
+      "batch_progress_description": "Estado del análisis de currículos (en vivo).",
+      "total": "Total:",
+      "view_parsed": "Ver análisis",
+      "run_config_title": "Configuración de ejecución",
+      "run_config_description": "Ajusta top-K y reordenamiento (mock).",
+      "create_run": "Crear ejecución",
+      "edit_config": "Editar configuración",
+      "latest_run_title": "Ejecución más reciente",
+      "latest_run_description": "Última ejecución de esta vacante.",
+      "no_runs_description": "Crea una ejecución para generar candidatos ordenados.",
+      "run_load_failed": "No se pudo cargar la ejecución",
+      "open_run": "Abrir ejecución",
+      "run_not_done": "La ejecución aún no termina"
+    },
+    "pipeline_page": {
+      "title": "Pipeline",
+      "subtitle": "Tablero tipo ATS para avance de candidatos.",
+      "select_opening": "Seleccionar vacante",
+      "branch_description": "Elige una sucursal para gestionar vacantes y pipeline.",
+      "loading_openings": "Cargando vacantes…",
+      "fetching_openings": "Cargando tus vacantes.",
+      "no_openings_description": "Crea una vacante primero, luego sube currículos y ejecuta cribado.",
+      "select_opening_title": "Selecciona una vacante",
+      "select_opening_description": "Elige una vacante para ver su pipeline.",
+      "load_failed_title": "No se pudo cargar el pipeline",
+      "no_stages_title": "No se encontraron etapas del pipeline",
+      "no_stages_description": "Esta vacante aún no tiene etapas. Intenta actualizar o recrear los valores por defecto.",
+      "stage_conversion_title": "Conversión por etapa",
+      "stage_conversion_description": "Estadísticas de embudo (mock).",
+      "conv_screened_interview": "Cribado → Entrevista:",
+      "conv_interview_offer": "Entrevista → Oferta:",
+      "conv_offer_hired": "Oferta → Contratado:",
+      "tag_active": "Activo",
+      "tag_from_run": "Desde ejecución",
+      "tag_manual": "Manual",
+      "moved_toast": "Movido",
+      "move_failed": "No se pudo mover",
+      "rejected_toast": "Rechazado",
+      "reject_failed": "No se pudo rechazar",
+      "hired_toast": "Marcado como contratado",
+      "hire_failed": "No se pudo marcar como contratado"
+    },
+    "runs_page": {
+      "title": "Ejecuciones de cribado",
+      "subtitle": "Ejecuciones asíncronas (recuperar + reordenar + explicar) — por ahora solo UI.",
+      "new_run": "Nueva ejecución",
+      "templates": "Plantillas",
+      "create_run": "Crear ejecución",
+      "run_templates": "Plantillas de ejecución",
+      "col_run": "Ejecución",
+      "col_status": "Estado",
+      "col_progress": "Progreso",
+      "empty_title": "Aún no hay ejecuciones",
+      "empty_description": "Crea una ejecución de cribado para generar candidatos ordenados.",
+      "how_title": "Cómo funcionan las ejecuciones",
+      "how_description": "Resumen orientado a demo.",
+      "how_step_1": "Recuperar top-K con embeddings (BGE-M3)",
+      "how_step_2": "Reordenar con bge-reranker-v2-m3",
+      "how_step_3": "Generar explicaciones estructuradas (Gemini)"
+    },
+    "run_detail": {
+      "title": "Ejecución de cribado",
+      "loading_title": "Cargando ejecución…",
+      "preparing_route": "Preparando el contexto de ruta.",
+      "select_branch_subtitle": "Selecciona una sucursal…",
+      "select_branch_title": "Selecciona una sucursal para continuar",
+      "select_branch_description": "Las ejecuciones son por sucursal. Elige una sucursal para ver esta ejecución.",
+      "load_failed_subtitle": "No se pudo cargar la ejecución.",
+      "not_found_title": "Ejecución no encontrada",
+      "not_found_inline": "Ejecución no encontrada.",
+      "generate_explanations": "Generar explicaciones",
+      "export": "Exportar",
+      "search_placeholder": "Buscar candidatos…",
+      "search_aria": "Buscar candidatos",
+      "min_score": "Puntuación mínima",
+      "min_score_aria": "Puntuación mínima",
+      "results_load_failed": "No se pudieron cargar los resultados",
+      "no_results_title": "Sin resultados",
+      "no_results_description": "Ningún candidato coincide con los filtros actuales.",
+      "open_result_prefix": "Abrir resultado",
+      "resume_status_prefix": "estado_currículo:",
+      "embedding_prefix": "embedding:",
+      "run_failed_title": "La ejecución falló",
+      "run_failed_fallback": "El backend reportó una falla.",
+      "retry_run": "Reintentar ejecución",
+      "run_cancelled_title": "Ejecución cancelada",
+      "run_cancelled_description": "Esta ejecución fue cancelada. Puedes iniciar una nueva desde la vacante.",
+      "results_not_ready_title": "Resultados no listos",
+      "starting_up": "Esta ejecución está iniciando (carga/descarga de modelo). La primera ejecución puede tardar unos minutos en CPU — mantén esta página abierta.",
+      "still_processing": "Esta ejecución sigue en proceso. Mantén esta página abierta; se actualizará automáticamente.",
+      "showing_prefix": "Mostrando",
+      "of": "de",
+      "prev": "Anterior",
+      "next": "Siguiente",
+      "status_title": "Estado de la ejecución",
+      "status_description": "Progreso y acciones rápidas.",
+      "cancel": "Cancelar",
+      "add_top_10": "Agregar top 10 al pipeline",
+      "tip_title": "Consejo",
+      "tip_description": "Prueba filtrando con una puntuación más alta para reducir ruido.",
+      "tip_body": "Abre cualquier candidato para ver requisitos cumplidos/faltantes y citas de evidencia (mock).",
+      "toast_cancelled": "Ejecución cancelada",
+      "toast_cancel_failed": "No se pudo cancelar la ejecución",
+      "toast_retry_started": "Reintento iniciado",
+      "toast_retry_failed": "No se pudo reintentar la ejecución",
+      "toast_added_to_pipeline": "Agregado al pipeline",
+      "toast_add_to_pipeline_failed": "No se pudo agregar al pipeline",
+      "toast_explanations_queued": "Explicaciones encoladas",
+      "toast_generating_top": "Generando para los mejores candidatos…",
+      "toast_explanations_failed": "No se pudieron encolar explicaciones"
+    },
+    "pipeline": {
+      "no_candidates": "Aún no hay candidatos.",
+      "open_application_prefix": "Abrir postulación",
+      "move_candidate": "Mover candidato",
+      "coming_soon_notes": "Próximamente: Notas"
+    },
+    "application_drawer": {
+      "title_fallback": "Postulación",
+      "select_prompt": "Selecciona una postulación para vista previa.",
+      "resume_status_prefix": "currículo:",
+      "move_stage": "Mover etapa",
+      "move_to_prefix": "Mover a",
+      "view_parsed": "Ver análisis",
+      "reject": "Rechazar",
+      "hire": "Contratar",
+      "notes_title": "Notas",
+      "notes_load_failed": "No se pudieron cargar las notas.",
+      "notes_empty": "Aún no hay notas. Agrega una abajo.",
+      "note_placeholder": "Agregar una nota…",
+      "note_empty_toast": "La nota está vacía",
+      "note_added_toast": "Nota agregada",
+      "note_add_failed": "No se pudo agregar la nota",
+      "add": "Agregar"
+    }
+  }
+}

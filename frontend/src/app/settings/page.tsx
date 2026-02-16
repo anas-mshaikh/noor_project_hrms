@@ -64,6 +64,13 @@ export default function SettingsPage() {
             >
               {t("language.fr", { defaultValue: "French" })}
             </Button>
+            <Button
+              type="button"
+              variant={locale === "es" ? "default" : "outline"}
+              onClick={() => void setLocale("es")}
+            >
+              {t("language.es", { defaultValue: "Español" })}
+            </Button>
           </div>
         </CardContent>
       </Card>
