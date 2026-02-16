@@ -47,6 +47,18 @@ MOBILE_ACCOUNTS_WRITE = "mobile:accounts:write"
 HR_RECRUITING_READ = "hr:recruiting:read"
 HR_RECRUITING_WRITE = "hr:recruiting:write"
 
+# Workflow engine (schema `workflow`)
+WORKFLOW_REQUEST_SUBMIT = "workflow:request:submit"
+WORKFLOW_REQUEST_READ = "workflow:request:read"
+WORKFLOW_REQUEST_APPROVE = "workflow:request:approve"
+WORKFLOW_REQUEST_ADMIN = "workflow:request:admin"
+WORKFLOW_DEFINITION_READ = "workflow:definition:read"
+WORKFLOW_DEFINITION_WRITE = "workflow:definition:write"
+
+# DMS (schema `dms`)
+DMS_FILE_READ = "dms:file:read"
+DMS_FILE_WRITE = "dms:file:write"
+
 
 ALL_PERMISSION_CODES: tuple[str, ...] = (
     TENANCY_READ,
@@ -79,4 +91,12 @@ ALL_PERMISSION_CODES: tuple[str, ...] = (
     MOBILE_ACCOUNTS_WRITE,
     HR_RECRUITING_READ,
     HR_RECRUITING_WRITE,
+    WORKFLOW_REQUEST_SUBMIT,
+    WORKFLOW_REQUEST_READ,
+    WORKFLOW_REQUEST_APPROVE,
+    WORKFLOW_REQUEST_ADMIN,
+    WORKFLOW_DEFINITION_READ,
+    WORKFLOW_DEFINITION_WRITE,
+    DMS_FILE_READ,
+    DMS_FILE_WRITE,
 )
