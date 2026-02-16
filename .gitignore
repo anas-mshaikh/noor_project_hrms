@@ -28,3 +28,7 @@ docs/*.mov
 docs/test/
 mobile-application/android/
 backend/legacy_test_scripts/
+
+# Large demo videos
+docs/Demo_videos/
+*.mov
