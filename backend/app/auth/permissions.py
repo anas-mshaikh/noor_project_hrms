@@ -59,6 +59,18 @@ WORKFLOW_DEFINITION_WRITE = "workflow:definition:write"
 DMS_FILE_READ = "dms:file:read"
 DMS_FILE_WRITE = "dms:file:write"
 
+# Leave (schema `leave`)
+LEAVE_TYPE_READ = "leave:type:read"
+LEAVE_TYPE_WRITE = "leave:type:write"
+LEAVE_POLICY_READ = "leave:policy:read"
+LEAVE_POLICY_WRITE = "leave:policy:write"
+LEAVE_ALLOCATION_WRITE = "leave:allocation:write"
+LEAVE_BALANCE_READ = "leave:balance:read"
+LEAVE_REQUEST_SUBMIT = "leave:request:submit"
+LEAVE_REQUEST_READ = "leave:request:read"
+LEAVE_TEAM_READ = "leave:team:read"
+LEAVE_ADMIN_READ = "leave:admin:read"
+
 
 ALL_PERMISSION_CODES: tuple[str, ...] = (
     TENANCY_READ,
@@ -99,4 +111,14 @@ ALL_PERMISSION_CODES: tuple[str, ...] = (
     WORKFLOW_DEFINITION_WRITE,
     DMS_FILE_READ,
     DMS_FILE_WRITE,
+    LEAVE_TYPE_READ,
+    LEAVE_TYPE_WRITE,
+    LEAVE_POLICY_READ,
+    LEAVE_POLICY_WRITE,
+    LEAVE_ALLOCATION_WRITE,
+    LEAVE_BALANCE_READ,
+    LEAVE_REQUEST_SUBMIT,
+    LEAVE_REQUEST_READ,
+    LEAVE_TEAM_READ,
+    LEAVE_ADMIN_READ,
 )

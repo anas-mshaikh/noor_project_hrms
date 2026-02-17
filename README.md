@@ -56,6 +56,18 @@ Current API foundation state:
 - Responses include `X-Correlation-Id`; errors include `correlation_id`.
 - Critical IAM/HR mutations are audited in `audit.audit_log`.
 - In-app notifications flow through `workflow.notification_outbox` -> `workflow.notifications`.
+- Workflow Engine v1 is available under `/api/v1/workflow/*` (definitions, requests, approvals).
+- Leave Management v1 is available under `/api/v1/leave/*` (workflow-linked approvals).
+
+## Leave Management v1
+
+Leave is implemented as a first-class domain (`leave.*`) integrated with the workflow engine:
+- Workflow links: `workflow.requests.entity_type="leave.leave_request"` and `entity_id=leave.leave_requests.id`
+- Approval side-effects (ledger consumption + `attendance.day_overrides`) are executed via workflow terminal hooks
+- Weekly off config is **required** per branch (`leave.weekly_off` must have all weekdays 0..6) or leave submission fails
+  - Default: branches are auto-initialized to **Fri+Sat off** (Saudi weekend); override per branch if needed.
+
+Docs: `docs/LEAVE.md`
 
 ### Safety backup / restore (dev)
 

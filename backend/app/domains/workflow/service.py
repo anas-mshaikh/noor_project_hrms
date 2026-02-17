@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.audit import service as audit_svc
 from app.core.errors import AppError
+from app.domains.workflow import hooks as workflow_hooks
 from app.shared.types import AuthContext
 
 
@@ -151,17 +152,19 @@ class WorkflowService:
     # -------------------------
     # Assignee resolution
     # -------------------------
-    def _resolve_requester_employee_id(self, db: Session, *, user_id: UUID) -> UUID | None:
+    def _resolve_requester_employee_id(self, db: Session, *, tenant_id: UUID, user_id: UUID) -> UUID | None:
         row = db.execute(
             sa.text(
                 """
-                SELECT employee_id
-                FROM hr_core.employee_user_links
-                WHERE user_id = :user_id
+                SELECT eul.employee_id
+                FROM hr_core.employee_user_links eul
+                JOIN hr_core.employees e ON e.id = eul.employee_id
+                WHERE eul.user_id = :user_id
+                  AND e.tenant_id = :tenant_id
                 LIMIT 1
                 """
             ),
-            {"user_id": user_id},
+            {"user_id": user_id, "tenant_id": tenant_id},
         ).first()
         return row[0] if row is not None else None
 
@@ -360,6 +363,7 @@ class WorkflowService:
         branch_id_hint: UUID | None,
         idempotency_key: str | None,
         initial_comment: str | None,
+        commit: bool = True,
     ) -> dict[str, Any]:
         tenant_id = ctx.scope.tenant_id
         company_id = ctx.scope.company_id
@@ -397,7 +401,7 @@ class WorkflowService:
         if not def_steps:
             raise AppError(code="workflow.definition.not_found", message="Workflow definition has no steps", status_code=400)
 
-        requester_employee_id = self._resolve_requester_employee_id(db, user_id=ctx.user_id)
+        requester_employee_id = self._resolve_requester_employee_id(db, tenant_id=tenant_id, user_id=ctx.user_id)
         if requester_employee_id is None:
             raise AppError(
                 code="workflow.manager_missing",
@@ -783,7 +787,8 @@ class WorkflowService:
             },
         )
 
-        db.commit()
+        if commit:
+            db.commit()
 
         return {
             "id": request_id,
@@ -1130,7 +1135,11 @@ class WorkflowService:
                   r.current_step,
                   r.company_id,
                   r.branch_id,
+                  r.entity_type,
+                  r.entity_id,
                   r.created_by_user_id,
+                  r.requester_employee_id,
+                  r.subject_employee_id,
                   rt.code AS request_type_code
                 FROM workflow.requests r
                 JOIN workflow.request_types rt ON rt.id = r.request_type_id
@@ -1330,6 +1339,13 @@ class WorkflowService:
                     },
                 )
 
+            # Optional domain side-effects (e.g. Leave) on terminal approval.
+            handler = workflow_hooks.get(req.get("entity_type"))
+            if handler is not None and req.get("entity_id") is not None:
+                wf_req = dict(req)
+                wf_req["status"] = "approved"
+                handler.on_approved(db, ctx=ctx, workflow_request=wf_req)
+
             after = {"status": "approved", "current_step": current_step}
             audit_svc.record(
                 db,
@@ -1385,6 +1401,13 @@ class WorkflowService:
                 },
             )
 
+        # Optional domain side-effects (e.g. Leave) on terminal rejection.
+        handler = workflow_hooks.get(req.get("entity_type"))
+        if handler is not None and req.get("entity_id") is not None:
+            wf_req = dict(req)
+            wf_req["status"] = "rejected"
+            handler.on_rejected(db, ctx=ctx, workflow_request=wf_req)
+
         after = {"status": "rejected", "current_step": current_step}
         audit_svc.record(
             db,
@@ -1409,7 +1432,11 @@ class WorkflowService:
                   r.id,
                   r.status,
                   r.current_step,
+                  r.entity_type,
+                  r.entity_id,
                   r.created_by_user_id,
+                  r.requester_employee_id,
+                  r.subject_employee_id,
                   rt.code AS request_type_code
                 FROM workflow.requests r
                 JOIN workflow.request_types rt ON rt.id = r.request_type_id
@@ -1510,6 +1537,13 @@ class WorkflowService:
                         "correlation_id": ctx.correlation_id,
                     },
                 )
+
+        # Optional domain side-effects (e.g. Leave) on cancellation.
+        handler = workflow_hooks.get(req.get("entity_type"))
+        if handler is not None and req.get("entity_id") is not None:
+            wf_req = dict(req)
+            wf_req["status"] = "cancelled"
+            handler.on_cancelled(db, ctx=ctx, workflow_request=wf_req)
 
         audit_svc.record(
             db,

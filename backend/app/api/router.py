@@ -20,6 +20,9 @@ from app.domains.iam.router import router as iam_router
 from app.domains.hr_core.router_hr import router as hr_core_hr_router
 from app.domains.hr_core.router_ess import router as hr_core_ess_router
 from app.domains.hr_core.router_mss import router as hr_core_mss_router
+from app.domains.leave.router_ess import router as leave_ess_router
+from app.domains.leave.router_hr import router as leave_hr_router
+from app.domains.leave.router_mss import router as leave_mss_router
 from app.domains.workflow.router import router as workflow_router
 
 
@@ -44,4 +47,7 @@ api_router.include_router(iam_router)
 api_router.include_router(hr_core_hr_router)
 api_router.include_router(hr_core_ess_router)
 api_router.include_router(hr_core_mss_router)
+api_router.include_router(leave_ess_router)
+api_router.include_router(leave_hr_router)
+api_router.include_router(leave_mss_router)
 api_router.include_router(workflow_router)
