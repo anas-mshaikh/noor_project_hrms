@@ -10,36 +10,48 @@ DB vNext is an enterprise-ready HRMS foundation schema that lives **in the same 
 
 ## What changed
 
-Alembic migrations added DB vNext foundation objects:
+As of **2026-02-17**, the historical Alembic chain was **squashed** into a single
+baseline revision for single-developer velocity:
 
-- `backend/alembic/versions/888da65cf59f_db_vnext_0001_core_foundation.py`
+- Baseline revision: `backend/alembic/versions/000000000000_baseline_squash.py`
+- Baseline SQL payload: `backend/alembic/versions/000000000000_baseline.sql`
+- Historical revisions (archived for reference only): `backend/alembic/versions_archive/`
+
+The baseline creates the full schema (all `*_vnext` foundations + later module
+extensions) and inserts the minimum required global seed rows (roles,
+permissions, request types, role-permission mappings) so a fresh DB can boot.
+
+Previously, multiple Alembic revisions incrementally added DB vNext foundation
+objects (now archived under `backend/alembic/versions_archive/`):
+
+- `backend/alembic/versions_archive/888da65cf59f_db_vnext_0001_core_foundation.py`
   - Creates extensions: `pgcrypto`, `citext`, `pg_trgm`
   - Creates schemas: `tenancy`, `iam`, `hr_core`, `workflow`, `dms`
   - Creates `public.set_updated_at()` and adds updated_at triggers to mutable tables
   - Creates the vNext core tables + indexes
-- `backend/alembic/versions/fc4c56b52118_db_vnext_0002_seed_defaults.py`
+- `backend/alembic/versions_archive/fc4c56b52118_db_vnext_0002_seed_defaults.py`
   - Seeds base roles + permissions + request types
-- `backend/alembic/versions/aca6f7cb881b_db_vnext_0003_seed_demo_tenant.py`
+- `backend/alembic/versions_archive/aca6f7cb881b_db_vnext_0003_seed_demo_tenant.py`
   - Opt-in demo seed (env var: `DB_VNEXT_SEED_DEMO_TENANT=1`): demo tenant/company/branch + demo document types
-- `backend/alembic/versions/b3f7a9d2c4e1_db_vnext_0004_drop_legacy_identity.py`
+- `backend/alembic/versions_archive/b3f7a9d2c4e1_db_vnext_0004_drop_legacy_identity.py`
   - Drops legacy identity duplicates (e.g. `core.*` masters) after asserting vNext tables exist
-- `backend/alembic/versions/c4e1b3f7a9d2_db_vnext_0005_rewire_module_fks.py`
+- `backend/alembic/versions_archive/c4e1b3f7a9d2_db_vnext_0005_rewire_module_fks.py`
   - Renames legacy columns (`org_id`→`tenant_id`, `store_id`→`branch_id`) and rewires module FKs to vNext masters
-- `backend/alembic/versions/d5a2c6e8f1b3_db_vnext_0006_db_hardening.py`
+- `backend/alembic/versions_archive/d5a2c6e8f1b3_db_vnext_0006_db_hardening.py`
   - Adds enterprise hardening: status CHECK constraints, critical indexes, helper views, and selected updated_at triggers
-- `backend/alembic/versions/8c028d85bff3_db_vnext_0007_reconcile_iam_users_email.py`
+- `backend/alembic/versions_archive/8c028d85bff3_db_vnext_0007_reconcile_iam_users_email.py`
   - Reconciles drifted dev DB volumes where `iam.users.email` was missing (forward-only fix)
-- `backend/alembic/versions/88e00e12d1a9_db_vnext_0008_reconcile_hr_core_persons_email.py`
+- `backend/alembic/versions_archive/88e00e12d1a9_db_vnext_0008_reconcile_hr_core_persons_email.py`
   - Reconciles drifted dev DB volumes where `hr_core.persons.email` was missing (forward-only fix)
-- `backend/alembic/versions/78a23d4f40ba_db_vnext_0009_module_tenant_id_rbac_ready.py`
+- `backend/alembic/versions_archive/78a23d4f40ba_db_vnext_0009_module_tenant_id_rbac_ready.py`
   - Adds `tenant_id` to key module/business tables (analytics, face, HR module tables, vision pipeline) for simpler tenant filtering and future RLS
-- `backend/alembic/versions/85a23039697f_iam_refresh_tokens.py`
+- `backend/alembic/versions_archive/85a23039697f_iam_refresh_tokens.py`
   - Adds `iam.refresh_tokens` for JWT refresh token storage (used by `/api/v1/auth/*`)
-- `backend/alembic/versions/6e4f83bf4ad6_seed_colon_permissions.py`
+- `backend/alembic/versions_archive/6e4f83bf4ad6_seed_colon_permissions.py`
   - Seeds colon-style permission vocabulary and role-permission mappings for permission-driven enforcement
-- `backend/alembic/versions/a2ce7edbde24_audit_log.py`
+- `backend/alembic/versions_archive/a2ce7edbde24_audit_log.py`
   - Adds `audit.audit_log` for tenant-scoped critical action auditing
-- `backend/alembic/versions/571e947ad55d_workflow_notifications.py`
+- `backend/alembic/versions_archive/571e947ad55d_workflow_notifications.py`
   - Adds `workflow.notifications` for in-app notification inbox delivery
 
 ## Canonical masters (authoritative source of truth)
@@ -85,7 +97,18 @@ docker compose down -v
 docker compose up --build
 ```
 
-Note: after the hard-cutover migrations (0004+), downgrade is intentionally **not supported** (legacy tables are deleted). Use a full reset (`docker compose down -v`) to return to a clean state.
+Note: downgrade is intentionally **not supported** (legacy tables were deleted during the cutover). Use a full reset (`docker compose down -v`) to return to a clean state.
+
+If you had an existing dev volume from before the squash, you have two options:
+
+1) Wipe the volume (simplest): `docker compose down -v`
+2) Stamp the existing volume to the new baseline (no data loss):
+   - Rebuild + run migrations once: `docker compose up --build migrate`
+   - Then update Alembic's version metadata:
+     ```bash
+     docker compose exec -T db psql -U attendance -d attendance -c \
+       "update alembic_version set version_num='000000000000';"
+     ```
 
 After a full reset, create the first tenant/admin via `POST /api/v1/bootstrap` (see `docs/API_CORE.md`).
 

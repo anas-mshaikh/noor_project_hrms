@@ -47,6 +47,9 @@ DB vNext introduces enterprise-ready HRMS foundation schemas (`tenancy`, `iam`, 
 - Details: `docs/DB_VNEXT.md`
 - Smoke test: `python3 backend/scripts/db_vnext_smoke_test.py`
   - In Docker Compose, this also runs automatically via the `tests` service.
+- Alembic migrations are squashed into a single baseline revision for dev velocity:
+  - `backend/alembic/versions/000000000000_baseline_squash.py`
+  - If you have an older dev DB volume, either reset (`docker compose down -v`) or stamp the DB to `000000000000` (see `docs/DB_VNEXT.md`).
 
 Current API foundation state:
 - Legacy `/api/v1/organizations*` and `/api/v1/stores*` routes are removed.
