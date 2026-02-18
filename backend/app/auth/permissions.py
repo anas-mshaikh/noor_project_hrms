@@ -71,6 +71,12 @@ LEAVE_REQUEST_READ = "leave:request:read"
 LEAVE_TEAM_READ = "leave:team:read"
 LEAVE_ADMIN_READ = "leave:admin:read"
 
+# Attendance regularization (schema `attendance`)
+ATTENDANCE_CORRECTION_SUBMIT = "attendance:correction:submit"
+ATTENDANCE_CORRECTION_READ = "attendance:correction:read"
+ATTENDANCE_TEAM_READ = "attendance:team:read"
+ATTENDANCE_ADMIN_READ = "attendance:admin:read"
+
 
 ALL_PERMISSION_CODES: tuple[str, ...] = (
     TENANCY_READ,
@@ -121,4 +127,8 @@ ALL_PERMISSION_CODES: tuple[str, ...] = (
     LEAVE_REQUEST_READ,
     LEAVE_TEAM_READ,
     LEAVE_ADMIN_READ,
+    ATTENDANCE_CORRECTION_SUBMIT,
+    ATTENDANCE_CORRECTION_READ,
+    ATTENDANCE_TEAM_READ,
+    ATTENDANCE_ADMIN_READ,
 )

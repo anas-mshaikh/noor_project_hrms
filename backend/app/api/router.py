@@ -23,6 +23,8 @@ from app.domains.hr_core.router_mss import router as hr_core_mss_router
 from app.domains.leave.router_ess import router as leave_ess_router
 from app.domains.leave.router_hr import router as leave_hr_router
 from app.domains.leave.router_mss import router as leave_mss_router
+from app.domains.attendance.router_ess import router as attendance_ess_router
+from app.domains.attendance.router_admin import router as attendance_admin_router
 from app.domains.workflow.router import router as workflow_router
 
 
@@ -50,4 +52,6 @@ api_router.include_router(hr_core_mss_router)
 api_router.include_router(leave_ess_router)
 api_router.include_router(leave_hr_router)
 api_router.include_router(leave_mss_router)
+api_router.include_router(attendance_ess_router)
+api_router.include_router(attendance_admin_router)
 api_router.include_router(workflow_router)

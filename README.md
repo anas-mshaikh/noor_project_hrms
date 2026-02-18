@@ -72,6 +72,19 @@ Leave is implemented as a first-class domain (`leave.*`) integrated with the wor
 
 Docs: `docs/LEAVE.md`
 
+## Attendance Regularization v1
+
+Attendance regularization is implemented as a first-class domain (`attendance.attendance_corrections`) integrated with the workflow engine:
+- Workflow links: `workflow.requests.entity_type="attendance.attendance_correction"` and `entity_id=attendance.attendance_corrections.id`
+- Approval side-effects are executed via workflow terminal hooks:
+  - On approval, a deterministic override is written into `attendance.day_overrides` with `override_kind='CORRECTION'`
+- Effective status precedence is deterministic:
+  - Leave (`ON_LEAVE`) wins over correction overrides
+  - Correction overrides win over base attendance
+- v1 rule: attendance corrections are **strict-deny** on leave days (cannot create/approve corrections for a day with `ON_LEAVE`)
+
+Docs: `docs/ATTENDANCE_REGULARIZATION.md`
+
 ### Safety backup / restore (dev)
 
 Backup (schema + data) using the Docker `db` container (no local Postgres tools required):

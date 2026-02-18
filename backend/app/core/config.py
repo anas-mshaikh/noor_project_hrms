@@ -154,6 +154,16 @@ class Settings(BaseSettings):
     # This preserves idempotency while making development/debugging much easier.
     imports_revalidate_failed_on_reupload: bool = True
 
+    # -------------------------
+    # Attendance regularization (Milestone 4)
+    # -------------------------
+    # How far back employees can submit attendance corrections (ESS).
+    attendance_correction_max_days_back: int = 45
+    # Whether employees can submit corrections for future days.
+    attendance_correction_allow_future_days: bool = False
+    # Require `reason` for correction submissions.
+    attendance_correction_require_reason: bool = True
+
     # Firebase credentials (used by mobile sync).
     firebase_service_account_path: str | None = None
     firebase_service_account_json: str | None = None

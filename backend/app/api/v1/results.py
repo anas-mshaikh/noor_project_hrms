@@ -426,6 +426,53 @@ def list_attendance_daily(
     if not include_inactive:
         rows = [r for r in rows if r.employee_id in allowed_employee_ids]
 
+    # Attendance overrides (Leave + Corrections) affect "effective presence".
+    #
+    # Precedence:
+    # 1) ON_LEAVE wins over everything (exclude from present)
+    # 2) CORRECTION wins over base attendance
+    # 3) Base attendance row -> present
+    present_like_overrides = {"PRESENT_OVERRIDE", "WFH", "ON_DUTY"}
+
+    att_by_key: dict[tuple[date, UUID], AttendanceDaily] = {
+        (r.business_date, r.employee_id): r for r in rows
+    }
+
+    # Load overrides for the active branch/date range, filtered to the employee list.
+    override_rows = db.execute(
+        sa.text(
+            """
+            SELECT employee_id, day, status, override_kind, created_at, id
+            FROM attendance.day_overrides
+            WHERE tenant_id = :tenant_id
+              AND branch_id = :branch_id
+              AND day >= :start
+              AND day <= :end
+              AND employee_id = ANY(CAST(:employee_ids AS uuid[]))
+            ORDER BY created_at DESC, id DESC
+            """
+        ),
+        {
+            "tenant_id": ctx.scope.tenant_id,
+            "branch_id": branch_id,
+            "start": start,
+            "end": end,
+            "employee_ids": list(allowed_employee_ids),
+        },
+    ).mappings().all()
+
+    leave_keys: set[tuple[date, UUID]] = set()
+    corr_status_by_key: dict[tuple[date, UUID], str] = {}
+    for o in override_rows:
+        k = (o["day"], UUID(str(o["employee_id"])))
+        st = str(o["status"])
+        if st == "ON_LEAVE":
+            leave_keys.add(k)
+            continue
+        # Newest correction wins (ORDER BY created_at DESC).
+        if k not in corr_status_by_key:
+            corr_status_by_key[k] = st
+
     # Pre-fill all dates so missing days still return zeros.
     per_day: dict[date, dict[str, float]] = {}
     d = start
@@ -440,25 +487,49 @@ def list_attendance_daily(
         }
         d += timedelta(days=1)
 
-    for r in rows:
-        bucket = per_day.get(r.business_date)
-        if bucket is None:
-            continue
+    # Compute per-day stats using effective presence rules.
+    for business_date in sorted(per_day.keys()):
+        bucket = per_day[business_date]
 
-        bucket["present"] += 1
+        for emp_id in allowed_employee_ids:
+            key = (business_date, emp_id)
 
-        if r.total_minutes is not None:
-            bucket["worked_sum"] += float(r.total_minutes)
-            bucket["worked_count"] += 1
+            # Leave overrides win.
+            if key in leave_keys:
+                continue
 
-        if r.punch_in is not None:
-            local = r.punch_in.astimezone(tz)
-            minutes = local.hour * 60 + local.minute
-            bucket["punch_in_sum"] += float(minutes)
-            bucket["punch_in_count"] += 1
+            corr_status = corr_status_by_key.get(key)
+            att = att_by_key.get(key)
 
-            if late_after_minutes is not None and minutes > late_after_minutes:
-                bucket["late"] += 1
+            if corr_status is not None:
+                # Correction overrides win over base.
+                if corr_status in present_like_overrides:
+                    bucket["present"] += 1
+                else:
+                    # ABSENT_OVERRIDE or unknown -> not present
+                    continue
+            else:
+                # Base attendance row implies present.
+                if att is None:
+                    continue
+                bucket["present"] += 1
+
+            # Late/averages are computed from base row only (if present).
+            if att is None:
+                continue
+
+            if att.total_minutes is not None:
+                bucket["worked_sum"] += float(att.total_minutes)
+                bucket["worked_count"] += 1
+
+            if att.punch_in is not None:
+                local = att.punch_in.astimezone(tz)
+                minutes = local.hour * 60 + local.minute
+                bucket["punch_in_sum"] += float(minutes)
+                bucket["punch_in_count"] += 1
+
+                if late_after_minutes is not None and minutes > late_after_minutes:
+                    bucket["late"] += 1
 
     out: list[AttendanceDailySummaryOut] = []
     for business_date in sorted(per_day.keys()):
