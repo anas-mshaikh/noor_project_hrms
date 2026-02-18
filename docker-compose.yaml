@@ -37,6 +37,8 @@ services:
     env_file:
       - ./backend/.env.docker
     volumes:
+      # Mount backend source for dev velocity (avoids rebuilds for migrations/code).
+      - ./backend:/app
       # Persist uploaded videos + outputs to host
       - ./backend/data:/app/data
       # Mount models so the container can use local ONNX / YOLO weights
@@ -55,6 +57,9 @@ services:
       - ./backend/.env.docker
     environment:
       PYTHONPATH: "/app"
+    volumes:
+      # Mount backend source so tests always run against the working tree.
+      - ./backend:/app
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -67,6 +72,8 @@ services:
     env_file:
       - ./backend/.env.docker
     volumes:
+      # Mount backend source for dev iteration without rebuild.
+      - ./backend:/app
       - ./backend/data:/app/data
       - ./backend/models:/app/models
       - ./backend/secrets:/app/secrets:ro
@@ -84,6 +91,7 @@ services:
     env_file:
       - ./backend/.env.docker
     volumes:
+      - ./backend:/app
       - ./backend/data:/app/data
       - ./backend/models:/app/models
       - ./backend/secrets:/app/secrets:ro
@@ -103,6 +111,7 @@ services:
     env_file:
       - ./backend/.env.docker
     volumes:
+      - ./backend:/app
       - ./backend/data:/app/data
       - ./backend/models:/app/models
       - ./backend/secrets:/app/secrets:ro
@@ -120,6 +129,7 @@ services:
     env_file:
       - ./backend/.env.docker
     volumes:
+      - ./backend:/app
       - ./backend/data:/app/data
       - ./backend/models:/app/models
       - ./backend/secrets:/app/secrets:ro
@@ -137,6 +147,7 @@ services:
     env_file:
       - ./backend/.env.docker
     volumes:
+      - ./backend:/app
       - ./backend/data:/app/data
       - ./backend/models:/app/models
       - ./backend/secrets:/app/secrets:ro

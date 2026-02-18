@@ -58,6 +58,13 @@ WORKFLOW_DEFINITION_WRITE = "workflow:definition:write"
 # DMS (schema `dms`)
 DMS_FILE_READ = "dms:file:read"
 DMS_FILE_WRITE = "dms:file:write"
+DMS_DOCUMENT_TYPE_READ = "dms:document-type:read"
+DMS_DOCUMENT_TYPE_WRITE = "dms:document-type:write"
+DMS_DOCUMENT_READ = "dms:document:read"
+DMS_DOCUMENT_WRITE = "dms:document:write"
+DMS_DOCUMENT_VERIFY = "dms:document:verify"
+DMS_EXPIRY_READ = "dms:expiry:read"
+DMS_EXPIRY_WRITE = "dms:expiry:write"
 
 # Leave (schema `leave`)
 LEAVE_TYPE_READ = "leave:type:read"
@@ -117,6 +124,13 @@ ALL_PERMISSION_CODES: tuple[str, ...] = (
     WORKFLOW_DEFINITION_WRITE,
     DMS_FILE_READ,
     DMS_FILE_WRITE,
+    DMS_DOCUMENT_TYPE_READ,
+    DMS_DOCUMENT_TYPE_WRITE,
+    DMS_DOCUMENT_READ,
+    DMS_DOCUMENT_WRITE,
+    DMS_DOCUMENT_VERIFY,
+    DMS_EXPIRY_READ,
+    DMS_EXPIRY_WRITE,
     LEAVE_TYPE_READ,
     LEAVE_TYPE_WRITE,
     LEAVE_POLICY_READ,

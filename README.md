@@ -61,6 +61,7 @@ Current API foundation state:
 - In-app notifications flow through `workflow.notification_outbox` -> `workflow.notifications`.
 - Workflow Engine v1 is available under `/api/v1/workflow/*` (definitions, requests, approvals).
 - Leave Management v1 is available under `/api/v1/leave/*` (workflow-linked approvals).
+- DMS + Employee Documents v1 is available under `/api/v1/dms/*`, `/api/v1/hr/employees/{id}/documents`, `/api/v1/ess/me/documents`.
 
 ## Leave Management v1
 
@@ -84,6 +85,16 @@ Attendance regularization is implemented as a first-class domain (`attendance.at
 - v1 rule: attendance corrections are **strict-deny** on leave days (cannot create/approve corrections for a day with `ON_LEAVE`)
 
 Docs: `docs/ATTENDANCE_REGULARIZATION.md`
+
+## DMS + Employee Documents v1
+
+DMS is implemented as a first-class domain (`dms.*`) with:
+- File upload/download (LOCAL storage v1 under `backend/data/dms/`)
+- Employee document library (HR creates/versions; ESS reads own documents)
+- Workflow-based document verification (`DOCUMENT_VERIFICATION`) via workflow terminal hooks
+- Expiry rules + an idempotent expiry worker that emits in-app notifications
+
+Docs: `docs/DMS.md`
 
 ### Safety backup / restore (dev)
 
