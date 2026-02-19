@@ -84,6 +84,19 @@ ATTENDANCE_CORRECTION_READ = "attendance:correction:read"
 ATTENDANCE_TEAM_READ = "attendance:team:read"
 ATTENDANCE_ADMIN_READ = "attendance:admin:read"
 
+# HR profile change (schema `hr_core`)
+HR_PROFILE_CHANGE_SUBMIT = "hr:profile-change:submit"
+HR_PROFILE_CHANGE_READ = "hr:profile-change:read"
+HR_PROFILE_CHANGE_APPLY = "hr:profile-change:apply"
+
+# Onboarding v2 (schema `onboarding`)
+ONBOARDING_TEMPLATE_READ = "onboarding:template:read"
+ONBOARDING_TEMPLATE_WRITE = "onboarding:template:write"
+ONBOARDING_BUNDLE_READ = "onboarding:bundle:read"
+ONBOARDING_BUNDLE_WRITE = "onboarding:bundle:write"
+ONBOARDING_TASK_READ = "onboarding:task:read"
+ONBOARDING_TASK_SUBMIT = "onboarding:task:submit"
+
 
 ALL_PERMISSION_CODES: tuple[str, ...] = (
     TENANCY_READ,
@@ -145,4 +158,13 @@ ALL_PERMISSION_CODES: tuple[str, ...] = (
     ATTENDANCE_CORRECTION_READ,
     ATTENDANCE_TEAM_READ,
     ATTENDANCE_ADMIN_READ,
+    HR_PROFILE_CHANGE_SUBMIT,
+    HR_PROFILE_CHANGE_READ,
+    HR_PROFILE_CHANGE_APPLY,
+    ONBOARDING_TEMPLATE_READ,
+    ONBOARDING_TEMPLATE_WRITE,
+    ONBOARDING_BUNDLE_READ,
+    ONBOARDING_BUNDLE_WRITE,
+    ONBOARDING_TASK_READ,
+    ONBOARDING_TASK_SUBMIT,
 )

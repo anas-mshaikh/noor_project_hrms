@@ -247,6 +247,24 @@ class DmsFileService:
                 code="dms.file.not_found", message="File not found", status_code=404
             )
 
+        # Creator access: allow the uploader to read/download the file even if
+        # it hasn't been linked to a document/workflow yet.
+        #
+        # Why this exists:
+        # - The upload endpoint returns file metadata immediately after upload.
+        # - Onboarding/ESS flows upload a file and then link it to a document or
+        #   workflow request; the link may happen after the file row exists.
+        #
+        # This does not create cross-tenant leaks because:
+        # - the row is already filtered by tenant_id
+        # - we only allow access for the same created_by_user_id
+        created_by_user_id = row.get("created_by_user_id")
+        if (
+            created_by_user_id is not None
+            and UUID(str(created_by_user_id)) == ctx.user_id
+        ):
+            return row
+
         # HR/admin-style permissions allow tenant-wide reads. We purposely do NOT
         # treat `dms:file:read` alone as privileged, because EMPLOYEE has it and
         # must be restricted to "reachable" files only.

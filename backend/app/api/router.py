@@ -31,6 +31,10 @@ from app.domains.dms.router_documents import router as dms_documents_router
 from app.domains.dms.router_hr import router as dms_hr_router
 from app.domains.dms.router_ess import router as dms_ess_router
 from app.domains.dms.router_expiry import router as dms_expiry_router
+from app.domains.profile_change.router_ess import router as profile_change_ess_router
+from app.domains.profile_change.router_hr import router as profile_change_hr_router
+from app.domains.onboarding.router_hr import router as onboarding_hr_router
+from app.domains.onboarding.router_ess import router as onboarding_ess_router
 from app.domains.workflow.router import router as workflow_router
 
 
@@ -66,4 +70,8 @@ api_router.include_router(dms_documents_router)
 api_router.include_router(dms_hr_router)
 api_router.include_router(dms_ess_router)
 api_router.include_router(dms_expiry_router)
+api_router.include_router(profile_change_ess_router)
+api_router.include_router(profile_change_hr_router)
+api_router.include_router(onboarding_hr_router)
+api_router.include_router(onboarding_ess_router)
 api_router.include_router(workflow_router)

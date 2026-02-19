@@ -96,6 +96,29 @@ DMS is implemented as a first-class domain (`dms.*`) with:
 
 Docs: `docs/DMS.md`
 
+## HR Profile Change v1
+
+HR Profile Change is implemented as a first-class domain (`hr_core.profile_change_requests`)
+integrated with the workflow engine:
+- Workflow links: `workflow.requests.entity_type="hr_core.profile_change_request"` and
+  `entity_id=hr_core.profile_change_requests.id`
+- On approval, the workflow terminal hook applies the approved change-set to
+  `hr_core.*` in the same DB transaction (no separate "apply" endpoint).
+
+Docs: `docs/PROFILE_CHANGE_V1.md`
+
+## Onboarding v2
+
+Onboarding v2 is implemented as a first-class domain (schema `onboarding`) with:
+- HR plan templates + template tasks
+- HR-created employee bundles with task snapshots
+- ESS task submissions (FORM/DOCUMENT/ACK)
+- DMS integration for DOCUMENT tasks (optional document verification workflow)
+- "Submit packet" aggregates submitted onboarding FORM tasks into a single
+  HR Profile Change request (workflow-powered)
+
+Docs: `docs/ONBOARDING_V2.md`
+
 ### Safety backup / restore (dev)
 
 Backup (schema + data) using the Docker `db` container (no local Postgres tools required):
