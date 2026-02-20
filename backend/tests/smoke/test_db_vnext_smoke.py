@@ -1,5 +1,5 @@
 """
-db_vnext_smoke_test.py
+DB vNext smoke test.
 
 DB vNext smoke test for the enterprise foundation schemas:
   tenancy, iam, hr_core, workflow, dms
@@ -8,10 +8,10 @@ This script runs INSERT checks inside a transaction and ROLLS BACK at the end,
 so it is safe to run on every startup.
 
 Usage (from repo root):
-  python3 backend/scripts/db_vnext_smoke_test.py
+  python3 backend/tests/smoke/test_db_vnext_smoke.py
 
 Optional:
-  python3 backend/scripts/db_vnext_smoke_test.py --database-url postgresql://...
+  python3 backend/tests/smoke/test_db_vnext_smoke.py --database-url postgresql://...
 """
 
 from __future__ import annotations
@@ -28,8 +28,13 @@ from sqlalchemy.engine.url import make_url
 
 
 def _ensure_backend_on_path() -> None:
-    repo_root = Path(__file__).resolve().parents[2]
-    backend_dir = repo_root / "backend"
+    # When this file lives at:
+    #   backend/tests/smoke/test_db_vnext_smoke.py
+    # we expect:
+    #   parents[0] = smoke/
+    #   parents[1] = tests/
+    #   parents[2] = backend/
+    backend_dir = Path(__file__).resolve().parents[2]
     if str(backend_dir) not in sys.path:
         sys.path.insert(0, str(backend_dir))
 
@@ -90,13 +95,14 @@ def _assert_index(conn, schema: str, index_name: str) -> None:
 def _load_database_url_from_dotenv() -> str | None:
     # Keep this dependency-free (no python-dotenv).
     # Only parse simple KEY=VALUE lines for DATABASE_URL.
-    repo_root = Path(__file__).resolve().parents[2]
+    backend_dir = Path(__file__).resolve().parents[2]
+    repo_root = backend_dir.parent
     candidates = [
         repo_root / ".env.local",
         repo_root / ".env",
-        repo_root / "backend" / ".env.local",
-        repo_root / "backend" / ".env",
-        repo_root / "backend" / ".env.docker",
+        backend_dir / ".env.local",
+        backend_dir / ".env",
+        backend_dir / ".env.docker",
     ]
 
     for path in candidates:

@@ -23,7 +23,9 @@ def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _create_workflow_definition_attendance_correction_manager_only(client, *, token: str) -> None:
+def _create_workflow_definition_attendance_correction_manager_only(
+    client, *, token: str
+) -> None:
     r = client.post(
         "/api/v1/workflow/definitions",
         headers=_auth(token),
@@ -56,10 +58,35 @@ def test_attendance_correction_happy_path_manager_approves() -> None:
     engine = create_engine(db_url, pool_pre_ping=True)
 
     tenant = seed_tenant_company(engine)
-    admin = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="ADMIN", email_prefix="admin-att")
-    manager_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="MANAGER", email_prefix="mgr-att")
-    employee_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="EMPLOYEE", email_prefix="emp-att")
-    created_users = [admin["user_id"], manager_user["user_id"], employee_user["user_id"]]
+    admin = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="ADMIN",
+        email_prefix="admin-att",
+    )
+    manager_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="MANAGER",
+        email_prefix="mgr-att",
+    )
+    employee_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="EMPLOYEE",
+        email_prefix="emp-att",
+    )
+    created_users = [
+        admin["user_id"],
+        manager_user["user_id"],
+        employee_user["user_id"],
+    ]
 
     try:
         from fastapi.testclient import TestClient
@@ -75,7 +102,9 @@ def test_attendance_correction_happy_path_manager_approves() -> None:
             )
         )
 
-        admin_token = login(client, email=admin["email"], password=admin["password"])["access_token"]
+        admin_token = login(client, email=admin["email"], password=admin["password"])[
+            "access_token"
+        ]
 
         # Manager employee + link
         manager_emp_id = create_employee(
@@ -87,7 +116,12 @@ def test_attendance_correction_happy_path_manager_approves() -> None:
             first_name="Manny",
             last_name="Manager",
         )
-        link_user_to_employee(client, token=admin_token, employee_id=manager_emp_id, user_id=manager_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=manager_emp_id,
+            user_id=manager_user["user_id"],
+        )
 
         # Employee with manager chain + link
         employee_emp_id = create_employee(
@@ -100,13 +134,22 @@ def test_attendance_correction_happy_path_manager_approves() -> None:
             last_name="Employee",
             manager_employee_id=manager_emp_id,
         )
-        link_user_to_employee(client, token=admin_token, employee_id=employee_emp_id, user_id=employee_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=employee_emp_id,
+            user_id=employee_user["user_id"],
+        )
 
-        _create_workflow_definition_attendance_correction_manager_only(client, token=admin_token)
+        _create_workflow_definition_attendance_correction_manager_only(
+            client, token=admin_token
+        )
 
         day = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
 
-        emp_token = login(client, email=employee_user["email"], password=employee_user["password"])["access_token"]
+        emp_token = login(
+            client, email=employee_user["email"], password=employee_user["password"]
+        )["access_token"]
         submit = client.post(
             "/api/v1/attendance/me/corrections",
             headers=_auth(emp_token),
@@ -124,10 +167,16 @@ def test_attendance_correction_happy_path_manager_approves() -> None:
         assert workflow_request_id is not None
         assert submit.json()["data"]["status"] == "PENDING"
 
-        mgr_token = login(client, email=manager_user["email"], password=manager_user["password"])["access_token"]
-        inbox = client.get("/api/v1/workflow/inbox?status=pending&limit=50", headers=_auth(mgr_token))
+        mgr_token = login(
+            client, email=manager_user["email"], password=manager_user["password"]
+        )["access_token"]
+        inbox = client.get(
+            "/api/v1/workflow/inbox?status=pending&limit=50", headers=_auth(mgr_token)
+        )
         assert inbox.status_code == 200, inbox.text
-        assert any(i["id"] == workflow_request_id for i in inbox.json()["data"]["items"])
+        assert any(
+            i["id"] == workflow_request_id for i in inbox.json()["data"]["items"]
+        )
 
         appr = client.post(
             f"/api/v1/workflow/requests/{workflow_request_id}/approve",
@@ -136,9 +185,13 @@ def test_attendance_correction_happy_path_manager_approves() -> None:
         )
         assert appr.status_code == 200, appr.text
 
-        mine = client.get("/api/v1/attendance/me/corrections?limit=50", headers=_auth(emp_token))
+        mine = client.get(
+            "/api/v1/attendance/me/corrections?limit=50", headers=_auth(emp_token)
+        )
         assert mine.status_code == 200, mine.text
-        row = next((r for r in mine.json()["data"]["items"] if r["id"] == corr_id), None)
+        row = next(
+            (r for r in mine.json()["data"]["items"] if r["id"] == corr_id), None
+        )
         assert row is not None
         assert row["status"] == "APPROVED"
 
@@ -177,10 +230,13 @@ def test_attendance_correction_happy_path_manager_approves() -> None:
         from app.worker.notification_worker import consume_once
 
         consume_once(limit=50)
-        emp_notifs = client.get("/api/v1/notifications?unread_only=1&limit=50", headers=_auth(emp_token))
+        emp_notifs = client.get(
+            "/api/v1/notifications?unread_only=1&limit=50", headers=_auth(emp_token)
+        )
         assert emp_notifs.status_code == 200, emp_notifs.text
         assert any(
-            n["type"] == "workflow.request.finalized" and n["entity_id"] == workflow_request_id
+            n["type"] == "workflow.request.finalized"
+            and n["entity_id"] == workflow_request_id
             for n in emp_notifs.json()["data"]["items"]
         )
 
@@ -211,17 +267,51 @@ def test_attendance_correction_conflicts_with_leave() -> None:
     engine = create_engine(db_url, pool_pre_ping=True)
 
     tenant = seed_tenant_company(engine)
-    admin = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="ADMIN", email_prefix="admin-att-leave")
-    manager_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="MANAGER", email_prefix="mgr-att-leave")
-    employee_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="EMPLOYEE", email_prefix="emp-att-leave")
-    created_users = [admin["user_id"], manager_user["user_id"], employee_user["user_id"]]
+    admin = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="ADMIN",
+        email_prefix="admin-att-leave",
+    )
+    manager_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="MANAGER",
+        email_prefix="mgr-att-leave",
+    )
+    employee_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="EMPLOYEE",
+        email_prefix="emp-att-leave",
+    )
+    created_users = [
+        admin["user_id"],
+        manager_user["user_id"],
+        employee_user["user_id"],
+    ]
 
     try:
         from fastapi.testclient import TestClient
 
-        client = TestClient(make_app("app.auth.router", "app.domains.hr_core.router_hr", "app.domains.workflow.router", "app.domains.attendance.router_ess"))
+        client = TestClient(
+            make_app(
+                "app.auth.router",
+                "app.domains.hr_core.router_hr",
+                "app.domains.workflow.router",
+                "app.domains.attendance.router_ess",
+            )
+        )
 
-        admin_token = login(client, email=admin["email"], password=admin["password"])["access_token"]
+        admin_token = login(client, email=admin["email"], password=admin["password"])[
+            "access_token"
+        ]
 
         manager_emp_id = create_employee(
             client,
@@ -232,7 +322,12 @@ def test_attendance_correction_conflicts_with_leave() -> None:
             first_name="M",
             last_name="G",
         )
-        link_user_to_employee(client, token=admin_token, employee_id=manager_emp_id, user_id=manager_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=manager_emp_id,
+            user_id=manager_user["user_id"],
+        )
 
         employee_emp_id = create_employee(
             client,
@@ -244,12 +339,21 @@ def test_attendance_correction_conflicts_with_leave() -> None:
             last_name="E",
             manager_employee_id=manager_emp_id,
         )
-        link_user_to_employee(client, token=admin_token, employee_id=employee_emp_id, user_id=employee_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=employee_emp_id,
+            user_id=employee_user["user_id"],
+        )
 
-        _create_workflow_definition_attendance_correction_manager_only(client, token=admin_token)
+        _create_workflow_definition_attendance_correction_manager_only(
+            client, token=admin_token
+        )
 
-        emp_token = login(client, email=employee_user["email"], password=employee_user["password"])["access_token"]
-        day1 = (datetime.now(timezone.utc).date() - timedelta(days=1))
+        emp_token = login(
+            client, email=employee_user["email"], password=employee_user["password"]
+        )["access_token"]
+        day1 = datetime.now(timezone.utc).date() - timedelta(days=1)
 
         # Existing leave override blocks submission.
         with engine.begin() as conn:
@@ -289,7 +393,7 @@ def test_attendance_correction_conflicts_with_leave() -> None:
         assert submit1.json()["error"]["code"] == "attendance.correction.conflict.leave"
 
         # Approval re-check: introduce leave conflict after submission.
-        day2 = (datetime.now(timezone.utc).date() - timedelta(days=2))
+        day2 = datetime.now(timezone.utc).date() - timedelta(days=2)
         submit2 = client.post(
             "/api/v1/attendance/me/corrections",
             headers=_auth(emp_token),
@@ -327,7 +431,9 @@ def test_attendance_correction_conflicts_with_leave() -> None:
                 },
             )
 
-        mgr_token = login(client, email=manager_user["email"], password=manager_user["password"])["access_token"]
+        mgr_token = login(
+            client, email=manager_user["email"], password=manager_user["password"]
+        )["access_token"]
         appr = client.post(
             f"/api/v1/workflow/requests/{wf_id}/approve",
             headers=_auth(mgr_token),
@@ -365,21 +471,72 @@ def test_attendance_correction_tenant_isolation() -> None:
     tenant_a = seed_tenant_company(engine)
     tenant_b = seed_tenant_company(engine)
 
-    admin_a = seed_user(engine, tenant_id=tenant_a["tenant_id"], company_id=tenant_a["company_id"], branch_id=tenant_a["branch_id"], role_code="ADMIN", email_prefix="admin-att-a")
-    manager_a = seed_user(engine, tenant_id=tenant_a["tenant_id"], company_id=tenant_a["company_id"], branch_id=tenant_a["branch_id"], role_code="MANAGER", email_prefix="mgr-att-a")
-    employee_a = seed_user(engine, tenant_id=tenant_a["tenant_id"], company_id=tenant_a["company_id"], branch_id=tenant_a["branch_id"], role_code="EMPLOYEE", email_prefix="emp-att-a")
+    admin_a = seed_user(
+        engine,
+        tenant_id=tenant_a["tenant_id"],
+        company_id=tenant_a["company_id"],
+        branch_id=tenant_a["branch_id"],
+        role_code="ADMIN",
+        email_prefix="admin-att-a",
+    )
+    manager_a = seed_user(
+        engine,
+        tenant_id=tenant_a["tenant_id"],
+        company_id=tenant_a["company_id"],
+        branch_id=tenant_a["branch_id"],
+        role_code="MANAGER",
+        email_prefix="mgr-att-a",
+    )
+    employee_a = seed_user(
+        engine,
+        tenant_id=tenant_a["tenant_id"],
+        company_id=tenant_a["company_id"],
+        branch_id=tenant_a["branch_id"],
+        role_code="EMPLOYEE",
+        email_prefix="emp-att-a",
+    )
 
-    admin_b = seed_user(engine, tenant_id=tenant_b["tenant_id"], company_id=tenant_b["company_id"], branch_id=tenant_b["branch_id"], role_code="ADMIN", email_prefix="admin-att-b")
-    manager_b = seed_user(engine, tenant_id=tenant_b["tenant_id"], company_id=tenant_b["company_id"], branch_id=tenant_b["branch_id"], role_code="MANAGER", email_prefix="mgr-att-b")
-    employee_b = seed_user(engine, tenant_id=tenant_b["tenant_id"], company_id=tenant_b["company_id"], branch_id=tenant_b["branch_id"], role_code="EMPLOYEE", email_prefix="emp-att-b")
+    admin_b = seed_user(
+        engine,
+        tenant_id=tenant_b["tenant_id"],
+        company_id=tenant_b["company_id"],
+        branch_id=tenant_b["branch_id"],
+        role_code="ADMIN",
+        email_prefix="admin-att-b",
+    )
+    manager_b = seed_user(
+        engine,
+        tenant_id=tenant_b["tenant_id"],
+        company_id=tenant_b["company_id"],
+        branch_id=tenant_b["branch_id"],
+        role_code="MANAGER",
+        email_prefix="mgr-att-b",
+    )
+    employee_b = seed_user(
+        engine,
+        tenant_id=tenant_b["tenant_id"],
+        company_id=tenant_b["company_id"],
+        branch_id=tenant_b["branch_id"],
+        role_code="EMPLOYEE",
+        email_prefix="emp-att-b",
+    )
 
     try:
         from fastapi.testclient import TestClient
 
-        client = TestClient(make_app("app.auth.router", "app.domains.hr_core.router_hr", "app.domains.workflow.router", "app.domains.attendance.router_ess"))
+        client = TestClient(
+            make_app(
+                "app.auth.router",
+                "app.domains.hr_core.router_hr",
+                "app.domains.workflow.router",
+                "app.domains.attendance.router_ess",
+            )
+        )
 
         # Setup tenant B correction
-        token_b = login(client, email=admin_b["email"], password=admin_b["password"])["access_token"]
+        token_b = login(client, email=admin_b["email"], password=admin_b["password"])[
+            "access_token"
+        ]
 
         mgr_emp_b = create_employee(
             client,
@@ -390,7 +547,9 @@ def test_attendance_correction_tenant_isolation() -> None:
             first_name="B",
             last_name="Mgr",
         )
-        link_user_to_employee(client, token=token_b, employee_id=mgr_emp_b, user_id=manager_b["user_id"])
+        link_user_to_employee(
+            client, token=token_b, employee_id=mgr_emp_b, user_id=manager_b["user_id"]
+        )
 
         emp_emp_b = create_employee(
             client,
@@ -402,11 +561,17 @@ def test_attendance_correction_tenant_isolation() -> None:
             last_name="Emp",
             manager_employee_id=mgr_emp_b,
         )
-        link_user_to_employee(client, token=token_b, employee_id=emp_emp_b, user_id=employee_b["user_id"])
+        link_user_to_employee(
+            client, token=token_b, employee_id=emp_emp_b, user_id=employee_b["user_id"]
+        )
 
-        _create_workflow_definition_attendance_correction_manager_only(client, token=token_b)
+        _create_workflow_definition_attendance_correction_manager_only(
+            client, token=token_b
+        )
 
-        emp_token_b = login(client, email=employee_b["email"], password=employee_b["password"])["access_token"]
+        emp_token_b = login(
+            client, email=employee_b["email"], password=employee_b["password"]
+        )["access_token"]
         day = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
         submit_b = client.post(
             "/api/v1/attendance/me/corrections",
@@ -423,7 +588,9 @@ def test_attendance_correction_tenant_isolation() -> None:
         corr_id_b = submit_b.json()["data"]["id"]
 
         # Setup tenant A employee (linked) and attempt to cancel tenant B correction.
-        token_a = login(client, email=admin_a["email"], password=admin_a["password"])["access_token"]
+        token_a = login(client, email=admin_a["email"], password=admin_a["password"])[
+            "access_token"
+        ]
 
         mgr_emp_a = create_employee(
             client,
@@ -434,7 +601,9 @@ def test_attendance_correction_tenant_isolation() -> None:
             first_name="A",
             last_name="Mgr",
         )
-        link_user_to_employee(client, token=token_a, employee_id=mgr_emp_a, user_id=manager_a["user_id"])
+        link_user_to_employee(
+            client, token=token_a, employee_id=mgr_emp_a, user_id=manager_a["user_id"]
+        )
 
         emp_emp_a = create_employee(
             client,
@@ -446,9 +615,13 @@ def test_attendance_correction_tenant_isolation() -> None:
             last_name="Emp",
             manager_employee_id=mgr_emp_a,
         )
-        link_user_to_employee(client, token=token_a, employee_id=emp_emp_a, user_id=employee_a["user_id"])
+        link_user_to_employee(
+            client, token=token_a, employee_id=emp_emp_a, user_id=employee_a["user_id"]
+        )
 
-        emp_token_a = login(client, email=employee_a["email"], password=employee_a["password"])["access_token"]
+        emp_token_a = login(
+            client, email=employee_a["email"], password=employee_a["password"]
+        )["access_token"]
         cancel_other = client.post(
             f"/api/v1/attendance/me/corrections/{corr_id_b}/cancel",
             headers=_auth(emp_token_a),
@@ -456,8 +629,16 @@ def test_attendance_correction_tenant_isolation() -> None:
         assert cancel_other.status_code == 404, cancel_other.text
         assert cancel_other.json()["error"]["code"] == "attendance.correction.not_found"
     finally:
-        cleanup(engine, tenant_id=tenant_a["tenant_id"], user_ids=[admin_a["user_id"], manager_a["user_id"], employee_a["user_id"]])
-        cleanup(engine, tenant_id=tenant_b["tenant_id"], user_ids=[admin_b["user_id"], manager_b["user_id"], employee_b["user_id"]])
+        cleanup(
+            engine,
+            tenant_id=tenant_a["tenant_id"],
+            user_ids=[admin_a["user_id"], manager_a["user_id"], employee_a["user_id"]],
+        )
+        cleanup(
+            engine,
+            tenant_id=tenant_b["tenant_id"],
+            user_ids=[admin_b["user_id"], manager_b["user_id"], employee_b["user_id"]],
+        )
 
 
 def test_attendance_correction_permission_denied_submit() -> None:
@@ -465,15 +646,26 @@ def test_attendance_correction_permission_denied_submit() -> None:
     engine = create_engine(db_url, pool_pre_ping=True)
 
     tenant = seed_tenant_company(engine)
-    manager_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="MANAGER", email_prefix="mgr-att-deny")
+    manager_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="MANAGER",
+        email_prefix="mgr-att-deny",
+    )
     created_users = [manager_user["user_id"]]
 
     try:
         from fastapi.testclient import TestClient
 
-        client = TestClient(make_app("app.auth.router", "app.domains.attendance.router_ess"))
+        client = TestClient(
+            make_app("app.auth.router", "app.domains.attendance.router_ess")
+        )
 
-        mgr_token = login(client, email=manager_user["email"], password=manager_user["password"])["access_token"]
+        mgr_token = login(
+            client, email=manager_user["email"], password=manager_user["password"]
+        )["access_token"]
         day = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
         submit = client.post(
             "/api/v1/attendance/me/corrections",
@@ -496,17 +688,51 @@ def test_attendance_correction_idempotent_create() -> None:
     engine = create_engine(db_url, pool_pre_ping=True)
 
     tenant = seed_tenant_company(engine)
-    admin = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="ADMIN", email_prefix="admin-att-idem")
-    manager_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="MANAGER", email_prefix="mgr-att-idem")
-    employee_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="EMPLOYEE", email_prefix="emp-att-idem")
-    created_users = [admin["user_id"], manager_user["user_id"], employee_user["user_id"]]
+    admin = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="ADMIN",
+        email_prefix="admin-att-idem",
+    )
+    manager_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="MANAGER",
+        email_prefix="mgr-att-idem",
+    )
+    employee_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="EMPLOYEE",
+        email_prefix="emp-att-idem",
+    )
+    created_users = [
+        admin["user_id"],
+        manager_user["user_id"],
+        employee_user["user_id"],
+    ]
 
     try:
         from fastapi.testclient import TestClient
 
-        client = TestClient(make_app("app.auth.router", "app.domains.hr_core.router_hr", "app.domains.workflow.router", "app.domains.attendance.router_ess"))
+        client = TestClient(
+            make_app(
+                "app.auth.router",
+                "app.domains.hr_core.router_hr",
+                "app.domains.workflow.router",
+                "app.domains.attendance.router_ess",
+            )
+        )
 
-        admin_token = login(client, email=admin["email"], password=admin["password"])["access_token"]
+        admin_token = login(client, email=admin["email"], password=admin["password"])[
+            "access_token"
+        ]
 
         manager_emp_id = create_employee(
             client,
@@ -517,7 +743,12 @@ def test_attendance_correction_idempotent_create() -> None:
             first_name="M",
             last_name="G",
         )
-        link_user_to_employee(client, token=admin_token, employee_id=manager_emp_id, user_id=manager_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=manager_emp_id,
+            user_id=manager_user["user_id"],
+        )
 
         employee_emp_id = create_employee(
             client,
@@ -529,11 +760,20 @@ def test_attendance_correction_idempotent_create() -> None:
             last_name="E",
             manager_employee_id=manager_emp_id,
         )
-        link_user_to_employee(client, token=admin_token, employee_id=employee_emp_id, user_id=employee_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=employee_emp_id,
+            user_id=employee_user["user_id"],
+        )
 
-        _create_workflow_definition_attendance_correction_manager_only(client, token=admin_token)
+        _create_workflow_definition_attendance_correction_manager_only(
+            client, token=admin_token
+        )
 
-        emp_token = login(client, email=employee_user["email"], password=employee_user["password"])["access_token"]
+        emp_token = login(
+            client, email=employee_user["email"], password=employee_user["password"]
+        )["access_token"]
         day = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
         key = f"idem-{uuid.uuid4().hex}"
 
@@ -577,7 +817,9 @@ def test_attendance_correction_idempotent_create() -> None:
             },
         )
         assert r3.status_code == 409, r3.text
-        assert r3.json()["error"]["code"] == "attendance.correction.idempotency.conflict"
+        assert (
+            r3.json()["error"]["code"] == "attendance.correction.idempotency.conflict"
+        )
     finally:
         cleanup(engine, tenant_id=tenant["tenant_id"], user_ids=created_users)
 
@@ -587,17 +829,51 @@ def test_attendance_correction_cancel_pending() -> None:
     engine = create_engine(db_url, pool_pre_ping=True)
 
     tenant = seed_tenant_company(engine)
-    admin = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="ADMIN", email_prefix="admin-att-cancel")
-    manager_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="MANAGER", email_prefix="mgr-att-cancel")
-    employee_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="EMPLOYEE", email_prefix="emp-att-cancel")
-    created_users = [admin["user_id"], manager_user["user_id"], employee_user["user_id"]]
+    admin = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="ADMIN",
+        email_prefix="admin-att-cancel",
+    )
+    manager_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="MANAGER",
+        email_prefix="mgr-att-cancel",
+    )
+    employee_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="EMPLOYEE",
+        email_prefix="emp-att-cancel",
+    )
+    created_users = [
+        admin["user_id"],
+        manager_user["user_id"],
+        employee_user["user_id"],
+    ]
 
     try:
         from fastapi.testclient import TestClient
 
-        client = TestClient(make_app("app.auth.router", "app.domains.hr_core.router_hr", "app.domains.workflow.router", "app.domains.attendance.router_ess"))
+        client = TestClient(
+            make_app(
+                "app.auth.router",
+                "app.domains.hr_core.router_hr",
+                "app.domains.workflow.router",
+                "app.domains.attendance.router_ess",
+            )
+        )
 
-        admin_token = login(client, email=admin["email"], password=admin["password"])["access_token"]
+        admin_token = login(client, email=admin["email"], password=admin["password"])[
+            "access_token"
+        ]
 
         manager_emp_id = create_employee(
             client,
@@ -608,7 +884,12 @@ def test_attendance_correction_cancel_pending() -> None:
             first_name="M",
             last_name="G",
         )
-        link_user_to_employee(client, token=admin_token, employee_id=manager_emp_id, user_id=manager_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=manager_emp_id,
+            user_id=manager_user["user_id"],
+        )
 
         employee_emp_id = create_employee(
             client,
@@ -620,11 +901,20 @@ def test_attendance_correction_cancel_pending() -> None:
             last_name="E",
             manager_employee_id=manager_emp_id,
         )
-        link_user_to_employee(client, token=admin_token, employee_id=employee_emp_id, user_id=employee_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=employee_emp_id,
+            user_id=employee_user["user_id"],
+        )
 
-        _create_workflow_definition_attendance_correction_manager_only(client, token=admin_token)
+        _create_workflow_definition_attendance_correction_manager_only(
+            client, token=admin_token
+        )
 
-        emp_token = login(client, email=employee_user["email"], password=employee_user["password"])["access_token"]
+        emp_token = login(
+            client, email=employee_user["email"], password=employee_user["password"]
+        )["access_token"]
         day = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
         submit = client.post(
             "/api/v1/attendance/me/corrections",
@@ -673,18 +963,60 @@ def test_attendance_correction_participant_only_cancel() -> None:
     engine = create_engine(db_url, pool_pre_ping=True)
 
     tenant = seed_tenant_company(engine)
-    admin = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="ADMIN", email_prefix="admin-att-part")
-    manager_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="MANAGER", email_prefix="mgr-att-part")
-    employee_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="EMPLOYEE", email_prefix="emp-att-part")
-    outsider_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="EMPLOYEE", email_prefix="outsider-att-part")
-    created_users = [admin["user_id"], manager_user["user_id"], employee_user["user_id"], outsider_user["user_id"]]
+    admin = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="ADMIN",
+        email_prefix="admin-att-part",
+    )
+    manager_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="MANAGER",
+        email_prefix="mgr-att-part",
+    )
+    employee_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="EMPLOYEE",
+        email_prefix="emp-att-part",
+    )
+    outsider_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="EMPLOYEE",
+        email_prefix="outsider-att-part",
+    )
+    created_users = [
+        admin["user_id"],
+        manager_user["user_id"],
+        employee_user["user_id"],
+        outsider_user["user_id"],
+    ]
 
     try:
         from fastapi.testclient import TestClient
 
-        client = TestClient(make_app("app.auth.router", "app.domains.hr_core.router_hr", "app.domains.workflow.router", "app.domains.attendance.router_ess"))
+        client = TestClient(
+            make_app(
+                "app.auth.router",
+                "app.domains.hr_core.router_hr",
+                "app.domains.workflow.router",
+                "app.domains.attendance.router_ess",
+            )
+        )
 
-        admin_token = login(client, email=admin["email"], password=admin["password"])["access_token"]
+        admin_token = login(client, email=admin["email"], password=admin["password"])[
+            "access_token"
+        ]
 
         manager_emp_id = create_employee(
             client,
@@ -695,7 +1027,12 @@ def test_attendance_correction_participant_only_cancel() -> None:
             first_name="M",
             last_name="G",
         )
-        link_user_to_employee(client, token=admin_token, employee_id=manager_emp_id, user_id=manager_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=manager_emp_id,
+            user_id=manager_user["user_id"],
+        )
 
         employee_emp_id = create_employee(
             client,
@@ -707,7 +1044,12 @@ def test_attendance_correction_participant_only_cancel() -> None:
             last_name="E",
             manager_employee_id=manager_emp_id,
         )
-        link_user_to_employee(client, token=admin_token, employee_id=employee_emp_id, user_id=employee_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=employee_emp_id,
+            user_id=employee_user["user_id"],
+        )
 
         outsider_emp_id = create_employee(
             client,
@@ -719,11 +1061,20 @@ def test_attendance_correction_participant_only_cancel() -> None:
             last_name="U",
             manager_employee_id=manager_emp_id,
         )
-        link_user_to_employee(client, token=admin_token, employee_id=outsider_emp_id, user_id=outsider_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=outsider_emp_id,
+            user_id=outsider_user["user_id"],
+        )
 
-        _create_workflow_definition_attendance_correction_manager_only(client, token=admin_token)
+        _create_workflow_definition_attendance_correction_manager_only(
+            client, token=admin_token
+        )
 
-        emp_token = login(client, email=employee_user["email"], password=employee_user["password"])["access_token"]
+        emp_token = login(
+            client, email=employee_user["email"], password=employee_user["password"]
+        )["access_token"]
         day = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
         submit = client.post(
             "/api/v1/attendance/me/corrections",
@@ -739,7 +1090,9 @@ def test_attendance_correction_participant_only_cancel() -> None:
         assert submit.status_code == 200, submit.text
         corr_id = submit.json()["data"]["id"]
 
-        outsider_token = login(client, email=outsider_user["email"], password=outsider_user["password"])["access_token"]
+        outsider_token = login(
+            client, email=outsider_user["email"], password=outsider_user["password"]
+        )["access_token"]
         cancel_other = client.post(
             f"/api/v1/attendance/me/corrections/{corr_id}/cancel",
             headers=_auth(outsider_token),
@@ -755,17 +1108,51 @@ def test_attendance_correction_pending_exists_for_day() -> None:
     engine = create_engine(db_url, pool_pre_ping=True)
 
     tenant = seed_tenant_company(engine)
-    admin = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="ADMIN", email_prefix="admin-att-pend")
-    manager_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="MANAGER", email_prefix="mgr-att-pend")
-    employee_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="EMPLOYEE", email_prefix="emp-att-pend")
-    created_users = [admin["user_id"], manager_user["user_id"], employee_user["user_id"]]
+    admin = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="ADMIN",
+        email_prefix="admin-att-pend",
+    )
+    manager_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="MANAGER",
+        email_prefix="mgr-att-pend",
+    )
+    employee_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="EMPLOYEE",
+        email_prefix="emp-att-pend",
+    )
+    created_users = [
+        admin["user_id"],
+        manager_user["user_id"],
+        employee_user["user_id"],
+    ]
 
     try:
         from fastapi.testclient import TestClient
 
-        client = TestClient(make_app("app.auth.router", "app.domains.hr_core.router_hr", "app.domains.workflow.router", "app.domains.attendance.router_ess"))
+        client = TestClient(
+            make_app(
+                "app.auth.router",
+                "app.domains.hr_core.router_hr",
+                "app.domains.workflow.router",
+                "app.domains.attendance.router_ess",
+            )
+        )
 
-        admin_token = login(client, email=admin["email"], password=admin["password"])["access_token"]
+        admin_token = login(client, email=admin["email"], password=admin["password"])[
+            "access_token"
+        ]
 
         manager_emp_id = create_employee(
             client,
@@ -776,7 +1163,12 @@ def test_attendance_correction_pending_exists_for_day() -> None:
             first_name="M",
             last_name="G",
         )
-        link_user_to_employee(client, token=admin_token, employee_id=manager_emp_id, user_id=manager_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=manager_emp_id,
+            user_id=manager_user["user_id"],
+        )
 
         employee_emp_id = create_employee(
             client,
@@ -788,11 +1180,20 @@ def test_attendance_correction_pending_exists_for_day() -> None:
             last_name="E",
             manager_employee_id=manager_emp_id,
         )
-        link_user_to_employee(client, token=admin_token, employee_id=employee_emp_id, user_id=employee_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=employee_emp_id,
+            user_id=employee_user["user_id"],
+        )
 
-        _create_workflow_definition_attendance_correction_manager_only(client, token=admin_token)
+        _create_workflow_definition_attendance_correction_manager_only(
+            client, token=admin_token
+        )
 
-        emp_token = login(client, email=employee_user["email"], password=employee_user["password"])["access_token"]
+        emp_token = login(
+            client, email=employee_user["email"], password=employee_user["password"]
+        )["access_token"]
         day = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
 
         r1 = client.post(
@@ -830,18 +1231,60 @@ def test_attendance_workflow_non_assignee_cannot_approve() -> None:
     engine = create_engine(db_url, pool_pre_ping=True)
 
     tenant = seed_tenant_company(engine)
-    admin = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="ADMIN", email_prefix="admin-att-nonass")
-    manager_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="MANAGER", email_prefix="mgr-att-nonass")
-    outsider = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="MANAGER", email_prefix="out-att-nonass")
-    employee_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="EMPLOYEE", email_prefix="emp-att-nonass")
-    created_users = [admin["user_id"], manager_user["user_id"], outsider["user_id"], employee_user["user_id"]]
+    admin = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="ADMIN",
+        email_prefix="admin-att-nonass",
+    )
+    manager_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="MANAGER",
+        email_prefix="mgr-att-nonass",
+    )
+    outsider = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="MANAGER",
+        email_prefix="out-att-nonass",
+    )
+    employee_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="EMPLOYEE",
+        email_prefix="emp-att-nonass",
+    )
+    created_users = [
+        admin["user_id"],
+        manager_user["user_id"],
+        outsider["user_id"],
+        employee_user["user_id"],
+    ]
 
     try:
         from fastapi.testclient import TestClient
 
-        client = TestClient(make_app("app.auth.router", "app.domains.hr_core.router_hr", "app.domains.workflow.router", "app.domains.attendance.router_ess"))
+        client = TestClient(
+            make_app(
+                "app.auth.router",
+                "app.domains.hr_core.router_hr",
+                "app.domains.workflow.router",
+                "app.domains.attendance.router_ess",
+            )
+        )
 
-        admin_token = login(client, email=admin["email"], password=admin["password"])["access_token"]
+        admin_token = login(client, email=admin["email"], password=admin["password"])[
+            "access_token"
+        ]
 
         manager_emp_id = create_employee(
             client,
@@ -852,7 +1295,12 @@ def test_attendance_workflow_non_assignee_cannot_approve() -> None:
             first_name="M",
             last_name="G",
         )
-        link_user_to_employee(client, token=admin_token, employee_id=manager_emp_id, user_id=manager_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=manager_emp_id,
+            user_id=manager_user["user_id"],
+        )
 
         employee_emp_id = create_employee(
             client,
@@ -864,11 +1312,20 @@ def test_attendance_workflow_non_assignee_cannot_approve() -> None:
             last_name="E",
             manager_employee_id=manager_emp_id,
         )
-        link_user_to_employee(client, token=admin_token, employee_id=employee_emp_id, user_id=employee_user["user_id"])
+        link_user_to_employee(
+            client,
+            token=admin_token,
+            employee_id=employee_emp_id,
+            user_id=employee_user["user_id"],
+        )
 
-        _create_workflow_definition_attendance_correction_manager_only(client, token=admin_token)
+        _create_workflow_definition_attendance_correction_manager_only(
+            client, token=admin_token
+        )
 
-        emp_token = login(client, email=employee_user["email"], password=employee_user["password"])["access_token"]
+        emp_token = login(
+            client, email=employee_user["email"], password=employee_user["password"]
+        )["access_token"]
         day = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
         submit = client.post(
             "/api/v1/attendance/me/corrections",
@@ -884,7 +1341,9 @@ def test_attendance_workflow_non_assignee_cannot_approve() -> None:
         assert submit.status_code == 200, submit.text
         wf_id = submit.json()["data"]["workflow_request_id"]
 
-        outsider_token = login(client, email=outsider["email"], password=outsider["password"])["access_token"]
+        outsider_token = login(
+            client, email=outsider["email"], password=outsider["password"]
+        )["access_token"]
         attempt = client.post(
             f"/api/v1/workflow/requests/{wf_id}/approve",
             headers=_auth(outsider_token),
@@ -901,18 +1360,59 @@ def test_attendance_workflow_concurrent_approve_race() -> None:
     engine = create_engine(db_url, pool_pre_ping=True)
 
     tenant = seed_tenant_company(engine)
-    admin = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="ADMIN", email_prefix="admin-att-race")
-    manager_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="MANAGER", email_prefix="mgr-att-race")
-    employee_user = seed_user(engine, tenant_id=tenant["tenant_id"], company_id=tenant["company_id"], branch_id=tenant["branch_id"], role_code="EMPLOYEE", email_prefix="emp-att-race")
-    created_users = [admin["user_id"], manager_user["user_id"], employee_user["user_id"]]
+    admin = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="ADMIN",
+        email_prefix="admin-att-race",
+    )
+    manager_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="MANAGER",
+        email_prefix="mgr-att-race",
+    )
+    employee_user = seed_user(
+        engine,
+        tenant_id=tenant["tenant_id"],
+        company_id=tenant["company_id"],
+        branch_id=tenant["branch_id"],
+        role_code="EMPLOYEE",
+        email_prefix="emp-att-race",
+    )
+    created_users = [
+        admin["user_id"],
+        manager_user["user_id"],
+        employee_user["user_id"],
+    ]
 
     try:
         from fastapi.testclient import TestClient
 
-        client1 = TestClient(make_app("app.auth.router", "app.domains.hr_core.router_hr", "app.domains.workflow.router", "app.domains.attendance.router_ess"))
-        client2 = TestClient(make_app("app.auth.router", "app.domains.hr_core.router_hr", "app.domains.workflow.router", "app.domains.attendance.router_ess"))
+        client1 = TestClient(
+            make_app(
+                "app.auth.router",
+                "app.domains.hr_core.router_hr",
+                "app.domains.workflow.router",
+                "app.domains.attendance.router_ess",
+            )
+        )
+        client2 = TestClient(
+            make_app(
+                "app.auth.router",
+                "app.domains.hr_core.router_hr",
+                "app.domains.workflow.router",
+                "app.domains.attendance.router_ess",
+            )
+        )
 
-        admin_token = login(client1, email=admin["email"], password=admin["password"])["access_token"]
+        admin_token = login(client1, email=admin["email"], password=admin["password"])[
+            "access_token"
+        ]
 
         manager_emp_id = create_employee(
             client1,
@@ -923,7 +1423,12 @@ def test_attendance_workflow_concurrent_approve_race() -> None:
             first_name="M",
             last_name="G",
         )
-        link_user_to_employee(client1, token=admin_token, employee_id=manager_emp_id, user_id=manager_user["user_id"])
+        link_user_to_employee(
+            client1,
+            token=admin_token,
+            employee_id=manager_emp_id,
+            user_id=manager_user["user_id"],
+        )
 
         employee_emp_id = create_employee(
             client1,
@@ -935,12 +1440,23 @@ def test_attendance_workflow_concurrent_approve_race() -> None:
             last_name="E",
             manager_employee_id=manager_emp_id,
         )
-        link_user_to_employee(client1, token=admin_token, employee_id=employee_emp_id, user_id=employee_user["user_id"])
+        link_user_to_employee(
+            client1,
+            token=admin_token,
+            employee_id=employee_emp_id,
+            user_id=employee_user["user_id"],
+        )
 
-        _create_workflow_definition_attendance_correction_manager_only(client1, token=admin_token)
+        _create_workflow_definition_attendance_correction_manager_only(
+            client1, token=admin_token
+        )
 
-        emp_token = login(client1, email=employee_user["email"], password=employee_user["password"])["access_token"]
-        mgr_token = login(client1, email=manager_user["email"], password=manager_user["password"])["access_token"]
+        emp_token = login(
+            client1, email=employee_user["email"], password=employee_user["password"]
+        )["access_token"]
+        mgr_token = login(
+            client1, email=manager_user["email"], password=manager_user["password"]
+        )["access_token"]
 
         day = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
         submit = client1.post(
@@ -964,7 +1480,11 @@ def test_attendance_workflow_concurrent_approve_race() -> None:
                 headers=_auth(token),
                 json={"comment": "go"},
             )
-            code = r.json().get("error", {}).get("code") if r.headers.get("content-type", "").startswith("application/json") else ""
+            code = (
+                r.json().get("error", {}).get("code")
+                if r.headers.get("content-type", "").startswith("application/json")
+                else ""
+            )
             return r.status_code, code
 
         with ThreadPoolExecutor(max_workers=2) as ex:
@@ -974,7 +1494,9 @@ def test_attendance_workflow_concurrent_approve_race() -> None:
 
         statuses = sorted([r[0] for r in res])
         assert statuses == [200, 409], res
-        assert any(code == "workflow.step.already_decided" for _st, code in res if _st == 409)
+        assert any(
+            code == "workflow.step.already_decided" for _st, code in res if _st == 409
+        )
 
         # Handler is idempotent: only one override row for the correction source.
         with engine.connect() as conn:
