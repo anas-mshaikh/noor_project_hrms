@@ -25,6 +25,8 @@ from app.domains.leave.router_hr import router as leave_hr_router
 from app.domains.leave.router_mss import router as leave_mss_router
 from app.domains.attendance.router_ess import router as attendance_ess_router
 from app.domains.attendance.router_admin import router as attendance_admin_router
+from app.domains.attendance.router_mss import router as attendance_mss_router
+from app.domains.roster.router import router as roster_router
 from app.domains.dms.router_files import router as dms_files_router
 from app.domains.dms.router_document_types import router as dms_document_types_router
 from app.domains.dms.router_documents import router as dms_documents_router
@@ -64,6 +66,8 @@ api_router.include_router(leave_hr_router)
 api_router.include_router(leave_mss_router)
 api_router.include_router(attendance_ess_router)
 api_router.include_router(attendance_admin_router)
+api_router.include_router(attendance_mss_router)
+api_router.include_router(roster_router)
 api_router.include_router(dms_files_router)
 api_router.include_router(dms_document_types_router)
 api_router.include_router(dms_documents_router)

@@ -442,7 +442,7 @@ def list_attendance_daily(
     override_rows = db.execute(
         sa.text(
             """
-            SELECT employee_id, day, status, override_kind, created_at, id
+            SELECT employee_id, day, status, override_kind, payload, created_at, id
             FROM attendance.day_overrides
             WHERE tenant_id = :tenant_id
               AND branch_id = :branch_id
@@ -463,6 +463,7 @@ def list_attendance_daily(
 
     leave_keys: set[tuple[date, UUID]] = set()
     corr_status_by_key: dict[tuple[date, UUID], str] = {}
+    corr_minutes_by_key: dict[tuple[date, UUID], int] = {}
     for o in override_rows:
         k = (o["day"], UUID(str(o["employee_id"])))
         st = str(o["status"])
@@ -472,6 +473,13 @@ def list_attendance_daily(
         # Newest correction wins (ORDER BY created_at DESC).
         if k not in corr_status_by_key:
             corr_status_by_key[k] = st
+            payload = o.get("payload") or {}
+            if isinstance(payload, dict) and payload.get("override_minutes") is not None:
+                try:
+                    corr_minutes_by_key[k] = int(payload.get("override_minutes"))
+                except Exception:
+                    # Defensive: ignore invalid override_minutes values.
+                    pass
 
     # Pre-fill all dates so missing days still return zeros.
     per_day: dict[date, dict[str, float]] = {}
@@ -499,6 +507,7 @@ def list_attendance_daily(
                 continue
 
             corr_status = corr_status_by_key.get(key)
+            corr_override_minutes = corr_minutes_by_key.get(key)
             att = att_by_key.get(key)
 
             if corr_status is not None:
@@ -514,13 +523,19 @@ def list_attendance_daily(
                     continue
                 bucket["present"] += 1
 
-            # Late/averages are computed from base row only (if present).
-            if att is None:
-                continue
-
-            if att.total_minutes is not None:
+            # Worked minutes:
+            # - If correction override provides override_minutes, it becomes the effective minutes.
+            # - Otherwise, fall back to the base row minutes (if present).
+            if corr_override_minutes is not None:
+                bucket["worked_sum"] += float(corr_override_minutes)
+                bucket["worked_count"] += 1
+            elif att is not None and att.total_minutes is not None:
                 bucket["worked_sum"] += float(att.total_minutes)
                 bucket["worked_count"] += 1
+
+            # Late/avg punch-in are derived from the base row only (if present).
+            if att is None or att.punch_in is None:
+                continue
 
             if att.punch_in is not None:
                 local = att.punch_in.astimezone(tz)

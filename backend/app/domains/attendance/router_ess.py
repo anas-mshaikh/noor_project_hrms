@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.auth.permissions import DMS_FILE_READ
@@ -13,6 +13,9 @@ from app.db.session import get_db
 from app.domains.attendance.policies import (
     require_attendance_correction_read,
     require_attendance_correction_submit,
+    require_attendance_payable_read,
+    require_attendance_punch_read,
+    require_attendance_punch_submit,
 )
 from app.domains.attendance.schemas import (
     AttendanceCorrectionCreateIn,
@@ -20,13 +23,21 @@ from app.domains.attendance.schemas import (
     AttendanceCorrectionOut,
     AttendanceDayOut,
     AttendanceDaysOut,
+    PayableDaySummaryOut,
+    PayableDaysOut,
+    PunchStateOut,
+    PunchSubmitIn,
 )
 from app.domains.attendance.service import AttendanceCorrectionService
+from app.domains.attendance.service_payable import PayableSummaryComputeService
+from app.domains.attendance.service_punching import PunchService
 from app.shared.types import AuthContext
 
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 _svc = AttendanceCorrectionService()
+_punch_svc = PunchService()
+_payable_svc = PayableSummaryComputeService()
 
 
 def _parse_cursor(cursor: str) -> tuple[datetime, UUID]:
@@ -70,6 +81,103 @@ def me_days(
     rows = _svc.get_my_days(db, ctx=ctx, start=from_, end=to)
     items = [AttendanceDayOut(**r) for r in rows]
     return ok(AttendanceDaysOut(items=items).model_dump())
+
+
+@router.post("/me/punch-in")
+def me_punch_in(
+    payload: PunchSubmitIn = Body(default_factory=PunchSubmitIn),
+    ctx: AuthContext = Depends(require_attendance_punch_submit),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """
+    Punch in (Zoho-style toggle).
+
+    v1:
+    - Source is hardcoded to MANUAL_WEB for ESS routes.
+    - Clients may supply an idempotency_key for safe retries.
+    """
+
+    out = _punch_svc.punch_in(
+        db,
+        ctx=ctx,
+        idempotency_key=payload.idempotency_key,
+        source="MANUAL_WEB",
+        meta=payload.meta,
+    )
+    return ok(PunchStateOut(**out).model_dump())
+
+
+@router.post("/me/punch-out")
+def me_punch_out(
+    payload: PunchSubmitIn = Body(default_factory=PunchSubmitIn),
+    ctx: AuthContext = Depends(require_attendance_punch_submit),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """
+    Punch out (closes the OPEN session).
+
+    See `/me/punch-in` for source/idempotency semantics.
+    """
+
+    out = _punch_svc.punch_out(
+        db,
+        ctx=ctx,
+        idempotency_key=payload.idempotency_key,
+        source="MANUAL_WEB",
+        meta=payload.meta,
+    )
+    return ok(PunchStateOut(**out).model_dump())
+
+
+@router.get("/me/punch-state")
+def me_punch_state(
+    ctx: AuthContext = Depends(require_attendance_punch_read),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """
+    Return current punch state + effective minutes for today (branch-local).
+    """
+
+    out = _punch_svc.get_punch_state(db, ctx=ctx)
+    return ok(PunchStateOut(**out).model_dump())
+
+
+@router.get("/me/payable-days")
+def me_payable_days(
+    from_: date = Query(..., alias="from"),
+    to: date = Query(..., alias="to"),
+    ctx: AuthContext = Depends(require_attendance_payable_read),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """
+    Return payroll-ready payable summaries for the actor (ESS).
+
+    v1 behavior:
+    - This endpoint computes summaries on demand for small ranges and upserts
+      them into attendance.payable_day_summaries.
+    - Worked minutes are override-aware (leave/corrections precedence).
+    """
+
+    employee_id, tenant_id, _company_id = _svc.get_actor_employee_or_409(db, ctx=ctx)
+
+    _payable_svc.compute_range(
+        db,
+        tenant_id=tenant_id,
+        from_day=from_,
+        to_day=to,
+        branch_id=None,
+        employee_ids=[employee_id],
+    )
+
+    rows = _payable_svc.list_employee_summaries(
+        db,
+        tenant_id=tenant_id,
+        employee_id=employee_id,
+        from_day=from_,
+        to_day=to,
+    )
+    items = [PayableDaySummaryOut(**r) for r in rows]
+    return ok(PayableDaysOut(items=items).model_dump())
 
 
 @router.post("/me/corrections")

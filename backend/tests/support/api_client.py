@@ -55,6 +55,12 @@ class ApiClient:
         r = self.client.patch(path, headers=dict(self.headers), json=json)
         return self._unwrap_json(r)
 
+    def put(self, path: str, *, json: dict[str, Any] | None = None) -> Any:
+        """PUT a JSON endpoint and return the unwrapped `data` payload."""
+
+        r = self.client.put(path, headers=dict(self.headers), json=json)
+        return self._unwrap_json(r)
+
     # ------------------------------------------------------------------
     # Raw helpers (caller inspects response)
     # ------------------------------------------------------------------
@@ -91,4 +97,3 @@ class ApiClient:
         code = err.get("code")
         msg = err.get("message")
         raise AssertionError(f"{response.status_code} {code} {msg}: {response.text}")
-

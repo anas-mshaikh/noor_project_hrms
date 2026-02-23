@@ -149,22 +149,41 @@ class AttendanceCorrectionService:
         if end < start:
             raise AppError(code="validation_error", message="to must be >= from", status_code=400)
 
-        base_days = db.execute(
+        # Base attendance is derived from attendance.attendance_daily:
+        # - if a row exists for the day -> base_status=PRESENT
+        # - otherwise -> base_status=ABSENT
+        #
+        # We intentionally do NOT filter by branch_id here. Employees can move
+        # branches over time, and historical days should still be readable.
+        base_rows = (
+            db.execute(
             sa.text(
                 """
-                SELECT business_date
+                SELECT
+                  business_date,
+                  punch_in,
+                  punch_out,
+                  total_minutes,
+                  source_breakdown,
+                  has_open_session
                 FROM attendance.attendance_daily
                 WHERE tenant_id = :tenant_id
                   AND employee_id = :employee_id
                   AND business_date >= :start
                   AND business_date <= :end
+                ORDER BY business_date ASC, created_at ASC, id ASC
                 """
             ),
             {"tenant_id": tenant_id, "employee_id": employee_id, "start": start, "end": end},
-        ).all()
-        present_days = {r[0] for r in base_days}
+            )
+            .mappings()
+            .all()
+        )
 
-        overrides = db.execute(
+        base_by_day: dict[date, dict[str, Any]] = {r["business_date"]: dict(r) for r in base_rows}
+
+        overrides = (
+            db.execute(
             sa.text(
                 """
                 SELECT
@@ -173,6 +192,7 @@ class AttendanceCorrectionService:
                   status,
                   source_type,
                   source_id,
+                  payload,
                   created_at
                 FROM attendance.day_overrides
                 WHERE tenant_id = :tenant_id
@@ -183,7 +203,10 @@ class AttendanceCorrectionService:
                 """
             ),
             {"tenant_id": tenant_id, "employee_id": employee_id, "start": start, "end": end},
-        ).mappings().all()
+            )
+            .mappings()
+            .all()
+        )
 
         leave_by_day: dict[date, dict[str, Any]] = {}
         corr_by_day: dict[date, dict[str, Any]] = {}
@@ -202,7 +225,20 @@ class AttendanceCorrectionService:
         items: list[dict[str, Any]] = []
         cur = start
         while cur <= end:
-            base_status = "PRESENT" if cur in present_days else "ABSENT"
+            base_row = base_by_day.get(cur)
+            base_status = "PRESENT" if base_row is not None else "ABSENT"
+            base_minutes = int(base_row.get("total_minutes") or 0) if base_row is not None else 0
+
+            # Convenience fields for UI/debug. These are purely derived and can be NULL.
+            first_in = base_row.get("punch_in") if base_row is not None else None
+            last_out = base_row.get("punch_out") if base_row is not None else None
+            has_open_session = bool(base_row.get("has_open_session") or False) if base_row is not None else False
+
+            src_breakdown = base_row.get("source_breakdown") if base_row is not None else None
+            sources: list[str] = []
+            if isinstance(src_breakdown, dict):
+                # Stable ordering for deterministic API responses.
+                sources = sorted(str(k) for k in src_breakdown.keys())
 
             if cur in leave_by_day:
                 o = leave_by_day[cur]
@@ -211,6 +247,12 @@ class AttendanceCorrectionService:
                         "day": cur,
                         "base_status": base_status,
                         "effective_status": "ON_LEAVE",
+                        "base_minutes": base_minutes,
+                        "effective_minutes": 0,
+                        "first_in": first_in,
+                        "last_out": last_out,
+                        "has_open_session": has_open_session,
+                        "sources": sources,
                         "override": {
                             "kind": "LEAVE",
                             "status": "ON_LEAVE",
@@ -226,11 +268,33 @@ class AttendanceCorrectionService:
                 o = corr_by_day[cur]
                 kind = str(o.get("override_kind") or "CORRECTION")
                 status = str(o["status"])
+
+                # Minutes precedence:
+                # 1) ON_LEAVE -> 0 (handled above)
+                # 2) CORRECTION payload.override_minutes if present
+                # 3) ABSENT_OVERRIDE implies 0 minutes
+                # 4) otherwise base_minutes
+                effective_minutes = base_minutes
+                payload = o.get("payload") or {}
+                if isinstance(payload, dict) and payload.get("override_minutes") is not None:
+                    try:
+                        effective_minutes = int(payload.get("override_minutes"))
+                    except Exception:
+                        effective_minutes = base_minutes
+                elif status == "ABSENT_OVERRIDE":
+                    effective_minutes = 0
+
                 items.append(
                     {
                         "day": cur,
                         "base_status": base_status,
                         "effective_status": status,
+                        "base_minutes": base_minutes,
+                        "effective_minutes": int(effective_minutes),
+                        "first_in": first_in,
+                        "last_out": last_out,
+                        "has_open_session": has_open_session,
+                        "sources": sources,
                         "override": {
                             "kind": "CORRECTION" if kind != "LEAVE" else "LEAVE",
                             "status": status,
@@ -242,7 +306,20 @@ class AttendanceCorrectionService:
                 cur += timedelta(days=1)
                 continue
 
-            items.append({"day": cur, "base_status": base_status, "effective_status": base_status, "override": None})
+            items.append(
+                {
+                    "day": cur,
+                    "base_status": base_status,
+                    "effective_status": base_status,
+                    "base_minutes": base_minutes,
+                    "effective_minutes": base_minutes,
+                    "first_in": first_in,
+                    "last_out": last_out,
+                    "has_open_session": has_open_session,
+                    "sources": sources,
+                    "override": None,
+                }
+            )
             cur += timedelta(days=1)
 
         return items

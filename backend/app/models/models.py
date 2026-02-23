@@ -440,7 +440,168 @@ class AttendanceDaily(Base):
         server_default=sa.text("'{}'::jsonb"),
     )
 
+    # Punching v1 adds an optional breakdown of minutes by punch/session source.
+    source_breakdown: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+    # Punching v1 convenience: whether an OPEN work_session exists for the employee/day.
+    has_open_session: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.false()
+    )
+
     created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+
+
+class PunchSettings(Base):
+    __tablename__ = "punch_settings"
+    __table_args__ = {"schema": "attendance"}
+
+    # Composite primary key matches the DB migration.
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    is_enabled: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.true()
+    )
+    allow_multiple_sessions_per_day: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.true()
+    )
+    max_session_hours: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="16"
+    )
+    require_location: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.false()
+    )
+    geo_fence_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+
+
+class Punch(Base):
+    __tablename__ = "punches"
+    __table_args__ = {"schema": "attendance"}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_core.employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    ts: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
+    action: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    source: Mapped[str] = mapped_column(sa.Text, nullable=False)
+
+    source_ref_type: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    source_ref_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("iam.users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    idempotency_key: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    meta: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+
+
+class WorkSession(Base):
+    __tablename__ = "work_sessions"
+    __table_args__ = {"schema": "attendance"}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.branches.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("hr_core.employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    business_date: Mapped[date] = mapped_column(sa.Date, nullable=False, index=True)
+    start_ts: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
+    end_ts: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    minutes: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="0")
+
+    start_punch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("attendance.punches.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    end_punch_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("attendance.punches.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+
+    status: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    source_start: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    source_end: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    anomaly_code: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
         server_default=sa.func.now(),
         nullable=False,

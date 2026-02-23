@@ -84,6 +84,27 @@ ATTENDANCE_CORRECTION_READ = "attendance:correction:read"
 ATTENDANCE_TEAM_READ = "attendance:team:read"
 ATTENDANCE_ADMIN_READ = "attendance:admin:read"
 
+# Attendance punching (schema `attendance`)
+ATTENDANCE_PUNCH_SUBMIT = "attendance:punch:submit"
+ATTENDANCE_PUNCH_READ = "attendance:punch:read"
+ATTENDANCE_TIME_READ = "attendance:time:read"
+ATTENDANCE_SETTINGS_WRITE = "attendance:settings:write"
+
+# Roster v1 (schema `roster`)
+ROSTER_SHIFT_READ = "roster:shift:read"
+ROSTER_SHIFT_WRITE = "roster:shift:write"
+ROSTER_ASSIGNMENT_READ = "roster:assignment:read"
+ROSTER_ASSIGNMENT_WRITE = "roster:assignment:write"
+ROSTER_OVERRIDE_READ = "roster:override:read"
+ROSTER_OVERRIDE_WRITE = "roster:override:write"
+ROSTER_DEFAULTS_WRITE = "roster:defaults:write"
+
+# Payable summaries v1 (schema `attendance`)
+ATTENDANCE_PAYABLE_READ = "attendance:payable:read"
+ATTENDANCE_PAYABLE_TEAM_READ = "attendance:payable:team:read"
+ATTENDANCE_PAYABLE_ADMIN_READ = "attendance:payable:admin:read"
+ATTENDANCE_PAYABLE_RECOMPUTE = "attendance:payable:recompute"
+
 # HR profile change (schema `hr_core`)
 HR_PROFILE_CHANGE_SUBMIT = "hr:profile-change:submit"
 HR_PROFILE_CHANGE_READ = "hr:profile-change:read"
@@ -158,6 +179,21 @@ ALL_PERMISSION_CODES: tuple[str, ...] = (
     ATTENDANCE_CORRECTION_READ,
     ATTENDANCE_TEAM_READ,
     ATTENDANCE_ADMIN_READ,
+    ATTENDANCE_PUNCH_SUBMIT,
+    ATTENDANCE_PUNCH_READ,
+    ATTENDANCE_TIME_READ,
+    ATTENDANCE_SETTINGS_WRITE,
+    ROSTER_SHIFT_READ,
+    ROSTER_SHIFT_WRITE,
+    ROSTER_ASSIGNMENT_READ,
+    ROSTER_ASSIGNMENT_WRITE,
+    ROSTER_OVERRIDE_READ,
+    ROSTER_OVERRIDE_WRITE,
+    ROSTER_DEFAULTS_WRITE,
+    ATTENDANCE_PAYABLE_READ,
+    ATTENDANCE_PAYABLE_TEAM_READ,
+    ATTENDANCE_PAYABLE_ADMIN_READ,
+    ATTENDANCE_PAYABLE_RECOMPUTE,
     HR_PROFILE_CHANGE_SUBMIT,
     HR_PROFILE_CHANGE_READ,
     HR_PROFILE_CHANGE_APPLY,
