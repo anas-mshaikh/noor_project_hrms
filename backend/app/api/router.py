@@ -38,6 +38,8 @@ from app.domains.profile_change.router_hr import router as profile_change_hr_rou
 from app.domains.onboarding.router_hr import router as onboarding_hr_router
 from app.domains.onboarding.router_ess import router as onboarding_ess_router
 from app.domains.workflow.router import router as workflow_router
+from app.domains.payroll.router_admin import router as payroll_admin_router
+from app.domains.payroll.router_ess import router as payroll_ess_router
 
 
 api_router = APIRouter()
@@ -79,3 +81,5 @@ api_router.include_router(profile_change_hr_router)
 api_router.include_router(onboarding_hr_router)
 api_router.include_router(onboarding_ess_router)
 api_router.include_router(workflow_router)
+api_router.include_router(payroll_admin_router)
+api_router.include_router(payroll_ess_router)

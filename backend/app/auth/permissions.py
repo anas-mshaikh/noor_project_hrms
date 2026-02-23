@@ -118,6 +118,24 @@ ONBOARDING_BUNDLE_WRITE = "onboarding:bundle:write"
 ONBOARDING_TASK_READ = "onboarding:task:read"
 ONBOARDING_TASK_SUBMIT = "onboarding:task:submit"
 
+# Payroll foundation v1 (schema `payroll`)
+PAYROLL_CALENDAR_READ = "payroll:calendar:read"
+PAYROLL_CALENDAR_WRITE = "payroll:calendar:write"
+PAYROLL_COMPONENT_READ = "payroll:component:read"
+PAYROLL_COMPONENT_WRITE = "payroll:component:write"
+PAYROLL_STRUCTURE_READ = "payroll:structure:read"
+PAYROLL_STRUCTURE_WRITE = "payroll:structure:write"
+PAYROLL_COMPENSATION_READ = "payroll:compensation:read"
+PAYROLL_COMPENSATION_WRITE = "payroll:compensation:write"
+PAYROLL_PAYRUN_GENERATE = "payroll:payrun:generate"
+PAYROLL_PAYRUN_READ = "payroll:payrun:read"
+PAYROLL_PAYRUN_SUBMIT = "payroll:payrun:submit"
+PAYROLL_PAYRUN_PUBLISH = "payroll:payrun:publish"
+PAYROLL_PAYRUN_EXPORT = "payroll:payrun:export"
+PAYROLL_PAYSLIP_READ = "payroll:payslip:read"
+PAYROLL_PAYSLIP_PUBLISH = "payroll:payslip:publish"
+PAYROLL_ADMIN_READ = "payroll:admin:read"
+
 
 ALL_PERMISSION_CODES: tuple[str, ...] = (
     TENANCY_READ,
@@ -203,4 +221,20 @@ ALL_PERMISSION_CODES: tuple[str, ...] = (
     ONBOARDING_BUNDLE_WRITE,
     ONBOARDING_TASK_READ,
     ONBOARDING_TASK_SUBMIT,
+    PAYROLL_CALENDAR_READ,
+    PAYROLL_CALENDAR_WRITE,
+    PAYROLL_COMPONENT_READ,
+    PAYROLL_COMPONENT_WRITE,
+    PAYROLL_STRUCTURE_READ,
+    PAYROLL_STRUCTURE_WRITE,
+    PAYROLL_COMPENSATION_READ,
+    PAYROLL_COMPENSATION_WRITE,
+    PAYROLL_PAYRUN_GENERATE,
+    PAYROLL_PAYRUN_READ,
+    PAYROLL_PAYRUN_SUBMIT,
+    PAYROLL_PAYRUN_PUBLISH,
+    PAYROLL_PAYRUN_EXPORT,
+    PAYROLL_PAYSLIP_READ,
+    PAYROLL_PAYSLIP_PUBLISH,
+    PAYROLL_ADMIN_READ,
 )
