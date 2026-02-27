@@ -1,8 +1,10 @@
 from fastapi import APIRouter
 
+from app.core.responses import ok
+
 router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, object]:
+    return ok({"status": "ok"})

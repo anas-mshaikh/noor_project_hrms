@@ -379,9 +379,24 @@ def write_job_artifacts(
     db.commit()
 
     artifact_rows = [
-        Artifact(job_id=job_id, type="csv", path=_rel_from_abs(events_path)),
-        Artifact(job_id=job_id, type="csv", path=_rel_from_abs(attendance_path)),
-        Artifact(job_id=job_id, type="json", path=_rel_from_abs(report_path)),
+        Artifact(
+            tenant_id=video.tenant_id,
+            job_id=job_id,
+            type="csv",
+            path=_rel_from_abs(events_path),
+        ),
+        Artifact(
+            tenant_id=video.tenant_id,
+            job_id=job_id,
+            type="csv",
+            path=_rel_from_abs(attendance_path),
+        ),
+        Artifact(
+            tenant_id=video.tenant_id,
+            job_id=job_id,
+            type="json",
+            path=_rel_from_abs(report_path),
+        ),
     ]
     db.add_all(artifact_rows)
     db.commit()

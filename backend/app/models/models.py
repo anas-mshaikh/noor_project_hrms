@@ -223,6 +223,12 @@ class Job(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     video_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         sa.ForeignKey("vision.videos.id", ondelete="CASCADE"),
@@ -287,6 +293,12 @@ class Track(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         sa.ForeignKey("vision.jobs.id", ondelete="CASCADE"),
@@ -345,6 +357,12 @@ class Event(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         sa.ForeignKey("vision.jobs.id", ondelete="CASCADE"),
@@ -619,6 +637,12 @@ class MetricsHourly(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         sa.ForeignKey("vision.jobs.id", ondelete="CASCADE"),
@@ -657,6 +681,12 @@ class Artifact(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("tenancy.tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         sa.ForeignKey("vision.jobs.id", ondelete="CASCADE"),

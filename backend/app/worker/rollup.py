@@ -306,6 +306,10 @@ def recompute_metrics_hourly_for_job(db: Session, *, job_id: UUID) -> None:
     """
     Recompute metrics_hourly for one job (entries/exits/visitors/dwell).
     """
+    job = db.get(Job, job_id)
+    if job is None:
+        return
+
     db.query(MetricsHourly).filter(MetricsHourly.job_id == job_id).delete()
     db.commit()
 
@@ -347,6 +351,7 @@ def recompute_metrics_hourly_for_job(db: Session, *, job_id: UUID) -> None:
 
         rows.append(
             MetricsHourly(
+                tenant_id=job.tenant_id,
                 job_id=job_id,
                 hour_start_ts=hour_start,
                 entries=agg["entries"],

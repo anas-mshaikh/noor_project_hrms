@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 from pydantic import BaseModel, Field
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
@@ -33,6 +33,8 @@ from sqlalchemy.orm import Session
 from app.auth.deps import require_permission
 from app.auth.permissions import HR_RECRUITING_READ, HR_RECRUITING_WRITE
 from app.core.config import settings
+from app.core.errors import AppError
+from app.core.responses import ok
 from app.db.session import get_db
 from app.hr.ats import ensure_default_pipeline_stages
 from app.hr.queue import get_hr_queue
@@ -42,6 +44,9 @@ from app.models.models import HROpening, HRResume, HRResumeBatch, HRResumeView
 from app.shared.types import AuthContext
 
 router = APIRouter(tags=["hr"])
+
+def _ok_model(model: BaseModel) -> dict[str, object]:
+    return ok(model.model_dump())
 
 
 # -------------------------
@@ -215,7 +220,7 @@ def _require_opening(db: Session, *, tenant_id: UUID, branch_id: UUID, opening_i
         .first()
     )
     if opening is None:
-        raise HTTPException(status_code=404, detail="Opening not found")
+        raise AppError(code="hr.opening.not_found", message="Opening not found", status_code=404)
     return opening
 
 
@@ -226,7 +231,6 @@ def _require_opening(db: Session, *, tenant_id: UUID, branch_id: UUID, opening_i
 
 @router.post(
     "/branches/{branch_id}/openings",
-    response_model=OpeningOut,
     status_code=status.HTTP_201_CREATED,
 )
 def create_opening(
@@ -234,9 +238,9 @@ def create_opening(
     body: OpeningCreateRequest,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> OpeningOut:
+) -> dict[str, object]:
     if ctx.scope.company_id is None:
-        raise HTTPException(status_code=400, detail="company scope required")
+        raise AppError(code="iam.scope.invalid_company", message="Company scope required", status_code=400)
 
     opening = HROpening(
         tenant_id=ctx.scope.tenant_id,
@@ -257,43 +261,43 @@ def create_opening(
 
     db.commit()
     db.refresh(opening)
-    return _opening_out(opening)
+    return _ok_model(_opening_out(opening))
 
 
-@router.get("/branches/{branch_id}/openings", response_model=list[OpeningOut])
+@router.get("/branches/{branch_id}/openings")
 def list_openings(
     branch_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> list[OpeningOut]:
+) -> dict[str, object]:
     rows = (
         db.query(HROpening)
         .filter(HROpening.tenant_id == ctx.scope.tenant_id, HROpening.branch_id == branch_id)
         .order_by(HROpening.created_at.desc())
         .all()
     )
-    return [_opening_out(o) for o in rows]
+    return ok([_opening_out(o).model_dump() for o in rows])
 
 
-@router.get("/branches/{branch_id}/openings/{opening_id}", response_model=OpeningOut)
+@router.get("/branches/{branch_id}/openings/{opening_id}")
 def get_opening(
     branch_id: UUID,
     opening_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> OpeningOut:
+) -> dict[str, object]:
     opening = _require_opening(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, opening_id=opening_id)
-    return _opening_out(opening)
+    return _ok_model(_opening_out(opening))
 
 
-@router.patch("/branches/{branch_id}/openings/{opening_id}", response_model=OpeningOut)
+@router.patch("/branches/{branch_id}/openings/{opening_id}")
 def update_opening(
     branch_id: UUID,
     opening_id: UUID,
     body: OpeningUpdateRequest,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> OpeningOut:
+) -> dict[str, object]:
     opening = _require_opening(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, opening_id=opening_id)
 
     if body.title is not None:
@@ -304,13 +308,13 @@ def update_opening(
         opening.requirements_json = body.requirements_json
     if body.status is not None:
         if body.status not in {"ACTIVE", "ARCHIVED"}:
-            raise HTTPException(status_code=400, detail="Invalid status")
+            raise AppError(code="validation_error", message="Invalid status", status_code=400)
         opening.status = body.status
 
     db.add(opening)
     db.commit()
     db.refresh(opening)
-    return _opening_out(opening)
+    return _ok_model(_opening_out(opening))
 
 
 # -------------------------
@@ -320,7 +324,6 @@ def update_opening(
 
 @router.post(
     "/branches/{branch_id}/openings/{opening_id}/resumes/upload",
-    response_model=UploadResumesResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def upload_resumes(
@@ -329,7 +332,7 @@ def upload_resumes(
     files: list[UploadFile] = File(...),
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> UploadResumesResponse:
+) -> dict[str, object]:
     """
     Upload 1..N resumes for an opening.
 
@@ -341,7 +344,7 @@ def upload_resumes(
     opening = _require_opening(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, opening_id=opening_id)
 
     if not files:
-        raise HTTPException(status_code=400, detail="No files uploaded")
+        raise AppError(code="validation_error", message="No files uploaded", status_code=400)
 
     batch = HRResumeBatch(
         opening_id=opening.id,
@@ -369,7 +372,11 @@ def upload_resumes(
             # Persist raw upload to disk (local storage).
             save_upload_to_disk(f, paths.raw_abs)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to save upload: {e}")
+            raise AppError(
+                code="hr.resume.upload_failed",
+                message="Failed to save upload",
+                status_code=500,
+            ) from e
 
         resume = HRResume(
             id=resume_id,
@@ -398,17 +405,17 @@ def upload_resumes(
 
     db.commit()
 
-    return UploadResumesResponse(batch_id=batch.id, resume_ids=resume_ids)
+    return _ok_model(UploadResumesResponse(batch_id=batch.id, resume_ids=resume_ids))
 
 
-@router.get("/branches/{branch_id}/openings/{opening_id}/resumes", response_model=list[ResumeOut])
+@router.get("/branches/{branch_id}/openings/{opening_id}/resumes")
 def list_resumes(
     branch_id: UUID,
     opening_id: UUID,
     status_filter: str | None = None,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> list[ResumeOut]:
+) -> dict[str, object]:
     _require_opening(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, opening_id=opening_id)
 
     q = db.query(HRResume).filter(
@@ -419,12 +426,11 @@ def list_resumes(
     if status_filter:
         q = q.filter(HRResume.status == status_filter)
     rows = q.order_by(HRResume.created_at.desc()).all()
-    return [_resume_out(r) for r in rows]
+    return ok([_resume_out(r).model_dump() for r in rows])
 
 
 @router.post(
     "/branches/{branch_id}/openings/{opening_id}/resumes/embed",
-    response_model=EnqueueEmbeddingResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 def enqueue_opening_embeddings(
@@ -433,7 +439,7 @@ def enqueue_opening_embeddings(
     body: EnqueueEmbeddingRequest,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> EnqueueEmbeddingResponse:
+) -> dict[str, object]:
     """
     Phase 2: enqueue embeddings for already-parsed resumes in an opening.
 
@@ -480,24 +486,25 @@ def enqueue_opening_embeddings(
 
     db.commit()
 
-    return EnqueueEmbeddingResponse(
-        opening_id=opening_id,
-        enqueued=enqueued,
-        skipped=skipped,
-        rq_job_ids=job_ids,
+    return _ok_model(
+        EnqueueEmbeddingResponse(
+            opening_id=opening_id,
+            enqueued=enqueued,
+            skipped=skipped,
+            rq_job_ids=job_ids,
+        )
     )
 
 
 @router.get(
     "/branches/{branch_id}/openings/{opening_id}/resumes/index-status",
-    response_model=IndexStatusOut,
 )
 def get_opening_index_status(
     branch_id: UUID,
     opening_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> IndexStatusOut:
+) -> dict[str, object]:
     """
     Phase 2 debug endpoint: counts of parsing + embedding state for one opening.
 
@@ -532,24 +539,26 @@ def get_opening_index_status(
         .count()
     )
 
-    return IndexStatusOut(
-        opening_id=opening_id,
-        total_resumes=total,
-        parsed_resumes=parsed,
-        parsing_failed=parsing_failed,
-        embedded_resumes=embedded,
-        embedding_failed=embedding_failed,
+    return _ok_model(
+        IndexStatusOut(
+            opening_id=opening_id,
+            total_resumes=total,
+            parsed_resumes=parsed,
+            parsing_failed=parsing_failed,
+            embedded_resumes=embedded,
+            embedding_failed=embedding_failed,
+        )
     )
 
 
-@router.get("/branches/{branch_id}/openings/{opening_id}/resumes/batch/{batch_id}/status", response_model=BatchStatusOut)
+@router.get("/branches/{branch_id}/openings/{opening_id}/resumes/batch/{batch_id}/status")
 def get_batch_status(
     branch_id: UUID,
     opening_id: UUID,
     batch_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> BatchStatusOut:
+) -> dict[str, object]:
     _require_opening(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, opening_id=opening_id)
 
     batch = (
@@ -563,7 +572,7 @@ def get_batch_status(
         .first()
     )
     if batch is None:
-        raise HTTPException(status_code=404, detail="Batch not found")
+        raise AppError(code="hr.resume_batch.not_found", message="Batch not found", status_code=404)
 
     rows = (
         db.query(HRResume.status, HRResume.id)
@@ -578,23 +587,25 @@ def get_batch_status(
     for st, _rid in rows:
         counts[str(st)] = counts.get(str(st), 0) + 1
 
-    return BatchStatusOut(
-        batch_id=batch_id,
-        total_count=batch.total_count,
-        uploaded_count=counts.get("UPLOADED", 0),
-        parsing_count=counts.get("PARSING", 0),
-        parsed_count=counts.get("PARSED", 0),
-        failed_count=counts.get("FAILED", 0),
+    return _ok_model(
+        BatchStatusOut(
+            batch_id=batch_id,
+            total_count=batch.total_count,
+            uploaded_count=counts.get("UPLOADED", 0),
+            parsing_count=counts.get("PARSING", 0),
+            parsed_count=counts.get("PARSED", 0),
+            failed_count=counts.get("FAILED", 0),
+        )
     )
 
 
-@router.get("/branches/{branch_id}/resumes/{resume_id}/views", response_model=list[ResumeViewInfoOut])
+@router.get("/branches/{branch_id}/resumes/{resume_id}/views")
 def list_resume_views(
     branch_id: UUID,
     resume_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> list[ResumeViewInfoOut]:
+) -> dict[str, object]:
     """
     Phase 2 debug endpoint: list which views are stored for a resume and whether
     they have embeddings.
@@ -609,7 +620,7 @@ def list_resume_views(
         .first()
     )
     if resume is None:
-        raise HTTPException(status_code=404, detail="Resume not found")
+        raise AppError(code="hr.resume.not_found", message="Resume not found", status_code=404)
 
     rows = (
         db.query(HRResumeView)
@@ -620,27 +631,29 @@ def list_resume_views(
         .order_by(HRResumeView.view_type.asc())
         .all()
     )
-    return [
-        ResumeViewInfoOut(
-            id=v.id,
-            view_type=v.view_type,
-            text_hash=v.text_hash,
-            has_embedding=v.embedding is not None,
-            tokens=v.tokens,
-            updated_at=v.updated_at,
-        )
-        for v in rows
-    ]
+    return ok(
+        [
+            ResumeViewInfoOut(
+                id=v.id,
+                view_type=v.view_type,
+                text_hash=v.text_hash,
+                has_embedding=v.embedding is not None,
+                tokens=v.tokens,
+                updated_at=v.updated_at,
+            ).model_dump()
+            for v in rows
+        ]
+    )
 
 
-@router.post("/branches/{branch_id}/openings/{opening_id}/search", response_model=list[SearchHitOut])
+@router.post("/branches/{branch_id}/openings/{opening_id}/search")
 def search_resumes(
     branch_id: UUID,
     opening_id: UUID,
     body: SearchRequest,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> list[SearchHitOut]:
+) -> dict[str, object]:
     """
     Phase 2 debug endpoint (MVP retrieval):
     - Embed the query using the configured HuggingFace model.
@@ -650,13 +663,13 @@ def search_resumes(
     """
     if not settings.hr_search_debug_enabled:
         # Hide this endpoint in most environments (opt-in via env var).
-        raise HTTPException(status_code=404, detail="Not found")
+        raise AppError(code="hr.search.not_found", message="Not found", status_code=404)
 
     _require_opening(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, opening_id=opening_id)
 
     query_text = (body.query_text or "").strip()
     if not query_text:
-        raise HTTPException(status_code=400, detail="query_text is required")
+        raise AppError(code="validation_error", message="query_text is required", status_code=400)
 
     top_k = max(1, min(int(body.top_k), 50))
 
@@ -691,7 +704,7 @@ def search_resumes(
                 score=max(0.0, 1.0 - dist_f),
             )
         )
-    return out
+    return ok([x.model_dump() for x in out])
 
 
 @router.get("/branches/{branch_id}/resumes/{resume_id}/parsed")
@@ -700,7 +713,7 @@ def get_parsed_resume(
     resume_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """
     Return the parsed.json artifact for debugging.
 
@@ -716,23 +729,29 @@ def get_parsed_resume(
         .first()
     )
     if resume is None:
-        raise HTTPException(status_code=404, detail="Resume not found")
+        raise AppError(code="hr.resume.not_found", message="Resume not found", status_code=404)
 
     if resume.status != "PARSED" or not resume.parsed_path:
-        raise HTTPException(
+        raise AppError(
+            code="hr.resume.not_parsed",
+            message="Resume not parsed yet",
             status_code=409,
-            detail={
-                "status": resume.status,
-                "error": resume.error,
-                "message": "Resume not parsed yet",
-            },
+            details={"status": resume.status, "error": resume.error},
         )
 
     parsed_abs = safe_resolve_under_data_dir(resume.parsed_path)
     if not parsed_abs.exists():
-        raise HTTPException(status_code=404, detail="Parsed artifact missing on disk")
+        raise AppError(
+            code="hr.resume.parsed_artifact_missing",
+            message="Parsed artifact missing on disk",
+            status_code=404,
+        )
 
     try:
-        return json.loads(parsed_abs.read_text("utf-8"))
+        return ok(json.loads(parsed_abs.read_text("utf-8")))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read parsed artifact: {e}")
+        raise AppError(
+            code="hr.resume.parsed_artifact_read_failed",
+            message="Failed to read parsed artifact",
+            status_code=500,
+        ) from e

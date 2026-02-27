@@ -554,6 +554,7 @@ def process_video_pipeline(
             db.add(
                 Event(
                     id=uuid4(),
+                    tenant_id=video.tenant_id,
                     job_id=job_id,
                     ts=pe.ts,
                     event_type=pe.event_type,
@@ -618,6 +619,7 @@ def process_video_pipeline(
             db.add(
                 Track(
                     id=uuid4(),
+                    tenant_id=video.tenant_id,
                     job_id=job_id,
                     track_key=track_key,
                     entrance_id=None,
@@ -1127,6 +1129,7 @@ def process_video_pipeline(
                         db.add(
                             Event(
                                 id=uuid4(),
+                                tenant_id=video.tenant_id,
                                 job_id=job_id,
                                 ts=exit_ts,
                                 event_type="exit",
@@ -1234,6 +1237,7 @@ def process_video_pipeline(
                     db.add(
                         Event(
                             id=uuid4(),
+                            tenant_id=video.tenant_id,
                             job_id=job_id,
                             ts=end_event.ts,
                             event_type=end_event.event_type.value,
@@ -1308,6 +1312,7 @@ def process_video_pipeline(
                 db.add(
                     Event(
                         id=uuid4(),
+                        tenant_id=video.tenant_id,
                         job_id=job_id,
                         ts=exit_ts,
                         event_type="exit",
@@ -1349,6 +1354,7 @@ def process_video_pipeline(
                 db.add(
                     Event(
                         id=uuid4(),
+                        tenant_id=video.tenant_id,
                         job_id=job_id,
                         ts=end_event.ts,
                         event_type=end_event.event_type.value,

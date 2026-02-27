@@ -5,9 +5,7 @@ from typing import Any
 
 def ok(data: Any, meta: dict[str, Any] | None = None) -> dict[str, Any]:
     """
-    Standard success envelope for new enterprise APIs.
-
-    Note: We do NOT retrofit legacy endpoints yet to avoid breaking clients.
+    Standard success envelope for enterprise APIs.
     """
 
     payload: dict[str, Any] = {"ok": True, "data": data}

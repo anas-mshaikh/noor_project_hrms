@@ -1,27 +1,29 @@
 from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from pathlib import Path
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
-from pathlib import Path
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth.deps import require_permission
 from app.auth.permissions import VISION_RESULTS_READ
+from app.core.config import settings
+from app.core.errors import AppError
+from app.core.responses import ok
 from app.db.session import get_db
 from app.models.models import (
     AttendanceDaily,
+    Artifact,
     Event,
     Job,
     MetricsHourly,
     Video,
 )
-from app.core.config import settings
-from app.models.models import Artifact
 from app.shared.types import AuthContext
 
 
@@ -95,7 +97,7 @@ def _require_branch_info(
         {"tenant_id": tenant_id, "branch_id": branch_id},
     ).first()
     if row is None:
-        raise HTTPException(status_code=404, detail="Branch not found")
+        raise AppError(code="vision.branch.not_found", message="Branch not found", status_code=404)
     company_id = row[0]
     tz = row[1] or "UTC"
     return company_id, tz
@@ -119,7 +121,7 @@ def _require_job_video_in_branch(
         .first()
     )
     if row is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise AppError(code="vision.job.not_found", message="Job not found", status_code=404)
     return row[0], row[1]
 
 
@@ -179,7 +181,7 @@ def _list_branch_employees(
     return out
 
 
-@router.get("/branches/{branch_id}/jobs/{job_id}/events", response_model=list[EventOut])
+@router.get("/branches/{branch_id}/jobs/{job_id}/events")
 def list_events(
     branch_id: UUID,
     job_id: UUID,
@@ -190,7 +192,7 @@ def list_events(
     offset: int = Query(default=0, ge=0),
     ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
     db: Session = Depends(get_db),
-) -> list[EventOut]:
+) -> dict[str, object]:
     _job, _video = _require_job_video_in_branch(
         db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, job_id=job_id
     )
@@ -199,7 +201,7 @@ def list_events(
 
     if event_type is not None:
         if event_type not in {"entry", "exit"}:
-            raise HTTPException(status_code=400, detail="event_type must be entry|exit")
+            raise AppError(code="validation_error", message="event_type must be entry|exit", status_code=400)
         q = q.filter(Event.event_type == event_type)
 
     if employee_id is not None:
@@ -210,21 +212,23 @@ def list_events(
 
     rows = q.order_by(Event.ts.asc()).offset(offset).limit(limit).all()
 
-    return [
-        EventOut(
-            id=e.id,
-            ts=e.ts,
-            event_type=e.event_type,
-            entrance_id=e.entrance_id,
-            track_key=e.track_key,
-            employee_id=e.employee_id,
-            snapshot_path=e.snapshot_path,
-            confidence=e.confidence,
-            is_inferred=e.is_inferred,
-            meta=e.meta,
-        )
-        for e in rows
-    ]
+    return ok(
+        [
+            EventOut(
+                id=e.id,
+                ts=e.ts,
+                event_type=e.event_type,
+                entrance_id=e.entrance_id,
+                track_key=e.track_key,
+                employee_id=e.employee_id,
+                snapshot_path=e.snapshot_path,
+                confidence=e.confidence,
+                is_inferred=e.is_inferred,
+                meta=e.meta,
+            ).model_dump()
+            for e in rows
+        ]
+    )
 
 
 @router.get("/branches/{branch_id}/events/{event_id}/snapshot")
@@ -251,21 +255,33 @@ def download_event_snapshot(
         .first()
     )
     if row is None:
-        raise HTTPException(status_code=404, detail="Event not found")
+        raise AppError(code="vision.event.not_found", message="Event not found", status_code=404)
     e = row
 
     if e.snapshot_path is None or e.snapshot_path == "":
-        raise HTTPException(status_code=404, detail="Event snapshot not available")
+        raise AppError(
+            code="vision.snapshot.not_available",
+            message="Event snapshot not available",
+            status_code=404,
+        )
 
     base = Path(settings.data_dir).resolve()
     target = (base / e.snapshot_path).resolve()
 
     # Prevent path traversal (“../../etc/passwd”)
     if not target.is_relative_to(base):
-        raise HTTPException(status_code=400, detail="Invalid snapshot path")
+        raise AppError(
+            code="vision.snapshot.invalid_path",
+            message="Invalid snapshot path",
+            status_code=400,
+        )
 
     if not target.exists() or not target.is_file():
-        raise HTTPException(status_code=404, detail="Snapshot file missing on disk")
+        raise AppError(
+            code="vision.snapshot.not_available",
+            message="Snapshot file missing on disk",
+            status_code=404,
+        )
 
     media_type = {
         ".jpg": "image/jpeg",
@@ -284,13 +300,13 @@ def download_event_snapshot(
     )
 
 
-@router.get("/branches/{branch_id}/jobs/{job_id}/attendance", response_model=list[AttendanceOut])
+@router.get("/branches/{branch_id}/jobs/{job_id}/attendance")
 def list_attendance(
     branch_id: UUID,
     job_id: UUID,
     ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
     db: Session = Depends(get_db),
-) -> list[AttendanceOut]:
+) -> dict[str, object]:
     # Resolve branch/day via video so we return all employees for that branch/day.
     _job, video = _require_job_video_in_branch(
         db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, job_id=job_id
@@ -349,7 +365,7 @@ def list_attendance(
             )
         )
 
-    return out
+    return ok([x.model_dump() for x in out])
 
 
 def _parse_hhmm_to_minutes(value: str | None) -> int | None:
@@ -362,23 +378,22 @@ def _parse_hhmm_to_minutes(value: str | None) -> int | None:
 
     parts = value.split(":")
     if len(parts) != 2:
-        raise HTTPException(status_code=400, detail="late_after must be HH:MM")
+        raise AppError(code="validation_error", message="late_after must be HH:MM", status_code=400)
 
     try:
         h = int(parts[0])
         m = int(parts[1])
     except ValueError as e:
-        raise HTTPException(status_code=400, detail="late_after must be HH:MM") from e
+        raise AppError(code="validation_error", message="late_after must be HH:MM", status_code=400) from e
 
     if h < 0 or h > 23 or m < 0 or m > 59:
-        raise HTTPException(status_code=400, detail="late_after must be HH:MM")
+        raise AppError(code="validation_error", message="late_after must be HH:MM", status_code=400)
 
     return h * 60 + m
 
 
 @router.get(
     "/branches/{branch_id}/attendance/daily",
-    response_model=list[AttendanceDailySummaryOut],
 )
 def list_attendance_daily(
     branch_id: UUID,
@@ -388,18 +403,22 @@ def list_attendance_daily(
     include_inactive: bool = Query(default=False),
     ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
     db: Session = Depends(get_db),
-) -> list[AttendanceDailySummaryOut]:
+) -> dict[str, object]:
     company_id, tz_name = _require_branch_info(
         db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id
     )
 
     if end < start:
-        raise HTTPException(status_code=400, detail="end must be >= start")
+        raise AppError(code="validation_error", message="end must be >= start", status_code=400)
 
     try:
         tz = ZoneInfo(tz_name or "UTC")
     except Exception as e:
-        raise HTTPException(status_code=400, detail="Invalid branch timezone") from e
+        raise AppError(
+            code="vision.branch.invalid_timezone",
+            message="Invalid branch timezone",
+            status_code=400,
+        ) from e
 
     late_after_minutes = _parse_hhmm_to_minutes(late_after)
 
@@ -571,16 +590,16 @@ def list_attendance_daily(
             )
         )
 
-    return out
+    return ok([x.model_dump() for x in out])
 
 
-@router.get("/branches/{branch_id}/jobs/{job_id}/metrics/hourly", response_model=list[MetricsHourlyOut])
+@router.get("/branches/{branch_id}/jobs/{job_id}/metrics/hourly")
 def list_metrics_hourly(
     branch_id: UUID,
     job_id: UUID,
     ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
     db: Session = Depends(get_db),
-) -> list[MetricsHourlyOut]:
+) -> dict[str, object]:
     _job, _video = _require_job_video_in_branch(
         db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, job_id=job_id
     )
@@ -592,25 +611,27 @@ def list_metrics_hourly(
         .all()
     )
 
-    return [
-        MetricsHourlyOut(
-            hour_start_ts=m.hour_start_ts,
-            entries=m.entries,
-            exits=m.exits,
-            unique_visitors=m.unique_visitors,
-            avg_dwell_sec=m.avg_dwell_sec,
-        )
-        for m in rows
-    ]
+    return ok(
+        [
+            MetricsHourlyOut(
+                hour_start_ts=m.hour_start_ts,
+                entries=m.entries,
+                exits=m.exits,
+                unique_visitors=m.unique_visitors,
+                avg_dwell_sec=m.avg_dwell_sec,
+            ).model_dump()
+            for m in rows
+        ]
+    )
 
 
-@router.get("/branches/{branch_id}/jobs/{job_id}/artifacts", response_model=list[ArtifactOut])
+@router.get("/branches/{branch_id}/jobs/{job_id}/artifacts")
 def list_artifacts(
     branch_id: UUID,
     job_id: UUID,
     ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
     db: Session = Depends(get_db),
-) -> list[ArtifactOut]:
+) -> dict[str, object]:
     _job, _video = _require_job_video_in_branch(
         db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, job_id=job_id
     )
@@ -620,10 +641,12 @@ def list_artifacts(
         .order_by(Artifact.created_at.asc())
         .all()
     )
-    return [
-        ArtifactOut(id=a.id, type=a.type, path=a.path, created_at=a.created_at)
-        for a in rows
-    ]
+    return ok(
+        [
+            ArtifactOut(id=a.id, type=a.type, path=a.path, created_at=a.created_at).model_dump()
+            for a in rows
+        ]
+    )
 
 
 @router.get("/branches/{branch_id}/artifacts/{artifact_id}/download")
@@ -650,17 +673,25 @@ def download_artifact(
         .first()
     )
     if a is None:
-        raise HTTPException(status_code=404, detail="Artifact not found")
+        raise AppError(code="vision.artifact.not_found", message="Artifact not found", status_code=404)
 
     base = Path(settings.data_dir).resolve()
     target = (base / a.path).resolve()
 
     # Prevent path traversal (“../../etc/passwd”)
     if not target.is_relative_to(base):
-        raise HTTPException(status_code=400, detail="Invalid artifact path")
+        raise AppError(
+            code="vision.artifact.invalid_path",
+            message="Invalid artifact path",
+            status_code=400,
+        )
 
     if not target.exists() or not target.is_file():
-        raise HTTPException(status_code=404, detail="Artifact file missing on disk")
+        raise AppError(
+            code="vision.artifact.file_missing",
+            message="Artifact file missing on disk",
+            status_code=404,
+        )
 
     media_type = {
         "csv": "text/csv",

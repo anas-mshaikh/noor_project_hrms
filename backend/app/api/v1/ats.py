@@ -20,12 +20,14 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth.deps import require_permission
 from app.auth.permissions import HR_RECRUITING_READ, HR_RECRUITING_WRITE
+from app.core.errors import AppError
+from app.core.responses import ok
 from app.db.session import get_db
 from app.hr.ats import ensure_default_pipeline_stages, find_stage_by_name, list_stage_names
 from app.models.models import (
@@ -40,6 +42,9 @@ from app.models.models import (
 from app.shared.types import AuthContext
 
 router = APIRouter(tags=["hr", "ats"])
+
+def _ok_model(model: BaseModel) -> dict[str, object]:
+    return ok(model.model_dump())
 
 
 # -------------------------
@@ -133,7 +138,7 @@ def _require_opening(db: Session, *, ctx: AuthContext, branch_id: UUID, opening_
         .one_or_none()
     )
     if opening is None:
-        raise HTTPException(status_code=404, detail="Opening not found")
+        raise AppError(code="hr.opening.not_found", message="Opening not found", status_code=404)
     return opening
 
 
@@ -148,7 +153,7 @@ def _require_run(db: Session, *, ctx: AuthContext, branch_id: UUID, run_id: UUID
         .one_or_none()
     )
     if run is None:
-        raise HTTPException(status_code=404, detail="ScreeningRun not found")
+        raise AppError(code="hr.screening_run.not_found", message="Screening run not found", status_code=404)
     return run
 
 
@@ -165,7 +170,7 @@ def _require_application(
         .one_or_none()
     )
     if app is None:
-        raise HTTPException(status_code=404, detail="Application not found")
+        raise AppError(code="ats.application.not_found", message="Application not found", status_code=404)
     return app
 
 
@@ -213,12 +218,11 @@ def _require_stage(
 
     stage = find_stage_by_name(db, opening_id, stage_name, tenant_id=tenant_id)
     if stage is None:
-        raise HTTPException(
+        raise AppError(
+            code="ats.stage.invalid",
+            message=f"Unknown stage_name: {stage_name!r}",
             status_code=400,
-            detail={
-                "message": f"Unknown stage_name: {stage_name!r}",
-                "valid_stage_names": list_stage_names(db, opening_id, tenant_id=tenant_id),
-            },
+            details={"valid_stage_names": list_stage_names(db, opening_id, tenant_id=tenant_id)},
         )
     return stage
 
@@ -236,9 +240,10 @@ def _require_stage_id(
         .one_or_none()
     )
     if stage is None:
-        raise HTTPException(
+        raise AppError(
+            code="ats.stage.invalid",
+            message="stage_id does not belong to this opening",
             status_code=400,
-            detail="stage_id does not belong to this opening",
         )
     return stage
 
@@ -250,14 +255,13 @@ def _require_stage_id(
 
 @router.get(
     "/branches/{branch_id}/openings/{opening_id}/pipeline-stages",
-    response_model=list[PipelineStageOut],
 )
 def list_pipeline_stages(
     branch_id: UUID,
     opening_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> list[PipelineStageOut]:
+) -> dict[str, object]:
     """
     List pipeline stages for an opening (ordered by sort_order).
 
@@ -276,12 +280,11 @@ def list_pipeline_stages(
         .order_by(HRPipelineStage.sort_order.asc(), HRPipelineStage.name.asc())
         .all()
     )
-    return [_stage_out(s) for s in rows]
+    return ok([_stage_out(s).model_dump() for s in rows])
 
 
 @router.patch(
     "/branches/{branch_id}/openings/{opening_id}/pipeline-stages/{stage_id}",
-    response_model=PipelineStageOut,
 )
 def update_pipeline_stage(
     branch_id: UUID,
@@ -290,7 +293,7 @@ def update_pipeline_stage(
     body: PipelineStageUpdateRequest,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> PipelineStageOut:
+) -> dict[str, object]:
     """
     Update a pipeline stage (rename, reorder, mark terminal).
 
@@ -310,7 +313,7 @@ def update_pipeline_stage(
     db.add(stage)
     db.commit()
     db.refresh(stage)
-    return _stage_out(stage)
+    return _ok_model(_stage_out(stage))
 
 
 # -------------------------
@@ -320,7 +323,6 @@ def update_pipeline_stage(
 
 @router.post(
     "/branches/{branch_id}/screening-runs/{run_id}/applications",
-    response_model=CreateApplicationsResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def create_applications_from_run(
@@ -329,7 +331,7 @@ def create_applications_from_run(
     body: CreateApplicationsFromRunRequest = Body(default_factory=CreateApplicationsFromRunRequest),
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> CreateApplicationsResponse:
+) -> dict[str, object]:
     """
     Bulk-create applications from a ScreeningRun.
 
@@ -348,15 +350,13 @@ def create_applications_from_run(
     stage = _require_stage(db, tenant_id=ctx.scope.tenant_id, opening_id=run.opening_id, stage_name=stage_name)
 
     if body.resume_ids and body.top_n:
-        raise HTTPException(
+        raise AppError(
+            code="validation_error",
+            message="Provide either resume_ids or top_n (not both)",
             status_code=400,
-            detail="Provide either resume_ids or top_n (not both)",
         )
     if not body.resume_ids and body.top_n is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Provide resume_ids or top_n",
-        )
+        raise AppError(code="validation_error", message="Provide resume_ids or top_n", status_code=400)
 
     resume_ids: list[UUID]
     if body.resume_ids:
@@ -375,15 +375,19 @@ def create_applications_from_run(
         found_set = {r[0] for r in found}
         missing = [rid for rid in resume_ids if rid not in found_set]
         if missing:
-            raise HTTPException(
+            raise AppError(
+                code="validation_error",
+                message="Some resumes do not belong to this opening",
                 status_code=400,
-                detail={"message": "Some resumes do not belong to this opening", "resume_ids": missing},
+                details={"resume_ids": missing},
             )
     else:
         if run.status != "DONE":
-            raise HTTPException(
+            raise AppError(
+                code="hr.screening_run.invalid_state",
+                message="Run must be DONE to create applications by top_n",
                 status_code=400,
-                detail="Run must be DONE to create applications by top_n",
+                details={"status": run.status},
             )
         top_n = max(1, min(int(body.top_n or 0), 5000))
         resume_ids = [
@@ -398,7 +402,7 @@ def create_applications_from_run(
         ]
 
     if not resume_ids:
-        return CreateApplicationsResponse(created_count=0, skipped_count=0, application_ids=[])
+        return _ok_model(CreateApplicationsResponse(created_count=0, skipped_count=0, application_ids=[]))
 
     existing = (
         db.query(HRApplication.resume_id)
@@ -433,16 +437,17 @@ def create_applications_from_run(
 
     db.commit()
 
-    return CreateApplicationsResponse(
-        created_count=len(created_ids),
-        skipped_count=len(resume_ids) - len(created_ids),
-        application_ids=created_ids,
+    return _ok_model(
+        CreateApplicationsResponse(
+            created_count=len(created_ids),
+            skipped_count=len(resume_ids) - len(created_ids),
+            application_ids=created_ids,
+        )
     )
 
 
 @router.post(
     "/branches/{branch_id}/openings/{opening_id}/applications",
-    response_model=ApplicationOut,
     status_code=status.HTTP_201_CREATED,
 )
 def create_application(
@@ -451,7 +456,7 @@ def create_application(
     body: ApplicationCreateRequest,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> ApplicationOut:
+) -> dict[str, object]:
     """
     Manually create an application from a resume.
 
@@ -476,7 +481,11 @@ def create_application(
         .one_or_none()
     )
     if resume is None:
-        raise HTTPException(status_code=400, detail="resume_id does not belong to this opening")
+        raise AppError(
+            code="validation_error",
+            message="resume_id does not belong to this opening",
+            status_code=400,
+        )
 
     stage_name = (body.stage_name or "Applied").strip()
     stage = _require_stage(db, tenant_id=ctx.scope.tenant_id, opening_id=opening_id, stage_name=stage_name)
@@ -492,7 +501,7 @@ def create_application(
         .first()
     )
     if existing is not None:
-        return _application_out(existing, resume)
+        return _ok_model(_application_out(existing, resume))
 
     app = HRApplication(
         id=uuid4(),
@@ -508,10 +517,10 @@ def create_application(
     db.add(app)
     db.commit()
     db.refresh(app)
-    return _application_out(app, resume)
+    return _ok_model(_application_out(app, resume))
 
 
-@router.get("/branches/{branch_id}/openings/{opening_id}/applications", response_model=list[ApplicationOut])
+@router.get("/branches/{branch_id}/openings/{opening_id}/applications")
 def list_applications(
     branch_id: UUID,
     opening_id: UUID,
@@ -519,7 +528,7 @@ def list_applications(
     status_filter: str | None = Query(default=None, alias="status"),
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> list[ApplicationOut]:
+) -> dict[str, object]:
     """
     List applications for an opening (Kanban-friendly).
 
@@ -547,17 +556,17 @@ def list_applications(
         q = q.filter(HRApplication.status == status_filter)
 
     rows = q.order_by(HRApplication.updated_at.desc(), HRApplication.created_at.desc()).all()
-    return [_application_out(app, resume) for app, resume in rows]
+    return ok([_application_out(app, resume).model_dump() for app, resume in rows])
 
 
-@router.patch("/branches/{branch_id}/applications/{application_id}", response_model=ApplicationOut)
+@router.patch("/branches/{branch_id}/applications/{application_id}")
 def update_application(
     branch_id: UUID,
     application_id: UUID,
     body: ApplicationUpdateRequest,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> ApplicationOut:
+) -> dict[str, object]:
     """
     Move an application to another stage (drag/drop) or update stage by name.
     """
@@ -569,7 +578,11 @@ def update_application(
     db.commit()
 
     if body.stage_id and body.stage_name:
-        raise HTTPException(status_code=400, detail="Provide stage_id OR stage_name (not both)")
+        raise AppError(
+            code="validation_error",
+            message="Provide stage_id OR stage_name (not both)",
+            status_code=400,
+        )
 
     if body.stage_id is not None:
         stage = _require_stage_id(db, tenant_id=ctx.scope.tenant_id, opening_id=opening_id, stage_id=body.stage_id)
@@ -588,9 +601,13 @@ def update_application(
         .one_or_none()
     )
     if resume is None:
-        raise HTTPException(status_code=500, detail="Resume missing for application")
+        raise AppError(
+            code="ats.application.resume_missing",
+            message="Resume missing for application",
+            status_code=500,
+        )
 
-    return _application_out(app, resume)
+    return _ok_model(_application_out(app, resume))
 
 
 def _set_terminal_status(
@@ -616,13 +633,13 @@ def _set_terminal_status(
     return app
 
 
-@router.post("/branches/{branch_id}/applications/{application_id}/reject", response_model=ApplicationOut)
+@router.post("/branches/{branch_id}/applications/{application_id}/reject")
 def reject_application(
     branch_id: UUID,
     application_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> ApplicationOut:
+) -> dict[str, object]:
     app = _require_application(db, ctx=ctx, branch_id=branch_id, application_id=application_id)
     ensure_default_pipeline_stages(db, app.opening_id, tenant_id=ctx.scope.tenant_id)
     db.commit()
@@ -630,17 +647,21 @@ def reject_application(
     app = _set_terminal_status(db, tenant_id=ctx.scope.tenant_id, app=app, terminal_status="REJECTED")
     resume = db.query(HRResume).filter(HRResume.id == app.resume_id, HRResume.tenant_id == ctx.scope.tenant_id).one_or_none()
     if resume is None:
-        raise HTTPException(status_code=500, detail="Resume missing for application")
-    return _application_out(app, resume)
+        raise AppError(
+            code="ats.application.resume_missing",
+            message="Resume missing for application",
+            status_code=500,
+        )
+    return _ok_model(_application_out(app, resume))
 
 
-@router.post("/branches/{branch_id}/applications/{application_id}/hire", response_model=ApplicationOut)
+@router.post("/branches/{branch_id}/applications/{application_id}/hire")
 def hire_application(
     branch_id: UUID,
     application_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> ApplicationOut:
+) -> dict[str, object]:
     app = _require_application(db, ctx=ctx, branch_id=branch_id, application_id=application_id)
     ensure_default_pipeline_stages(db, app.opening_id, tenant_id=ctx.scope.tenant_id)
     db.commit()
@@ -648,8 +669,12 @@ def hire_application(
     app = _set_terminal_status(db, tenant_id=ctx.scope.tenant_id, app=app, terminal_status="HIRED")
     resume = db.query(HRResume).filter(HRResume.id == app.resume_id, HRResume.tenant_id == ctx.scope.tenant_id).one_or_none()
     if resume is None:
-        raise HTTPException(status_code=500, detail="Resume missing for application")
-    return _application_out(app, resume)
+        raise AppError(
+            code="ats.application.resume_missing",
+            message="Resume missing for application",
+            status_code=500,
+        )
+    return _ok_model(_application_out(app, resume))
 
 
 # -------------------------
@@ -659,7 +684,6 @@ def hire_application(
 
 @router.post(
     "/branches/{branch_id}/applications/{application_id}/notes",
-    response_model=NoteOut,
     status_code=status.HTTP_201_CREATED,
 )
 def create_note(
@@ -668,12 +692,12 @@ def create_note(
     body: NoteCreateRequest,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> NoteOut:
+) -> dict[str, object]:
     app = _require_application(db, ctx=ctx, branch_id=branch_id, application_id=application_id)
 
     note_text = (body.note or "").strip()
     if not note_text:
-        raise HTTPException(status_code=400, detail="note is required")
+        raise AppError(code="validation_error", message="note is required", status_code=400)
 
     note = HRApplicationNote(
         tenant_id=ctx.scope.tenant_id,
@@ -684,21 +708,23 @@ def create_note(
     db.add(note)
     db.commit()
     db.refresh(note)
-    return NoteOut(
-        id=note.id,
-        application_id=note.application_id,
-        note=note.note,
-        created_at=note.created_at,
+    return _ok_model(
+        NoteOut(
+            id=note.id,
+            application_id=note.application_id,
+            note=note.note,
+            created_at=note.created_at,
+        )
     )
 
 
-@router.get("/branches/{branch_id}/applications/{application_id}/notes", response_model=list[NoteOut])
+@router.get("/branches/{branch_id}/applications/{application_id}/notes")
 def list_notes(
     branch_id: UUID,
     application_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> list[NoteOut]:
+) -> dict[str, object]:
     _require_application(db, ctx=ctx, branch_id=branch_id, application_id=application_id)
 
     rows = (
@@ -710,12 +736,14 @@ def list_notes(
         .order_by(HRApplicationNote.created_at.desc())
         .all()
     )
-    return [
-        NoteOut(
-            id=n.id,
-            application_id=n.application_id,
-            note=n.note,
-            created_at=n.created_at,
-        )
-        for n in rows
-    ]
+    return ok(
+        [
+            NoteOut(
+                id=n.id,
+                application_id=n.application_id,
+                note=n.note,
+                created_at=n.created_at,
+            ).model_dump()
+            for n in rows
+        ]
+    )

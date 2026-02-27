@@ -20,12 +20,14 @@ from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth.deps import require_permission
 from app.auth.permissions import WORK_TASK_AUTO_ASSIGN, WORK_TASK_READ, WORK_TASK_WRITE
+from app.core.errors import AppError
+from app.core.responses import ok
 from app.db.session import get_db
 from app.models.models import (
     SkillTaxonomy,
@@ -136,7 +138,6 @@ def _task_out(t: WorkTask) -> TaskOut:
 
 @router.post(
     "/branches/{branch_id}/tasks",
-    response_model=TaskOut,
     status_code=status.HTTP_201_CREATED,
 )
 def create_task(
@@ -144,7 +145,7 @@ def create_task(
     body: TaskCreateRequest,
     ctx: AuthContext = Depends(require_permission(WORK_TASK_WRITE)),
     db: Session = Depends(get_db),
-) -> TaskOut:
+) -> dict[str, object]:
     task = WorkTask(
         id=uuid4(),
         tenant_id=ctx.scope.tenant_id,
@@ -163,7 +164,7 @@ def create_task(
     for s in body.required_skills:
         code = s.code.strip()
         if not code:
-            raise HTTPException(status_code=400, detail="skill code cannot be empty")
+            raise AppError(code="validation_error", message="skill code cannot be empty", status_code=400)
 
         skill = (
             db.query(SkillTaxonomy)
@@ -190,15 +191,15 @@ def create_task(
 
     db.commit()
     db.refresh(task)
-    return _task_out(task)
+    return ok(_task_out(task).model_dump())
 
 
-@router.get("/branches/{branch_id}/tasks", response_model=list[TaskOut])
+@router.get("/branches/{branch_id}/tasks")
 def list_tasks(
     branch_id: UUID,
     ctx: AuthContext = Depends(require_permission(WORK_TASK_READ)),
     db: Session = Depends(get_db),
-) -> list[TaskOut]:
+) -> dict[str, object]:
     tasks = (
         db.query(WorkTask)
         .filter(
@@ -208,12 +209,11 @@ def list_tasks(
         .order_by(WorkTask.created_at.desc())
         .all()
     )
-    return [_task_out(t) for t in tasks]
+    return ok([_task_out(t).model_dump() for t in tasks])
 
 
 @router.post(
     "/branches/{branch_id}/tasks/auto-assign",
-    response_model=AutoAssignResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 def auto_assign_tasks(
@@ -221,7 +221,7 @@ def auto_assign_tasks(
     body: AutoAssignRequest,
     ctx: AuthContext = Depends(require_permission(WORK_TASK_AUTO_ASSIGN)),
     db: Session = Depends(get_db),
-) -> AutoAssignResponse:
+) -> dict[str, object]:
     q = get_work_queue()
     job = q.enqueue(
         assign_tasks_job,
@@ -231,21 +231,23 @@ def auto_assign_tasks(
             "business_date": body.business_date.isoformat(),
         },
     )
-    return AutoAssignResponse(
-        tenant_id=ctx.scope.tenant_id,
-        branch_id=branch_id,
-        business_date=body.business_date,
-        rq_job_id=str(job.id),
+    return ok(
+        AutoAssignResponse(
+            tenant_id=ctx.scope.tenant_id,
+            branch_id=branch_id,
+            business_date=body.business_date,
+            rq_job_id=str(job.id),
+        ).model_dump()
     )
 
 
-@router.get("/branches/{branch_id}/tasks/{task_id}/assignments", response_model=list[AssignmentOut])
+@router.get("/branches/{branch_id}/tasks/{task_id}/assignments")
 def get_task_assignments(
     branch_id: UUID,
     task_id: UUID,
     ctx: AuthContext = Depends(require_permission(WORK_TASK_READ)),
     db: Session = Depends(get_db),
-) -> list[AssignmentOut]:
+) -> dict[str, object]:
     task = (
         db.query(WorkTask)
         .filter(
@@ -256,7 +258,7 @@ def get_task_assignments(
         .first()
     )
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise AppError(code="tasks.task.not_found", message="Task not found", status_code=404)
 
     rows = db.execute(
         sa.text(
@@ -303,4 +305,4 @@ def get_task_assignments(
                 completed_at=r.completed_at,
             )
         )
-    return out
+    return ok([x.model_dump() for x in out])

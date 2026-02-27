@@ -18,13 +18,15 @@ from typing import Any
 from uuid import UUID
 
 import numpy as np
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 from pydantic import BaseModel
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.auth.deps import require_permission
 from app.auth.permissions import FACE_LIBRARY_READ, FACE_LIBRARY_WRITE, FACE_RECOGNIZE
+from app.core.errors import AppError
+from app.core.responses import ok
 from app.db.session import get_db
 from app.face_system.config import FaceSystemConfig
 from app.face_system.aligners.opencv_lbf import FaceSystemModelError as FaceAlignerModelError
@@ -47,19 +49,20 @@ def _read_upload_image_bgr(file: UploadFile) -> np.ndarray:
     try:
         import cv2  # type: ignore
     except Exception as e:
-        raise HTTPException(
+        raise AppError(
+            code="face.model.unavailable",
+            message="opencv-python is required to decode images",
             status_code=500,
-            detail="opencv-python is required to decode images",
         ) from e
 
     data = file.file.read()
     if not data:
-        raise HTTPException(status_code=400, detail="empty file")
+        raise AppError(code="face.image.empty", message="empty file", status_code=400)
 
     arr = np.frombuffer(data, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
-        raise HTTPException(status_code=400, detail="could not decode image")
+        raise AppError(code="face.image.decode_failed", message="could not decode image", status_code=400)
     return img
 
 
@@ -93,16 +96,16 @@ def _require_company_id(db: Session, *, tenant_id: UUID, branch_id: UUID) -> UUI
         {"tenant_id": tenant_id, "branch_id": branch_id},
     ).first()
     if row is None:
-        raise HTTPException(status_code=404, detail="Branch not found")
+        raise AppError(code="face.branch.not_found", message="Branch not found", status_code=404)
     return row[0]
 
 
-@router.get("/branches/{branch_id}/faces", response_model=FaceLibraryOut)
+@router.get("/branches/{branch_id}/faces")
 def list_faces(
     branch_id: UUID,
     ctx: AuthContext = Depends(require_permission(FACE_LIBRARY_READ)),
     db: Session = Depends(get_db),
-) -> FaceLibraryOut:
+) -> dict[str, object]:
     """
     List training images per employee for a branch.
     """
@@ -165,7 +168,13 @@ def list_faces(
             )
         )
 
-    return FaceLibraryOut(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, employees=out_emps)
+    return ok(
+        FaceLibraryOut(
+            tenant_id=ctx.scope.tenant_id,
+            branch_id=branch_id,
+            employees=out_emps,
+        ).model_dump()
+    )
 
 
 class FaceRegisterResponse(BaseModel):
@@ -173,14 +182,14 @@ class FaceRegisterResponse(BaseModel):
     stored: FaceImageOut
 
 
-@router.post("/branches/{branch_id}/employees/{employee_id}/faces/register", response_model=FaceRegisterResponse)
+@router.post("/branches/{branch_id}/employees/{employee_id}/faces/register")
 def register_face(
     branch_id: UUID,
     employee_id: UUID,
     file: UploadFile = File(...),
     ctx: AuthContext = Depends(require_permission(FACE_LIBRARY_WRITE)),
     db: Session = Depends(get_db),
-) -> FaceRegisterResponse:
+) -> dict[str, object]:
     """
     Register a training image for an employee.
 
@@ -216,7 +225,7 @@ def register_face(
         },
     ).first()
     if row is None:
-        raise HTTPException(status_code=404, detail="employee not found for branch")
+        raise AppError(code="face.employee.not_found", message="Employee not found", status_code=404)
 
     cfg = FaceSystemConfig.from_settings()
     storage = FaceLibraryStorage(cfg.storage)
@@ -225,22 +234,26 @@ def register_face(
     try:
         proc = get_runtime_processor(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, camera_id=None)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise AppError(
+            code="face.model.unavailable",
+            message="Face system unavailable",
+            status_code=500,
+        ) from e
 
     img = _read_upload_image_bgr(file)
 
     try:
         det = proc.detector.detect_best(img)
     except FaceDetectorModelError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise AppError(code="face.model.unavailable", message="Face system unavailable", status_code=500) from e
 
     if det is None:
-        raise HTTPException(status_code=400, detail="no face detected")
+        raise AppError(code="face.no_face_detected", message="no face detected", status_code=400)
 
     x1, y1, x2, y2 = det.bbox_xyxy
     face_crop = img[y1:y2, x1:x2].copy()
     if face_crop.size == 0:
-        raise HTTPException(status_code=400, detail="invalid face crop")
+        raise AppError(code="face.image.decode_failed", message="invalid face crop", status_code=400)
 
     stored = storage.save_face_crop(
         tenant_id=ctx.scope.tenant_id,
@@ -253,9 +266,11 @@ def register_face(
     # Clear prototypes so they rebuild with the new image.
     proc.recognizer.clear()
 
-    return FaceRegisterResponse(
-        employee_id=employee_id,
-        stored=FaceImageOut(filename=stored.filename, rel_path=stored.rel_path),
+    return ok(
+        FaceRegisterResponse(
+            employee_id=employee_id,
+            stored=FaceImageOut(filename=stored.filename, rel_path=stored.rel_path),
+        ).model_dump()
     )
 
 
@@ -266,45 +281,47 @@ class FaceRecognizeRequestOut(BaseModel):
     top_k: list[dict[str, Any]]
 
 
-@router.post("/branches/{branch_id}/faces/recognize", response_model=FaceRecognizeRequestOut)
+@router.post("/branches/{branch_id}/faces/recognize")
 def recognize_face(
     branch_id: UUID,
     file: UploadFile = File(...),
     top_k: int = 5,
     ctx: AuthContext = Depends(require_permission(FACE_RECOGNIZE)),
-) -> FaceRecognizeRequestOut:
+) -> dict[str, object]:
     """
     Recognize a face image against current branch prototypes.
     """
     try:
         proc = get_runtime_processor(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, camera_id=None)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise AppError(code="face.model.unavailable", message="Face system unavailable", status_code=500) from e
 
     img = _read_upload_image_bgr(file)
 
     try:
         result = proc.recognizer.recognize_image(img, top_k=top_k)
     except (FaceDetectorModelError, FaceAlignerModelError, FaceEmbedderModelError) as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise AppError(code="face.model.unavailable", message="Face system unavailable", status_code=500) from e
     except FaceSystemError as e:
         # User-correctable issues (no prototypes, no face detected, etc.)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise AppError(code="face.recognition.failed", message=str(e), status_code=400) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise AppError(code="face.model.unavailable", message="Face system unavailable", status_code=500) from e
 
-    return FaceRecognizeRequestOut(
-        employee_id=result.employee_id,
-        confidence=float(result.confidence),
-        cosine_similarity=float(result.cosine_similarity) if result.cosine_similarity is not None else None,
-        top_k=[
-            {
-                "employee_id": m.employee_id,
-                "cosine_similarity": float(m.cosine_similarity),
-                "confidence": float(m.confidence),
-            }
-            for m in result.top_k
-        ],
+    return ok(
+        FaceRecognizeRequestOut(
+            employee_id=result.employee_id,
+            confidence=float(result.confidence),
+            cosine_similarity=float(result.cosine_similarity) if result.cosine_similarity is not None else None,
+            top_k=[
+                {
+                    "employee_id": m.employee_id,
+                    "cosine_similarity": float(m.cosine_similarity),
+                    "confidence": float(m.confidence),
+                }
+                for m in result.top_k
+            ],
+        ).model_dump()
     )
 
 
@@ -314,11 +331,11 @@ class FaceClearResponse(BaseModel):
     cleared: bool
 
 
-@router.post("/branches/{branch_id}/faces/clear", response_model=FaceClearResponse)
+@router.post("/branches/{branch_id}/faces/clear")
 def clear_prototypes(
     branch_id: UUID,
     ctx: AuthContext = Depends(require_permission(FACE_LIBRARY_WRITE)),
-) -> FaceClearResponse:
+) -> dict[str, object]:
     """
     Clear in-memory prototypes for a store.
     """
@@ -326,8 +343,10 @@ def clear_prototypes(
         proc = get_runtime_processor(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, camera_id=None)
         proc.recognizer.clear()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    return FaceClearResponse(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, cleared=True)
+        raise AppError(code="face.model.unavailable", message="Face system unavailable", status_code=500) from e
+    return ok(
+        FaceClearResponse(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, cleared=True).model_dump()
+    )
 
 
 class FaceRebuildResponse(BaseModel):
@@ -336,11 +355,11 @@ class FaceRebuildResponse(BaseModel):
     started: bool
 
 
-@router.post("/branches/{branch_id}/faces/rebuild", response_model=FaceRebuildResponse)
+@router.post("/branches/{branch_id}/faces/rebuild")
 def rebuild_prototypes(
     branch_id: UUID,
     ctx: AuthContext = Depends(require_permission(FACE_LIBRARY_WRITE)),
-) -> FaceRebuildResponse:
+) -> dict[str, object]:
     """
     Trigger an async prototype rebuild for a store.
     """
@@ -348,8 +367,10 @@ def rebuild_prototypes(
         proc = get_runtime_processor(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, camera_id=None)
         proc.recognizer.trigger_rebuild_async()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    return FaceRebuildResponse(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, started=True)
+        raise AppError(code="face.model.unavailable", message="Face system unavailable", status_code=500) from e
+    return ok(
+        FaceRebuildResponse(tenant_id=ctx.scope.tenant_id, branch_id=branch_id, started=True).model_dump()
+    )
 
 
 class FaceDeleteResponse(BaseModel):
@@ -359,7 +380,6 @@ class FaceDeleteResponse(BaseModel):
 
 @router.delete(
     "/branches/{branch_id}/employees/{employee_id}/faces/{filename}",
-    response_model=FaceDeleteResponse,
 )
 def delete_training_image(
     branch_id: UUID,
@@ -367,7 +387,7 @@ def delete_training_image(
     filename: str,
     ctx: AuthContext = Depends(require_permission(FACE_LIBRARY_WRITE)),
     db: Session = Depends(get_db),
-) -> FaceDeleteResponse:
+) -> dict[str, object]:
     """
     Delete one training image for an employee.
     """
@@ -396,7 +416,7 @@ def delete_training_image(
         },
     ).first()
     if row is None:
-        raise HTTPException(status_code=404, detail="employee not found for branch")
+        raise AppError(code="face.employee.not_found", message="Employee not found", status_code=404)
 
     cfg = FaceSystemConfig.from_settings()
     storage = FaceLibraryStorage(cfg.storage)
@@ -416,4 +436,4 @@ def delete_training_image(
         # Deletion should succeed even if the face system can't initialize (missing models).
         pass
 
-    return FaceDeleteResponse(employee_id=employee_id, deleted=bool(deleted))
+    return ok(FaceDeleteResponse(employee_id=employee_id, deleted=bool(deleted)).model_dump())

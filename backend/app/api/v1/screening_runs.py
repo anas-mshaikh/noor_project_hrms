@@ -16,13 +16,15 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth.deps import require_permission
 from app.auth.permissions import HR_RECRUITING_READ, HR_RECRUITING_WRITE
 from app.core.config import settings
+from app.core.errors import AppError
+from app.core.responses import ok
 from app.db.session import get_db
 from app.hr.queue import get_hr_queue
 from app.hr.tasks import explain_one, explain_run, run_screening
@@ -37,6 +39,9 @@ from app.shared.types import AuthContext
 
 
 router = APIRouter(tags=["hr"])
+
+def _ok_model(model: BaseModel) -> dict[str, object]:
+    return ok(model.model_dump())
 
 
 def _utcnow() -> datetime:
@@ -157,7 +162,7 @@ def _require_opening(
         .first()
     )
     if opening is None:
-        raise HTTPException(status_code=404, detail="Opening not found")
+        raise AppError(code="hr.opening.not_found", message="Opening not found", status_code=404)
     return opening
 
 
@@ -172,7 +177,7 @@ def _require_run(db: Session, *, tenant_id: UUID, branch_id: UUID, run_id: UUID)
         .first()
     )
     if run is None:
-        raise HTTPException(status_code=404, detail="ScreeningRun not found")
+        raise AppError(code="hr.screening_run.not_found", message="Screening run not found", status_code=404)
     return run
 
 
@@ -183,9 +188,10 @@ def _require_gemini_configured() -> None:
     We keep this as a helper so both endpoints and tasks have a consistent error message.
     """
     if not (settings.gemini_api_key or "").strip():
-        raise HTTPException(
+        raise AppError(
+            code="hr.gemini.not_configured",
+            message="Gemini is not configured",
             status_code=400,
-            detail="Gemini is not configured (set GEMINI_API_KEY)",
         )
 
 
@@ -196,7 +202,6 @@ def _require_gemini_configured() -> None:
 
 @router.post(
     "/branches/{branch_id}/openings/{opening_id}/screening-runs",
-    response_model=ScreeningRunOut,
     status_code=status.HTTP_201_CREATED,
 )
 def create_screening_run(
@@ -205,7 +210,7 @@ def create_screening_run(
     body: ScreeningRunCreateRequest = Body(default_factory=ScreeningRunCreateRequest),
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> ScreeningRunOut:
+) -> dict[str, object]:
     """
     Create and enqueue a ScreeningRun for an opening.
 
@@ -254,7 +259,7 @@ def create_screening_run(
         db.add(run)
         db.commit()
         db.refresh(run)
-        return _run_out(run)
+        return _ok_model(_run_out(run))
     except Exception as e:
         # Queue failures should not crash the API; mark run FAILED so UI can show it.
         run.status = "FAILED"
@@ -263,27 +268,27 @@ def create_screening_run(
         db.add(run)
         db.commit()
         db.refresh(run)
-        return _run_out(run)
+        return _ok_model(_run_out(run))
 
 
-@router.get("/branches/{branch_id}/screening-runs/{run_id}", response_model=ScreeningRunOut)
+@router.get("/branches/{branch_id}/screening-runs/{run_id}")
 def get_screening_run(
     branch_id: UUID,
     run_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> ScreeningRunOut:
+) -> dict[str, object]:
     run = _require_run(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, run_id=run_id)
-    return _run_out(run)
+    return _ok_model(_run_out(run))
 
 
-@router.post("/branches/{branch_id}/screening-runs/{run_id}/cancel", response_model=ScreeningRunOut)
+@router.post("/branches/{branch_id}/screening-runs/{run_id}/cancel")
 def cancel_screening_run(
     branch_id: UUID,
     run_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> ScreeningRunOut:
+) -> dict[str, object]:
     """
     Cancel a ScreeningRun.
 
@@ -294,19 +299,18 @@ def cancel_screening_run(
     run = _require_run(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, run_id=run_id)
 
     if run.status in {"DONE", "FAILED"}:
-        return _run_out(run)
+        return _ok_model(_run_out(run))
 
     run.status = "CANCELLED"
     run.finished_at = _utcnow()
     db.add(run)
     db.commit()
     db.refresh(run)
-    return _run_out(run)
+    return _ok_model(_run_out(run))
 
 
 @router.post(
     "/branches/{branch_id}/screening-runs/{run_id}/retry",
-    response_model=ScreeningRunOut,
     status_code=status.HTTP_201_CREATED,
 )
 def retry_screening_run(
@@ -314,7 +318,7 @@ def retry_screening_run(
     run_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> ScreeningRunOut:
+) -> dict[str, object]:
     """
     Retry a ScreeningRun by creating a NEW run with the same config.
 
@@ -353,7 +357,7 @@ def retry_screening_run(
         db.add(new_run)
         db.commit()
         db.refresh(new_run)
-        return _run_out(new_run)
+        return _ok_model(_run_out(new_run))
     except Exception as e:
         new_run.status = "FAILED"
         new_run.error = f"queue_error: {e}"
@@ -361,7 +365,7 @@ def retry_screening_run(
         db.add(new_run)
         db.commit()
         db.refresh(new_run)
-        return _run_out(new_run)
+        return _ok_model(_run_out(new_run))
 
 
 # -------------------------
@@ -369,7 +373,7 @@ def retry_screening_run(
 # -------------------------
 
 
-@router.get("/branches/{branch_id}/screening-runs/{run_id}/results", response_model=ScreeningResultsPageOut)
+@router.get("/branches/{branch_id}/screening-runs/{run_id}/results")
 def list_screening_results(
     branch_id: UUID,
     run_id: UUID,
@@ -377,17 +381,15 @@ def list_screening_results(
     page_size: int = Query(50, ge=1, le=200),
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> ScreeningResultsPageOut:
+) -> dict[str, object]:
     run = _require_run(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, run_id=run_id)
 
     if run.status != "DONE":
-        raise HTTPException(
+        raise AppError(
+            code="hr.screening_run.results_not_ready",
+            message="Results are not available until the run is DONE",
             status_code=409,
-            detail={
-                "status": run.status,
-                "error": run.error,
-                "message": "Results are not available until the run is DONE",
-            },
+            details={"status": run.status, "error": run.error},
         )
 
     total = (
@@ -423,13 +425,15 @@ def list_screening_results(
             )
         )
 
-    return ScreeningResultsPageOut(
-        run_id=run.id,
-        status=run.status,
-        page=int(page),
-        page_size=int(page_size),
-        total_results=int(total),
-        results=results,
+    return _ok_model(
+        ScreeningResultsPageOut(
+            run_id=run.id,
+            status=run.status,
+            page=int(page),
+            page_size=int(page_size),
+            total_results=int(total),
+            results=results,
+        )
     )
 
 
@@ -440,7 +444,6 @@ def list_screening_results(
 
 @router.get(
     "/branches/{branch_id}/screening-runs/{run_id}/results/{resume_id}/explanation",
-    response_model=ScreeningExplanationOut,
 )
 def get_screening_explanation(
     branch_id: UUID,
@@ -448,7 +451,7 @@ def get_screening_explanation(
     resume_id: UUID,
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_READ)),
     db: Session = Depends(get_db),
-) -> ScreeningExplanationOut:
+) -> dict[str, object]:
     """
     Fetch the stored explanation for one result row.
 
@@ -456,9 +459,11 @@ def get_screening_explanation(
     """
     run = _require_run(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, run_id=run_id)
     if run.status != "DONE":
-        raise HTTPException(
+        raise AppError(
+            code="hr.screening_run.invalid_state",
+            message="Run is not DONE yet",
             status_code=409,
-            detail={"status": run.status, "message": "Run is not DONE yet"},
+            details={"status": run.status},
         )
 
     row = (
@@ -471,22 +476,23 @@ def get_screening_explanation(
         .first()
     )
     if row is None:
-        raise HTTPException(status_code=404, detail="Explanation not found")
+        raise AppError(code="hr.screening_explanation.not_found", message="Explanation not found", status_code=404)
 
-    return ScreeningExplanationOut(
-        run_id=row.run_id,
-        resume_id=row.resume_id,
-        rank=row.rank,
-        model_name=row.model_name,
-        prompt_version=row.prompt_version,
-        explanation_json=row.explanation_json,
-        created_at=row.created_at,
+    return _ok_model(
+        ScreeningExplanationOut(
+            run_id=row.run_id,
+            resume_id=row.resume_id,
+            rank=row.rank,
+            model_name=row.model_name,
+            prompt_version=row.prompt_version,
+            explanation_json=row.explanation_json,
+            created_at=row.created_at,
+        )
     )
 
 
 @router.post(
     "/branches/{branch_id}/screening-runs/{run_id}/explanations",
-    response_model=ScreeningEnqueueResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 def enqueue_run_explanations(
@@ -495,7 +501,7 @@ def enqueue_run_explanations(
     body: ScreeningExplainRunRequest = Body(default_factory=ScreeningExplainRunRequest),
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> ScreeningEnqueueResponse:
+) -> dict[str, object]:
     """
     Manually enqueue explanation generation for the top N results of a run.
 
@@ -504,9 +510,11 @@ def enqueue_run_explanations(
     _require_gemini_configured()
     run = _require_run(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, run_id=run_id)
     if run.status != "DONE":
-        raise HTTPException(
+        raise AppError(
+            code="hr.screening_run.invalid_state",
+            message="Run is not DONE yet",
             status_code=409,
-            detail={"status": run.status, "message": "Run is not DONE yet"},
+            details={"status": run.status},
         )
 
     top_n = int(body.top_n or settings.gemini_max_top_n)
@@ -519,12 +527,11 @@ def enqueue_run_explanations(
         force=bool(body.force),
         job_timeout=int(settings.hr_screening_job_timeout_sec),
     )
-    return ScreeningEnqueueResponse(enqueued=True, rq_job_id=job.id)
+    return _ok_model(ScreeningEnqueueResponse(enqueued=True, rq_job_id=job.id))
 
 
 @router.post(
     "/branches/{branch_id}/screening-runs/{run_id}/results/{resume_id}/explanation/recompute",
-    response_model=ScreeningEnqueueResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 def enqueue_single_explanation(
@@ -534,7 +541,7 @@ def enqueue_single_explanation(
     body: ScreeningExplainOneRequest = Body(default_factory=ScreeningExplainOneRequest),
     ctx: AuthContext = Depends(require_permission(HR_RECRUITING_WRITE)),
     db: Session = Depends(get_db),
-) -> ScreeningEnqueueResponse:
+) -> dict[str, object]:
     """
     Enqueue explanation generation for a single candidate.
 
@@ -544,9 +551,11 @@ def enqueue_single_explanation(
     _require_gemini_configured()
     run = _require_run(db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, run_id=run_id)
     if run.status != "DONE":
-        raise HTTPException(
+        raise AppError(
+            code="hr.screening_run.invalid_state",
+            message="Run is not DONE yet",
             status_code=409,
-            detail={"status": run.status, "message": "Run is not DONE yet"},
+            details={"status": run.status},
         )
 
     # Ensure the resume exists for this run (avoid generating explanations for unrelated resumes).
@@ -560,7 +569,11 @@ def enqueue_single_explanation(
         .first()
     )
     if exists is None:
-        raise HTTPException(status_code=404, detail="Resume is not part of this run")
+        raise AppError(
+            code="hr.screening_result.not_found",
+            message="Resume is not part of this run",
+            status_code=404,
+        )
 
     job = get_hr_queue().enqueue(
         explain_one,
@@ -569,4 +582,4 @@ def enqueue_single_explanation(
         force=bool(body.force),
         job_timeout=int(settings.hr_screening_job_timeout_sec),
     )
-    return ScreeningEnqueueResponse(enqueued=True, rq_job_id=job.id)
+    return _ok_model(ScreeningEnqueueResponse(enqueued=True, rq_job_id=job.id))

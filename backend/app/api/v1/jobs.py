@@ -8,13 +8,15 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth.deps import require_permission
 from app.auth.permissions import VISION_JOB_RUN, VISION_RESULTS_READ
 from app.core.config import settings
+from app.core.errors import AppError
+from app.core.responses import ok
 from app.db.session import get_db
 from app.face_system.runtime_processor import get_runtime_processor
 from app.models.models import Event, Job, Track, Video
@@ -52,7 +54,12 @@ class JobRecomputeResponse(BaseModel):
 
 
 def _assign_identities_for_job(
-    db: Session, *, job_id: UUID, min_confidence: float
+    db: Session,
+    *,
+    tenant_id: UUID,
+    branch_id: UUID,
+    job_id: UUID,
+    min_confidence: float,
 ) -> int:
     """
     Re-assign identities for an existing job using the Frigate-style face system.
@@ -68,25 +75,36 @@ def _assign_identities_for_job(
     try:
         import cv2  # type: ignore
     except Exception as e:
-        raise HTTPException(
+        raise AppError(
+            code="vision.dependencies.missing",
+            message="opencv-python is required to decode snapshots for recompute",
             status_code=500,
-            detail="opencv-python is required to decode snapshots for recompute",
         ) from e
 
-    job = db.get(Job, job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    video = db.get(Video, job.video_id)
-    if video is None:
-        raise HTTPException(status_code=404, detail="Video not found for job")
+    row = (
+        db.query(Job, Video)
+        .join(Video, Video.id == Job.video_id)
+        .filter(
+            Job.id == job_id,
+            Video.tenant_id == tenant_id,
+            Video.branch_id == branch_id,
+        )
+        .first()
+    )
+    if row is None:
+        raise AppError(code="vision.job.not_found", message="Job not found", status_code=404)
+    job, video = row
 
     # Load store prototypes (blocking build once).
     try:
-        proc = get_runtime_processor(tenant_id=video.tenant_id, branch_id=video.branch_id, camera_id=None)
+        proc = get_runtime_processor(tenant_id=tenant_id, branch_id=branch_id, camera_id=None)
         proc.recognizer.ensure_built(block=True, timeout_sec=60.0)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise AppError(
+            code="vision.face_system.unavailable",
+            message="Face system unavailable",
+            status_code=500,
+        ) from e
 
     assigned = 0
     tracks = db.query(Track).filter(Track.job_id == job_id).all()
@@ -185,7 +203,6 @@ class JobActionResponse(BaseModel):
 
 @router.post(
     "/branches/{branch_id}/videos/{video_id}/jobs",
-    response_model=JobCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def create_job(
@@ -194,7 +211,7 @@ def create_job(
     body: JobCreateRequest,
     ctx: AuthContext = Depends(require_permission(VISION_JOB_RUN)),
     db: Session = Depends(get_db),
-) -> JobCreateResponse:
+) -> dict[str, object]:
     video = (
         db.query(Video)
         .filter(
@@ -205,18 +222,25 @@ def create_job(
         .first()
     )
     if video is None:
-        raise HTTPException(status_code=404, detail="Video not found")
+        raise AppError(code="vision.video.not_found", message="Video not found", status_code=404)
 
     video_path = Path(settings.data_dir) / video.file_path
     if not video_path.exists():
-        raise HTTPException(status_code=400, detail="Video file not uploaded")
+        raise AppError(
+            code="vision.video.file_not_uploaded",
+            message="Video file not uploaded",
+            status_code=400,
+        )
 
     if video.sha256 is None:
-        raise HTTPException(
-            status_code=400, detail="Video not finalized (sha256 missing)"
+        raise AppError(
+            code="vision.video.not_finalized",
+            message="Video not finalized",
+            status_code=400,
         )
 
     job = Job(
+        tenant_id=ctx.scope.tenant_id,
         video_id=video_id,
         status="PENDING",
         progress=0,
@@ -230,24 +254,26 @@ def create_job(
         get_queue().enqueue(
             process_video_job, str(job.id), job_timeout=DEFAULT_JOB_TIMEOUT_SEC
         )
-        return JobCreateResponse(job_id=job.id, status=job.status, enqueued=True)
+        return ok(JobCreateResponse(job_id=job.id, status=job.status, enqueued=True).model_dump())
     except Exception as e:
         job.status = "FAILED"
         job.error = f"queue_error: {e}"
         job.finished_at = _utcnow()
         db.commit()
-        return JobCreateResponse(
-            job_id=job.id, status=job.status, enqueued=False, queue_error=str(e)
+        return ok(
+            JobCreateResponse(
+                job_id=job.id, status=job.status, enqueued=False, queue_error=str(e)
+            ).model_dump()
         )
 
 
-@router.get("/branches/{branch_id}/jobs/{job_id}", response_model=JobReadResponse)
+@router.get("/branches/{branch_id}/jobs/{job_id}")
 def get_job(
     branch_id: UUID,
     job_id: UUID,
     ctx: AuthContext = Depends(require_permission(VISION_RESULTS_READ)),
     db: Session = Depends(get_db),
-) -> JobReadResponse:
+) -> dict[str, object]:
     job_row = (
         db.query(Job)
         .join(Video, Video.id == Job.video_id)
@@ -259,28 +285,30 @@ def get_job(
         .first()
     )
     if job_row is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise AppError(code="vision.job.not_found", message="Job not found", status_code=404)
     job = job_row
 
-    return JobReadResponse(
-        id=job.id,
-        video_id=job.video_id,
-        status=job.status,
-        progress=job.progress,
-        error=job.error,
-        created_at=job.created_at,
-        started_at=job.started_at,
-        finished_at=job.finished_at,
+    return ok(
+        JobReadResponse(
+            id=job.id,
+            video_id=job.video_id,
+            status=job.status,
+            progress=job.progress,
+            error=job.error,
+            created_at=job.created_at,
+            started_at=job.started_at,
+            finished_at=job.finished_at,
+        ).model_dump()
     )
 
 
-@router.post("/branches/{branch_id}/jobs/{job_id}/cancel", response_model=JobActionResponse)
+@router.post("/branches/{branch_id}/jobs/{job_id}/cancel")
 def cancel_job(
     branch_id: UUID,
     job_id: UUID,
     ctx: AuthContext = Depends(require_permission(VISION_JOB_RUN)),
     db: Session = Depends(get_db),
-) -> JobActionResponse:
+) -> dict[str, object]:
     job = (
         db.query(Job)
         .join(Video, Video.id == Job.video_id)
@@ -292,11 +320,13 @@ def cancel_job(
         .first()
     )
     if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise AppError(code="vision.job.not_found", message="Job not found", status_code=404)
 
     if job.status in {"DONE", "FAILED"}:
-        raise HTTPException(
-            status_code=400, detail=f"Cannot cancel job in status {job.status}"
+        raise AppError(
+            code="vision.job.invalid_state",
+            message=f"Cannot cancel job in status {job.status}",
+            status_code=400,
         )
 
     job.status = "CANCELED"
@@ -304,16 +334,16 @@ def cancel_job(
     db.commit()
     db.refresh(job)
 
-    return JobActionResponse(job_id=job.id, status=job.status)
+    return ok(JobActionResponse(job_id=job.id, status=job.status).model_dump())
 
 
-@router.post("/branches/{branch_id}/jobs/{job_id}/retry", response_model=JobActionResponse)
+@router.post("/branches/{branch_id}/jobs/{job_id}/retry")
 def retry_job(
     branch_id: UUID,
     job_id: UUID,
     ctx: AuthContext = Depends(require_permission(VISION_JOB_RUN)),
     db: Session = Depends(get_db),
-) -> JobActionResponse:
+) -> dict[str, object]:
     job = (
         db.query(Job)
         .join(Video, Video.id == Job.video_id)
@@ -325,12 +355,13 @@ def retry_job(
         .first()
     )
     if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise AppError(code="vision.job.not_found", message="Job not found", status_code=404)
 
     if job.status not in {"FAILED", "CANCELED"}:
-        raise HTTPException(
+        raise AppError(
+            code="vision.job.invalid_state",
+            message=f"Can only retry FAILED/CANCELED jobs (got {job.status})",
             status_code=400,
-            detail=f"Can only retry FAILED/CANCELED jobs (got {job.status})",
         )
 
     job.status = "PENDING"
@@ -345,25 +376,29 @@ def retry_job(
         get_queue().enqueue(
             process_video_job, str(job.id), job_timeout=DEFAULT_JOB_TIMEOUT_SEC
         )
-        return JobActionResponse(job_id=job.id, status=job.status, enqueued=True)
+        return ok(
+            JobActionResponse(job_id=job.id, status=job.status, enqueued=True).model_dump()
+        )
     except Exception as e:
         job.status = "FAILED"
         job.error = f"queue_error: {e}"
         job.finished_at = _utcnow()
         db.commit()
-        return JobActionResponse(
-            job_id=job.id, status=job.status, enqueued=False, queue_error=str(e)
+        return ok(
+            JobActionResponse(
+                job_id=job.id, status=job.status, enqueued=False, queue_error=str(e)
+            ).model_dump()
         )
 
 
-@router.post("/branches/{branch_id}/jobs/{job_id}/recompute", response_model=JobRecomputeResponse)
+@router.post("/branches/{branch_id}/jobs/{job_id}/recompute")
 def recompute_job(
     branch_id: UUID,
     job_id: UUID,
     body: JobRecomputeRequest,
     ctx: AuthContext = Depends(require_permission(VISION_JOB_RUN)),
     db: Session = Depends(get_db),
-) -> JobRecomputeResponse:
+) -> dict[str, object]:
     job = (
         db.query(Job)
         .join(Video, Video.id == Job.video_id)
@@ -375,19 +410,23 @@ def recompute_job(
         .first()
     )
     if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise AppError(code="vision.job.not_found", message="Job not found", status_code=404)
 
     if job.status == "RUNNING":
-        raise HTTPException(status_code=400, detail="Job is RUNNING")
+        raise AppError(code="vision.job.invalid_state", message="Job is RUNNING", status_code=400)
 
     assigned_tracks = _assign_identities_for_job(
-        db, job_id=job_id, min_confidence=float(body.min_confidence)
+        db,
+        tenant_id=ctx.scope.tenant_id,
+        branch_id=branch_id,
+        job_id=job_id,
+        min_confidence=float(body.min_confidence),
     )
 
     if body.recompute_rollups:
         tenant_id2, branch_id2, business_date = get_branch_day_context(db, job_id=job_id)
         if tenant_id2 != ctx.scope.tenant_id or branch_id2 != branch_id:
-            raise HTTPException(status_code=404, detail="Job not found")
+            raise AppError(code="vision.job.not_found", message="Job not found", status_code=404)
         related = get_related_job_ids(
             db, tenant_id=ctx.scope.tenant_id, branch_id=branch_id, business_date=business_date
         )
@@ -405,6 +444,6 @@ def recompute_job(
     if body.rewrite_artifacts:
         write_job_artifacts(db, job_id=job_id)
 
-    return JobRecomputeResponse(
-        job_id=job_id, assigned_tracks=int(assigned_tracks)
+    return ok(
+        JobRecomputeResponse(job_id=job_id, assigned_tracks=int(assigned_tracks)).model_dump()
     )

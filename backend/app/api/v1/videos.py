@@ -19,13 +19,15 @@ from datetime import date, datetime
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth.deps import require_permission
 from app.auth.permissions import VISION_VIDEO_UPLOAD
 from app.core.config import settings
+from app.core.errors import AppError
+from app.core.responses import ok
 from app.db.session import get_db
 from app.models.models import Camera, Video
 from app.shared.types import AuthContext
@@ -110,7 +112,6 @@ class VideoInitResponse(BaseModel):
 
 @router.post(
     "/branches/{branch_id}/videos/init",
-    response_model=VideoInitResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def init_video_upload(
@@ -118,7 +119,7 @@ def init_video_upload(
     body: VideoInitRequest,
     ctx: AuthContext = Depends(require_permission(VISION_VIDEO_UPLOAD)),
     db: Session = Depends(get_db),
-) -> VideoInitResponse:
+) -> dict[str, object]:
     camera = (
         db.query(Camera)
         .filter(
@@ -129,7 +130,7 @@ def init_video_upload(
         .first()
     )
     if camera is None:
-        raise HTTPException(status_code=404, detail="Camera not found for branch")
+        raise AppError(code="vision.camera.not_found", message="Camera not found", status_code=404)
 
     rel_path = _video_rel_path(
         ctx.scope.tenant_id, branch_id, body.camera_id, body.business_date, body.filename
@@ -149,11 +150,13 @@ def init_video_upload(
     db.commit()
     db.refresh(video)
 
-    return VideoInitResponse(
-        video_id=video.id,
-        file_path=video.file_path,
-        upload_endpoint=f"{settings.api_v1_prefix}/branches/{branch_id}/videos/{video.id}/file",
-        finalize_endpoint=f"{settings.api_v1_prefix}/branches/{branch_id}/videos/{video.id}/finalize",
+    return ok(
+        VideoInitResponse(
+            video_id=video.id,
+            file_path=video.file_path,
+            upload_endpoint=f"{settings.api_v1_prefix}/branches/{branch_id}/videos/{video.id}/file",
+            finalize_endpoint=f"{settings.api_v1_prefix}/branches/{branch_id}/videos/{video.id}/finalize",
+        ).model_dump()
     )
 
 
@@ -164,7 +167,7 @@ def upload_video_file(
     file: UploadFile = File(...),
     ctx: AuthContext = Depends(require_permission(VISION_VIDEO_UPLOAD)),
     db: Session = Depends(get_db),
-) -> dict:
+) -> dict[str, object]:
     video = (
         db.query(Video)
         .filter(
@@ -175,7 +178,7 @@ def upload_video_file(
         .first()
     )
     if video is None:
-        raise HTTPException(status_code=404, detail="Video not found for branch")
+        raise AppError(code="vision.video.not_found", message="Video not found", status_code=404)
 
     dest = _full_path(video.file_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -192,11 +195,13 @@ def upload_video_file(
     finally:
         file.file.close()
 
-    return {
-        "status": "uploaded",
-        "file_path": video.file_path,
-        "bytes": dest.stat().st_size,
-    }
+    return ok(
+        {
+            "status": "uploaded",
+            "file_path": video.file_path,
+            "bytes": dest.stat().st_size,
+        }
+    )
 
 
 @router.post("/branches/{branch_id}/videos/{video_id}/finalize")
@@ -205,7 +210,7 @@ def finalize_video(
     video_id: UUID,
     ctx: AuthContext = Depends(require_permission(VISION_VIDEO_UPLOAD)),
     db: Session = Depends(get_db),
-) -> dict:
+) -> dict[str, object]:
     video = (
         db.query(Video)
         .filter(
@@ -216,11 +221,15 @@ def finalize_video(
         .first()
     )
     if video is None:
-        raise HTTPException(status_code=404, detail="Video not found for branch")
+        raise AppError(code="vision.video.not_found", message="Video not found", status_code=404)
 
     path = _full_path(video.file_path)
     if not path.exists():
-        raise HTTPException(status_code=400, detail="Video file not uploaded yet")
+        raise AppError(
+            code="vision.video.file_not_uploaded",
+            message="Video file not uploaded yet",
+            status_code=400,
+        )
 
     video.sha256 = _sha256_file(path)
 
@@ -249,12 +258,14 @@ def finalize_video(
     db.commit()
     db.refresh(video)
 
-    return {
-        "video_id": str(video.id),
-        "sha256": video.sha256,
-        "file_path": video.file_path,
-        "fps": video.fps,
-        "duration_sec": video.duration_sec,
-        "width": video.width,
-        "height": video.height,
-    }
+    return ok(
+        {
+            "video_id": str(video.id),
+            "sha256": video.sha256,
+            "file_path": video.file_path,
+            "fps": video.fps,
+            "duration_sec": video.duration_sec,
+            "width": video.width,
+            "height": video.height,
+        }
+    )

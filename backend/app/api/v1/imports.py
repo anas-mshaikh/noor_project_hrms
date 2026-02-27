@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 from pydantic import BaseModel
 import sqlalchemy as sa
 from sqlalchemy import select
@@ -29,6 +29,8 @@ from sqlalchemy.orm import Session
 from app.auth.deps import require_permission
 from app.auth.permissions import IMPORTS_READ, IMPORTS_WRITE, MOBILE_SYNC
 from app.core.config import settings
+from app.core.errors import AppError
+from app.core.responses import ok
 from app.db.session import get_db
 from app.imports.excel import sheet_to_matrix
 from app.imports.parsing import (
@@ -45,6 +47,9 @@ from app.shared.types import AuthContext
 
 router = APIRouter(tags=["imports"])
 logger = logging.getLogger(__name__)
+
+def _ok_model(model: BaseModel) -> dict[str, object]:
+    return ok(model.model_dump())
 
 
 # -----------------------------------------------------------------------------
@@ -289,10 +294,11 @@ def _ensure_openpyxl():
 
         return openpyxl
     except Exception as e:  # pragma: no cover
-        raise HTTPException(
+        raise AppError(
+            code="vision.dependencies.missing",
+            message="openpyxl is required for Excel imports",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"openpyxl is required for Excel imports. Install it and retry. ({e})",
-        )
+        ) from e
 
 
 # -----------------------------------------------------------------------------
@@ -300,7 +306,7 @@ def _ensure_openpyxl():
 # -----------------------------------------------------------------------------
 
 
-@router.post("/branches/{branch_id}/imports", response_model=ImportResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/branches/{branch_id}/imports", status_code=status.HTTP_201_CREATED)
 def upload_import(
     branch_id: UUID,
     file: UploadFile = File(...),
@@ -308,27 +314,16 @@ def upload_import(
     uploaded_by: str | None = Form(default=None),
     ctx: AuthContext = Depends(require_permission(IMPORTS_WRITE)),
     db: Session = Depends(get_db),
-) -> ImportResponse:
+) -> dict[str, object]:
     # 1) Validate input
     try:
         month_key_final = _validate_month_key(month_key or _month_key_now())
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+        raise AppError(code="validation_error", message=str(e), status_code=status.HTTP_422_UNPROCESSABLE_ENTITY) from e
 
-    branch_row = db.execute(
-        sa.text(
-            """
-            SELECT id, company_id
-            FROM tenancy.branches
-            WHERE id = :branch_id
-              AND tenant_id = :tenant_id
-            """
-        ),
-        {"tenant_id": ctx.scope.tenant_id, "branch_id": branch_id},
-    ).first()
-    if branch_row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="branch not found")
-    company_id: UUID = branch_row.company_id  # type: ignore[attr-defined]
+    company_id = ctx.scope.company_id
+    if company_id is None:
+        raise AppError(code="iam.scope.invalid_company", message="Company scope required", status_code=400)
 
     # 2) Compute checksum + dedupe (idempotent per month)
     dataset_id = uuid4()
@@ -404,16 +399,20 @@ def upload_import(
                 existing.status = "FAILED"
                 db.add(existing)
                 db.commit()
-                return ImportResponse(
-                    dataset_id=existing.id,
-                    month_key=existing.month_key,
-                    status=existing.status,
-                    sync_status=existing.sync_status,
-                    counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
-                    preview=ImportPreviewOut(
-                        topSales=[],
-                        errors=[ImportErrorOut(sheet="workbook", row=1, message=str(e))],
-                    ),
+                return _ok_model(
+                    ImportResponse(
+                        dataset_id=existing.id,
+                        month_key=existing.month_key,
+                        status=existing.status,
+                        sync_status=existing.sync_status,
+                        counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
+                        preview=ImportPreviewOut(
+                            topSales=[],
+                            errors=[
+                                ImportErrorOut(sheet="workbook", row=1, message=str(e))
+                            ],
+                        ),
+                    )
                 )
 
             try:
@@ -422,16 +421,20 @@ def upload_import(
                 existing.status = "FAILED"
                 db.add(existing)
                 db.commit()
-                return ImportResponse(
-                    dataset_id=existing.id,
-                    month_key=existing.month_key,
-                    status=existing.status,
-                    sync_status=existing.sync_status,
-                    counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
-                    preview=ImportPreviewOut(
-                        topSales=[],
-                        errors=[ImportErrorOut(sheet="workbook", row=1, message=str(e))],
-                    ),
+                return _ok_model(
+                    ImportResponse(
+                        dataset_id=existing.id,
+                        month_key=existing.month_key,
+                        status=existing.status,
+                        sync_status=existing.sync_status,
+                        counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
+                        preview=ImportPreviewOut(
+                            topSales=[],
+                            errors=[
+                                ImportErrorOut(sheet="workbook", row=1, message=str(e))
+                            ],
+                        ),
+                    )
                 )
 
             pos_matrix = sheet_to_matrix(pos_ws)
@@ -448,13 +451,15 @@ def upload_import(
                 existing.status = "FAILED"
                 db.add(existing)
                 db.commit()
-                return ImportResponse(
-                    dataset_id=existing.id,
-                    month_key=existing.month_key,
-                    status=existing.status,
-                    sync_status=existing.sync_status,
-                    counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
-                    preview=_build_preview(parsed),
+                return _ok_model(
+                    ImportResponse(
+                        dataset_id=existing.id,
+                        month_key=existing.month_key,
+                        status=existing.status,
+                        sync_status=existing.sync_status,
+                        counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
+                        preview=_build_preview(parsed),
+                    )
                 )
 
             # Replace summaries for this dataset.
@@ -482,13 +487,15 @@ def upload_import(
                 existing.status = "FAILED"
                 db.add(existing)
                 db.commit()
-                return ImportResponse(
-                    dataset_id=existing.id,
-                    month_key=existing.month_key,
-                    status=existing.status,
-                    sync_status=existing.sync_status,
-                    counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
-                    preview=_build_preview(parsed),
+                return _ok_model(
+                    ImportResponse(
+                        dataset_id=existing.id,
+                        month_key=existing.month_key,
+                        status=existing.status,
+                        sync_status=existing.sync_status,
+                        counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
+                        preview=_build_preview(parsed),
+                    )
                 )
 
             for sid, row in parsed.pos.items():
@@ -532,17 +539,19 @@ def upload_import(
                 len(parsed.errors),
             )
 
-            return ImportResponse(
-                dataset_id=existing.id,
-                month_key=existing.month_key,
-                status=existing.status,
-                sync_status=existing.sync_status,
-                counts=ImportCountsOut(
-                    employees=len(parsed.employees),
-                    pos_rows=len(parsed.pos),
-                    attendance_rows=len(parsed.attendance),
-                ),
-                preview=_build_preview(parsed),
+            return _ok_model(
+                ImportResponse(
+                    dataset_id=existing.id,
+                    month_key=existing.month_key,
+                    status=existing.status,
+                    sync_status=existing.sync_status,
+                    counts=ImportCountsOut(
+                        employees=len(parsed.employees),
+                        pos_rows=len(parsed.pos),
+                        attendance_rows=len(parsed.attendance),
+                    ),
+                    preview=_build_preview(parsed),
+                )
             )
 
         # Otherwise: dedupe and return the stored dataset as-is.
@@ -606,17 +615,19 @@ def upload_import(
             if r.net_sales is not None
         ]
 
-        return ImportResponse(
-            dataset_id=existing.id,
-            month_key=existing.month_key,
-            status=existing.status,
-            sync_status=existing.sync_status,
-            counts=ImportCountsOut(
-                employees=int(employee_count),
-                pos_rows=int(pos_count),
-                attendance_rows=int(att_count),
-            ),
-            preview=ImportPreviewOut(topSales=top_sales, errors=[]),
+        return _ok_model(
+            ImportResponse(
+                dataset_id=existing.id,
+                month_key=existing.month_key,
+                status=existing.status,
+                sync_status=existing.sync_status,
+                counts=ImportCountsOut(
+                    employees=int(employee_count),
+                    pos_rows=int(pos_count),
+                    attendance_rows=int(att_count),
+                ),
+                preview=ImportPreviewOut(topSales=top_sales, errors=[]),
+            )
         )
 
     # 3) Create dataset row first (so we can track FAILED states too)
@@ -656,13 +667,15 @@ def upload_import(
                 month_key_final,
                 existing2.id,
             )
-            return ImportResponse(
-                dataset_id=existing2.id,
-                month_key=existing2.month_key,
-                status=existing2.status,
-                sync_status=existing2.sync_status,
-                counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
-                preview=ImportPreviewOut(topSales=[], errors=[]),
+            return _ok_model(
+                ImportResponse(
+                    dataset_id=existing2.id,
+                    month_key=existing2.month_key,
+                    status=existing2.status,
+                    sync_status=existing2.sync_status,
+                    counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
+                    preview=ImportPreviewOut(topSales=[], errors=[]),
+                )
             )
         raise
 
@@ -674,16 +687,18 @@ def upload_import(
         ds.status = "FAILED"
         db.add(ds)
         db.commit()
-        return ImportResponse(
-            dataset_id=ds.id,
-            month_key=ds.month_key,
-            status=ds.status,
-            sync_status=ds.sync_status,
+        return _ok_model(
+            ImportResponse(
+                dataset_id=ds.id,
+                month_key=ds.month_key,
+                status=ds.status,
+                sync_status=ds.sync_status,
                 counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
-            preview=ImportPreviewOut(
-                topSales=[],
-                errors=[ImportErrorOut(sheet="workbook", row=1, message=str(e))],
-            ),
+                preview=ImportPreviewOut(
+                    topSales=[],
+                    errors=[ImportErrorOut(sheet="workbook", row=1, message=str(e))],
+                ),
+            )
         )
 
     try:
@@ -692,16 +707,18 @@ def upload_import(
         ds.status = "FAILED"
         db.add(ds)
         db.commit()
-        return ImportResponse(
-            dataset_id=ds.id,
-            month_key=ds.month_key,
-            status=ds.status,
-            sync_status=ds.sync_status,
-            counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
-            preview=ImportPreviewOut(
-                topSales=[],
-                errors=[ImportErrorOut(sheet="workbook", row=1, message=str(e))],
-            ),
+        return _ok_model(
+            ImportResponse(
+                dataset_id=ds.id,
+                month_key=ds.month_key,
+                status=ds.status,
+                sync_status=ds.sync_status,
+                counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
+                preview=ImportPreviewOut(
+                    topSales=[],
+                    errors=[ImportErrorOut(sheet="workbook", row=1, message=str(e))],
+                ),
+            )
         )
 
     logger.info(
@@ -730,13 +747,15 @@ def upload_import(
         ds.status = "FAILED"
         db.add(ds)
         db.commit()
-        return ImportResponse(
-            dataset_id=ds.id,
-            month_key=ds.month_key,
-            status=ds.status,
-            sync_status=ds.sync_status,
-            counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
-            preview=_build_preview(parsed),
+        return _ok_model(
+            ImportResponse(
+                dataset_id=ds.id,
+                month_key=ds.month_key,
+                status=ds.status,
+                sync_status=ds.sync_status,
+                counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
+                preview=_build_preview(parsed),
+            )
         )
 
     # 5) Resolve employee ids (HR core is the canonical employee identity).
@@ -759,13 +778,15 @@ def upload_import(
         ds.status = "FAILED"
         db.add(ds)
         db.commit()
-        return ImportResponse(
-            dataset_id=ds.id,
-            month_key=ds.month_key,
-            status=ds.status,
-            sync_status=ds.sync_status,
-            counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
-            preview=_build_preview(parsed),
+        return _ok_model(
+            ImportResponse(
+                dataset_id=ds.id,
+                month_key=ds.month_key,
+                status=ds.status,
+                sync_status=ds.sync_status,
+                counts=ImportCountsOut(employees=0, pos_rows=0, attendance_rows=0),
+                preview=_build_preview(parsed),
+            )
         )
 
     # 6) Insert summaries
@@ -810,34 +831,45 @@ def upload_import(
         len(parsed.errors),
     )
 
-    return ImportResponse(
-        dataset_id=ds.id,
-        month_key=ds.month_key,
-        status=ds.status,
-        sync_status=ds.sync_status,
-        counts=ImportCountsOut(
-            employees=len(parsed.employees),
-            pos_rows=len(parsed.pos),
-            attendance_rows=len(parsed.attendance),
-        ),
-        preview=_build_preview(parsed),
+    return _ok_model(
+        ImportResponse(
+            dataset_id=ds.id,
+            month_key=ds.month_key,
+            status=ds.status,
+            sync_status=ds.sync_status,
+            counts=ImportCountsOut(
+                employees=len(parsed.employees),
+                pos_rows=len(parsed.pos),
+                attendance_rows=len(parsed.attendance),
+            ),
+            preview=_build_preview(parsed),
+        )
     )
 
 
-@router.post("/branches/{branch_id}/imports/{dataset_id}/publish", response_model=PublishResponse)
+@router.post("/branches/{branch_id}/imports/{dataset_id}/publish")
 def publish_import(
     branch_id: UUID,
     dataset_id: UUID,
     ctx: AuthContext = Depends(require_permission(MOBILE_SYNC)),
     db: Session = Depends(get_db),
-) -> PublishResponse:
-    ds = db.get(Dataset, dataset_id)
-    if ds is None or ds.tenant_id != ctx.scope.tenant_id or ds.branch_id != branch_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="dataset not found")
+) -> dict[str, object]:
+    ds = (
+        db.query(Dataset)
+        .filter(
+            Dataset.id == dataset_id,
+            Dataset.tenant_id == ctx.scope.tenant_id,
+            Dataset.branch_id == branch_id,
+        )
+        .one_or_none()
+    )
+    if ds is None:
+        raise AppError(code="vision.import.dataset.not_found", message="Dataset not found", status_code=404)
     if ds.status != "READY":
-        raise HTTPException(
+        raise AppError(
+            code="vision.import.invalid_state",
+            message=f"dataset status must be READY to publish (got {ds.status})",
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"dataset status must be READY to publish (got {ds.status})",
         )
 
     # Update month_state (source of truth pointer)
@@ -871,8 +903,12 @@ def publish_import(
             ds.id,
             ds.month_key,
         )
-        return PublishResponse(
-            month_key=ds.month_key, published_dataset_id=ds.id, sync_status=ds.sync_status
+        return _ok_model(
+            PublishResponse(
+                month_key=ds.month_key,
+                published_dataset_id=ds.id,
+                sync_status=ds.sync_status,
+            )
         )
 
     ds.sync_status = "PENDING"
@@ -903,25 +939,30 @@ def publish_import(
             ds.id,
             ds.month_key,
         )
-        raise HTTPException(
+        raise AppError(
+            code="vision.import.mobile_sync_failed",
+            message="Mobile sync failed",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Mobile sync failed: {e}",
-        )
+        ) from e
 
     db.add(ds)
     db.commit()
-    return PublishResponse(
-        month_key=ds.month_key, published_dataset_id=ds.id, sync_status=ds.sync_status
+    return _ok_model(
+        PublishResponse(
+            month_key=ds.month_key,
+            published_dataset_id=ds.id,
+            sync_status=ds.sync_status,
+        )
     )
 
 
-@router.get("/branches/{branch_id}/months/{month_key}/leaderboard", response_model=list[LeaderboardRowOut])
+@router.get("/branches/{branch_id}/months/{month_key}/leaderboard")
 def leaderboard(
     branch_id: UUID,
     month_key: str,
     ctx: AuthContext = Depends(require_permission(IMPORTS_READ)),
     db: Session = Depends(get_db),
-) -> list[LeaderboardRowOut]:
+) -> dict[str, object]:
     ms = (
         db.query(MonthState)
         .filter(
@@ -932,7 +973,11 @@ def leaderboard(
         .one_or_none()
     )
     if ms is None or ms.published_dataset_id is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="month not published")
+        raise AppError(
+            code="vision.import.month_not_published",
+            message="Month not published",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
 
     dataset_id = ms.published_dataset_id
 
@@ -1017,4 +1062,4 @@ def leaderboard(
                 stocking_missed=r.stocking_missed,
             )
         )
-    return out
+    return ok([x.model_dump() for x in out])
