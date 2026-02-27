@@ -3,9 +3,11 @@
 /**
  * /login
  *
- * Simple email/password login against the FastAPI auth endpoints.
- * Stores tokens in localStorage (Zustand persist) and defaults scope headers
- * (tenant/company/branch) in selection state.
+ * Simple email/password login (through the Next.js BFF proxy).
+ *
+ * Notes:
+ * - Tokens are stored in HttpOnly cookies by the BFF.
+ * - Frontend stores only a redacted session view (user/roles/permissions/scope).
  */
 
 import Link from "next/link";
@@ -17,7 +19,7 @@ import { useTranslation } from "@/lib/i18n";
 import { apiJson } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useSelection } from "@/lib/selection";
-import type { TokenResponse } from "@/lib/types";
+import type { MeResponse } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,7 +28,7 @@ import { Label } from "@/components/ui/label";
 export default function LoginPage() {
   const { t } = useTranslation();
   const router = useRouter();
-  const setFromTokenResponse = useAuth((s) => s.setFromTokenResponse);
+  const setFromSession = useAuth((s) => s.setFromSession);
 
   const setTenantId = useSelection((s) => s.setTenantId);
   const setCompanyId = useSelection((s) => s.setCompanyId);
@@ -48,18 +50,18 @@ export default function LoginPage() {
         );
       }
 
-      return apiJson<TokenResponse>("/api/v1/auth/login", {
+      return apiJson<MeResponse>("/api/v1/auth/login", {
         method: "POST",
         body: JSON.stringify({ email: email.trim(), password }),
       });
     },
-    onSuccess: (t) => {
-      setFromTokenResponse(t);
+    onSuccess: (session) => {
+      setFromSession(session);
 
       // Default client scope headers from the server-issued scope.
-      setTenantId(String(t.scope.tenant_id));
-      setCompanyId(t.scope.company_id ? String(t.scope.company_id) : undefined);
-      setBranchId(t.scope.branch_id ? String(t.scope.branch_id) : undefined);
+      setTenantId(session.scope?.tenant_id ? String(session.scope.tenant_id) : undefined);
+      setCompanyId(session.scope?.company_id ? String(session.scope.company_id) : undefined);
+      setBranchId(session.scope?.branch_id ? String(session.scope.branch_id) : undefined);
 
       router.push("/dashboard");
     },

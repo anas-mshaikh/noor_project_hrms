@@ -17,11 +17,13 @@ import { useTranslation } from "@/lib/i18n";
 import { toast } from "sonner";
 import { Bell, CircleHelp, Menu, UserCircle2 } from "lucide-react";
 
-import { MODULES, getActiveModule } from "@/config/navigation";
+import type { ModuleDef } from "@/config/navigation";
+import { buildNavForPermissions, getActiveModuleFrom } from "@/config/navigation";
 import { useAuth } from "@/lib/auth";
 import { normalizeLocale } from "@/lib/locale";
 import { useLocale } from "@/lib/useLocale";
 import { useSelection } from "@/lib/selection";
+import { apiJson } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,9 +42,9 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MobileMenuSheet } from "@/components/shell/MobileMenuSheet";
 
-function ModuleTabs({ pathname }: { pathname: string }) {
+function ModuleTabs({ pathname, modules }: { pathname: string; modules: ModuleDef[] }) {
   const { t } = useTranslation();
-  const activeModule = getActiveModule(pathname);
+  const activeModule = getActiveModuleFrom(modules, pathname);
 
   return (
     <div
@@ -52,7 +54,7 @@ function ModuleTabs({ pathname }: { pathname: string }) {
       role="tablist"
       aria-label="Modules"
     >
-      {MODULES.map((m) => {
+      {modules.map((m) => {
         const active = m.id === activeModule.id;
         return (
           <Link
@@ -118,19 +120,20 @@ export function TopBar() {
   const { locale, setLocale } = useLocale();
   const pathname = usePathname();
   const router = useRouter();
-  const activeModule = getActiveModule(pathname);
+  const permissions = useAuth((s) => s.permissions);
+  const navModules = buildNavForPermissions(permissions);
+  const activeModule = getActiveModuleFrom(navModules.length ? navModules : [], pathname);
 
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const accessToken = useAuth((s) => s.accessToken);
-  const refreshToken = useAuth((s) => s.refreshToken);
+  const user = useAuth((s) => s.user);
   const userEmail = useAuth((s) => s.user?.email);
   const clearAuth = useAuth((s) => s.clear);
   const resetSelection = useSelection((s) => s.reset);
 
   return (
     <header className="sticky top-0 z-40 border-b border-white/10 bg-white/[0.03] backdrop-blur-xl">
-      <MobileMenuSheet open={mobileOpen} onOpenChange={setMobileOpen} />
+      <MobileMenuSheet modules={navModules} open={mobileOpen} onOpenChange={setMobileOpen} />
 
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 md:px-6">
         {/* Mobile menu */}
@@ -163,7 +166,7 @@ export function TopBar() {
 
         {/* Modules (desktop) */}
         <div className="ml-2">
-          <ModuleTabs pathname={pathname} />
+          {navModules.length ? <ModuleTabs pathname={pathname} modules={navModules} /> : null}
         </div>
 
         {/* Right actions */}
@@ -172,7 +175,7 @@ export function TopBar() {
             label={t("shell.notifications", { defaultValue: "Notifications" })}
             onClick={() =>
               toast(t("common.coming_soon", { defaultValue: "Coming soon" }), {
-                description: accessToken
+                description: user
                   ? t("shell.notifications_panel", { defaultValue: "Notifications panel" })
                   : t("shell.sign_in_to_view_notifications", { defaultValue: "Sign in to view notifications" }),
               })
@@ -271,17 +274,24 @@ export function TopBar() {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-white/10" />
-              {accessToken ? (
+              {user ? (
                 <DropdownMenuItem
                   variant="destructive"
                   onSelect={(e) => {
                     e.preventDefault();
-                    // Best-effort: clear local session. (Backend refresh token revocation can be added later.)
-                    void refreshToken;
-                    clearAuth();
-                    resetSelection();
-                    router.push("/login");
-                    toast(t("shell.signed_out", { defaultValue: "Signed out" }));
+                    void (async () => {
+                      // Best-effort backend revocation; BFF will clear cookies too.
+                      try {
+                        await apiJson("/api/v1/auth/logout", { method: "POST" });
+                      } catch {
+                        // Ignore network errors on logout; we still clear local state.
+                      } finally {
+                        clearAuth();
+                        resetSelection();
+                        router.push("/login");
+                        toast(t("shell.signed_out", { defaultValue: "Signed out" }));
+                      }
+                    })();
                   }}
                 >
                   {t("common.sign_out", { defaultValue: "Sign out" })}

@@ -679,11 +679,11 @@ export default function EmployeesPage() {
 
             <div className="space-y-2">
               <Label>Role</Label>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={mobileRole}
-                onChange={(e) => setMobileRole(e.target.value as any)}
-              >
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={mobileRole}
+                  onChange={(e) => setMobileRole(e.target.value as "employee" | "admin")}
+                >
                 <option value="employee">employee</option>
                 <option value="admin">admin</option>
               </select>

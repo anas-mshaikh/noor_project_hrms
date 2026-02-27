@@ -15,9 +15,10 @@ import { motion } from "framer-motion";
 import { Building2 } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 
-import { getActiveModule, isNavItemActive } from "@/config/navigation";
+import { buildNavForPermissions, getActiveModuleFrom, isNavItemActive } from "@/config/navigation";
 import { StorePicker } from "@/components/StorePicker";
 import { useLocale } from "@/lib/useLocale";
+import { useAuth } from "@/lib/auth";
 import { useSelection } from "@/lib/selection";
 import { useReducedMotion } from "@/lib/useReducedMotion";
 import { cn } from "@/lib/utils";
@@ -36,7 +37,9 @@ export function SidebarRail() {
   const { isRtl } = useLocale();
   const pathname = usePathname();
   const reducedMotion = useReducedMotion();
-  const activeModule = getActiveModule(pathname);
+  const permissions = useAuth((s) => s.permissions);
+  const navModules = buildNavForPermissions(permissions);
+  const activeModule = navModules.length ? getActiveModuleFrom(navModules, pathname) : null;
 
   const showDebugIds =
     process.env.NEXT_PUBLIC_SHOW_DEBUG_IDS === "true" ||
@@ -58,7 +61,7 @@ export function SidebarRail() {
         {/* Centered module navigation */}
         <nav className="flex-1">
           <div className="flex h-full flex-col items-center justify-center gap-3">
-            {activeModule.sidebar.map((item) => {
+            {(activeModule?.sidebar ?? []).map((item) => {
               const active = isNavItemActive(item, pathname);
               const Icon = item.icon;
 

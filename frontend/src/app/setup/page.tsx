@@ -9,7 +9,8 @@
  *
  * Notes:
  * - "Context" (tenant/company/branch/camera) is persisted in `lib/selection.ts`.
- * - Auth session (JWT tokens + scope) is persisted in `lib/auth.ts`.
+ * - Auth session view (user/roles/permissions/scope) is persisted in `lib/auth.ts`.
+ *   Tokens live in HttpOnly cookies set by the BFF.
  */
 
 import Link from "next/link";
@@ -21,7 +22,7 @@ import { useTranslation } from "@/lib/i18n";
 import { apiJson } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useSelection } from "@/lib/selection";
-import type { CameraListOut, TokenResponse } from "@/lib/types";
+import type { CameraListOut, MeResponse } from "@/lib/types";
 import { StorePicker } from "@/components/StorePicker";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,8 +50,8 @@ export default function SetupPage() {
   const { t } = useTranslation();
   const router = useRouter();
 
-  const accessToken = useAuth((s) => s.accessToken);
-  const setFromTokenResponse = useAuth((s) => s.setFromTokenResponse);
+  const user = useAuth((s) => s.user);
+  const setFromSession = useAuth((s) => s.setFromSession);
 
   const tenantId = useSelection((s) => s.tenantId);
   const companyId = useSelection((s) => s.companyId);
@@ -104,13 +105,13 @@ export default function SetupPage() {
       if (!payload.admin_email) throw new Error("admin_email is required");
       if (!payload.admin_password) throw new Error("admin_password is required");
 
-      return apiJson<TokenResponse>("/api/v1/bootstrap", {
+      return apiJson<MeResponse>("/api/v1/bootstrap", {
         method: "POST",
         body: JSON.stringify(payload),
       });
     },
     onSuccess: (t) => {
-      setFromTokenResponse(t);
+      setFromSession(t);
 
       // Default the client scope/selection from the server-issued scope.
       setTenantId(String(t.scope.tenant_id));
@@ -204,7 +205,7 @@ export default function SetupPage() {
         </CardContent>
       </Card>
 
-      {!accessToken ? (
+      {!user ? (
         <Card>
           <CardHeader>
             <CardTitle>

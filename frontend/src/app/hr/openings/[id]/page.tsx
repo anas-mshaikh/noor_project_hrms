@@ -49,8 +49,6 @@ import {
 } from "@/features/hr/api/hr";
 import { useScreeningRun } from "@/features/hr/hooks/useScreeningRun";
 
-type PageProps = { params: { id: string } };
-
 function toBatchItem(r: ResumeOut): BatchProgressItem {
   // UI component expects these status literals. Backend uses the same strings.
   const status = (r.status as BatchProgressItem["status"]) ?? "UPLOADED";
@@ -63,7 +61,7 @@ function toBatchItem(r: ResumeOut): BatchProgressItem {
   };
 }
 
-export default function HROpeningDetailPage(_props: PageProps) {
+export default function HROpeningDetailPage() {
   const { t } = useTranslation();
   const reducedMotion = useReducedMotion();
   const { loading } = useMockLoading(600);
@@ -90,6 +88,8 @@ export default function HROpeningDetailPage(_props: PageProps) {
       }
     : null;
   const isLoadingOpening = openingQ.isPending;
+  const detailOpeningId: UUID | null =
+    branchId && openingId && (isLoadingOpening || opening) ? openingId : null;
 
   const createRun = useMutation({
     mutationFn: () => {
@@ -156,6 +156,106 @@ export default function HROpeningDetailPage(_props: PageProps) {
         description: err instanceof Error ? err.message : "Unknown error",
       }),
   });
+
+  const { list: resumesQ, upload: uploadMutation } = useResumes(branchId, detailOpeningId);
+  const indexQ = useOpeningIndexStatus(branchId, detailOpeningId);
+
+  // ATS / Pipeline (Phase 5): stages + applications for this opening.
+  const stagesQ = usePipelineStages(branchId, detailOpeningId);
+  const appsQ = useApplications(branchId, detailOpeningId);
+  const [selectedAppId, setSelectedAppId] = React.useState<UUID | null>(null);
+  const [appDrawerOpen, setAppDrawerOpen] = React.useState(false);
+  const selectedApplication = React.useMemo(() => {
+    if (!selectedAppId) return null;
+    return (appsQ.list.data ?? []).find((a) => a.id === selectedAppId) ?? null;
+  }, [appsQ.list.data, selectedAppId]);
+
+  const pipelineStagesUi: PipelineStageUi[] = React.useMemo(() => {
+    const stages = (stagesQ.data ?? []).map((s) => ({
+      id: s.id,
+      name: s.name,
+      sort_order: s.sort_order,
+      is_terminal: s.is_terminal,
+    }));
+    const hasUnassigned = (appsQ.list.data ?? []).some((a) => !a.stage_id);
+    return hasUnassigned
+      ? [
+          {
+            id: "__unassigned__",
+            name: t("hr.common.unassigned", { defaultValue: "Unassigned" }),
+            sort_order: -1,
+            is_terminal: false,
+          },
+          ...stages,
+        ]
+      : stages;
+  }, [stagesQ.data, appsQ.list.data, t]);
+
+  const pipelineCardsUi: PipelineCardUi[] = React.useMemo(() => {
+    return (appsQ.list.data ?? []).map((a) => ({
+      id: a.id,
+      stageId: a.stage_id ?? "__unassigned__",
+      title: a.resume.original_filename,
+      tags: [
+        a.resume.status,
+        a.status === "ACTIVE"
+          ? t("hr.pipeline_page.tag_active", { defaultValue: "Active" })
+          : a.status,
+        a.source_run_id
+          ? t("hr.pipeline_page.tag_from_run", { defaultValue: "From run" })
+          : t("hr.pipeline_page.tag_manual", { defaultValue: "Manual" }),
+      ].filter(Boolean),
+      application: a,
+    }));
+  }, [appsQ.list.data, t]);
+
+  const enqueueEmbed = useMutation({
+    mutationFn: () => enqueueOpeningEmbeddings(branchId as UUID, openingId as UUID, { force: false }),
+    onSuccess: (resp) => {
+      toast(t("hr.opening_detail.embed_queued", { defaultValue: "Embedding queued" }), {
+        description: `${resp.enqueued} enqueued, ${resp.skipped} skipped`,
+      });
+      resumesQ.refetch();
+      indexQ.refetch();
+    },
+    onError: (err) => {
+      toast(t("hr.opening_detail.embed_queue_failed", { defaultValue: "Could not enqueue embeddings" }), {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    },
+  });
+  const [activeBatchId, setActiveBatchId] = React.useState<UUID | null>(null);
+  const batchQ = useBatchPoll(
+    activeBatchId && detailOpeningId && branchId
+      ? { branchId, openingId: detailOpeningId, batchId: activeBatchId }
+      : null
+  );
+
+  const [parsedOpen, setParsedOpen] = React.useState(false);
+  const [parsedResumeId, setParsedResumeId] = React.useState<UUID | null>(null);
+  const [parsedTitle, setParsedTitle] = React.useState<string | undefined>(undefined);
+
+  const uploadItems: BatchProgressItem[] = React.useMemo(() => {
+    return (resumesQ.data ?? []).map(toBatchItem);
+  }, [resumesQ.data]);
+
+  React.useEffect(() => {
+    if (!batchQ.done) return;
+    toast(t("hr.opening_detail.parsing_completed", { defaultValue: "Parsing completed" }), {
+      description: `${batchQ.data?.parsed_count ?? 0} parsed, ${batchQ.data?.failed_count ?? 0} failed`,
+    });
+    // Refresh resume list once batch is done.
+    resumesQ.refetch();
+  }, [batchQ.done]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
+    if (!openingQ.data) return;
+    try {
+      localStorage.setItem(`hr:lastOpening:${branchId}`, openingQ.data.id);
+    } catch {
+      // ignore
+    }
+  }, [openingQ.data, branchId]);
 
   if (!branchId) {
     return (
@@ -230,106 +330,6 @@ export default function HROpeningDetailPage(_props: PageProps) {
     ? runs.find((r) => r.id === openingUi.last_run_id)
     : runs[0];
   const topCandidates = lastRun ? getRunResults(lastRun.id).slice(0, 5) : [];
-
-  const { list: resumesQ, upload: uploadMutation } = useResumes(branchId, openingId);
-  const indexQ = useOpeningIndexStatus(branchId, openingId);
-
-  // ATS / Pipeline (Phase 5): stages + applications for this opening.
-  const stagesQ = usePipelineStages(branchId, openingId);
-  const appsQ = useApplications(branchId, openingId);
-  const [selectedAppId, setSelectedAppId] = React.useState<UUID | null>(null);
-  const [appDrawerOpen, setAppDrawerOpen] = React.useState(false);
-  const selectedApplication = React.useMemo(() => {
-    if (!selectedAppId) return null;
-    return (appsQ.list.data ?? []).find((a) => a.id === selectedAppId) ?? null;
-  }, [appsQ.list.data, selectedAppId]);
-
-  const pipelineStagesUi: PipelineStageUi[] = React.useMemo(() => {
-    const stages = (stagesQ.data ?? []).map((s) => ({
-      id: s.id,
-      name: s.name,
-      sort_order: s.sort_order,
-      is_terminal: s.is_terminal,
-    }));
-    const hasUnassigned = (appsQ.list.data ?? []).some((a) => !a.stage_id);
-    return hasUnassigned
-      ? [
-          {
-            id: "__unassigned__",
-            name: t("hr.common.unassigned", { defaultValue: "Unassigned" }),
-            sort_order: -1,
-            is_terminal: false,
-          },
-          ...stages,
-        ]
-      : stages;
-  }, [stagesQ.data, appsQ.list.data, t]);
-
-  const pipelineCardsUi: PipelineCardUi[] = React.useMemo(() => {
-    return (appsQ.list.data ?? []).map((a) => ({
-      id: a.id,
-      stageId: a.stage_id ?? "__unassigned__",
-      title: a.resume.original_filename,
-      tags: [
-        a.resume.status,
-        a.status === "ACTIVE"
-          ? t("hr.pipeline_page.tag_active", { defaultValue: "Active" })
-          : a.status,
-        a.source_run_id
-          ? t("hr.pipeline_page.tag_from_run", { defaultValue: "From run" })
-          : t("hr.pipeline_page.tag_manual", { defaultValue: "Manual" }),
-      ].filter(Boolean),
-      application: a,
-    }));
-  }, [appsQ.list.data, t]);
-
-  const enqueueEmbed = useMutation({
-    mutationFn: () => enqueueOpeningEmbeddings(branchId as UUID, openingId as UUID, { force: false }),
-    onSuccess: (resp) => {
-      toast(t("hr.opening_detail.embed_queued", { defaultValue: "Embedding queued" }), {
-        description: `${resp.enqueued} enqueued, ${resp.skipped} skipped`,
-      });
-      resumesQ.refetch();
-      indexQ.refetch();
-    },
-    onError: (err) => {
-      toast(t("hr.opening_detail.embed_queue_failed", { defaultValue: "Could not enqueue embeddings" }), {
-        description: err instanceof Error ? err.message : "Unknown error",
-      });
-    },
-  });
-  const [activeBatchId, setActiveBatchId] = React.useState<UUID | null>(null);
-  const batchQ = useBatchPoll(
-    activeBatchId && openingId
-      ? { branchId, openingId, batchId: activeBatchId }
-      : null
-  );
-
-  const [parsedOpen, setParsedOpen] = React.useState(false);
-  const [parsedResumeId, setParsedResumeId] = React.useState<UUID | null>(null);
-  const [parsedTitle, setParsedTitle] = React.useState<string | undefined>(undefined);
-
-  const uploadItems: BatchProgressItem[] = React.useMemo(() => {
-    return (resumesQ.data ?? []).map(toBatchItem);
-  }, [resumesQ.data]);
-
-  React.useEffect(() => {
-    if (!batchQ.done) return;
-    toast(t("hr.opening_detail.parsing_completed", { defaultValue: "Parsing completed" }), {
-      description: `${batchQ.data?.parsed_count ?? 0} parsed, ${batchQ.data?.failed_count ?? 0} failed`,
-    });
-    // Refresh resume list once batch is done.
-    resumesQ.refetch();
-  }, [batchQ.done]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  React.useEffect(() => {
-    if (!openingQ.data) return;
-    try {
-      localStorage.setItem(`hr:lastOpening:${branchId}`, openingQ.data.id);
-    } catch {
-      // ignore
-    }
-  }, [openingQ.data, branchId]);
 
   return (
     <HrPageShell>

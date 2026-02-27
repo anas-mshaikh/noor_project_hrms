@@ -13,7 +13,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslation } from "@/lib/i18n";
 
-import { MODULES, getActiveModule, isNavItemActive } from "@/config/navigation";
+import type { ModuleDef } from "@/config/navigation";
+import { getActiveModuleFrom, isNavItemActive } from "@/config/navigation";
 import { StorePicker } from "@/components/StorePicker";
 import { useLocale } from "@/lib/useLocale";
 import { useSelection } from "@/lib/selection";
@@ -28,15 +29,16 @@ import {
 } from "@/components/ui/sheet";
 
 type MobileMenuSheetProps = {
+  modules: ModuleDef[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
 
-export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
+export function MobileMenuSheet({ modules, open, onOpenChange }: MobileMenuSheetProps) {
   const { t } = useTranslation();
   const { isRtl } = useLocale();
   const pathname = usePathname();
-  const activeModule = getActiveModule(pathname);
+  const activeModule = modules.length ? getActiveModuleFrom(modules, pathname) : null;
 
   const showDebugIds =
     process.env.NEXT_PUBLIC_SHOW_DEBUG_IDS === "true" ||
@@ -72,8 +74,8 @@ export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
             {t("shell.modules", { defaultValue: "Modules" })}
           </div>
           <div className="grid grid-cols-3 gap-2">
-            {MODULES.map((m) => {
-              const active = m.id === activeModule.id;
+            {modules.map((m) => {
+              const active = m.id === activeModule?.id;
               const Icon = m.icon;
               return (
                 <SheetClose key={m.id} asChild>
@@ -106,10 +108,12 @@ export function MobileMenuSheet({ open, onOpenChange }: MobileMenuSheetProps) {
         {/* Active module navigation */}
         <div className="mt-4 px-2">
           <div className="mb-2 px-2 text-xs font-medium text-muted-foreground">
-            {t(`nav.modules.${activeModule.id}`, { defaultValue: activeModule.label })}
+            {activeModule
+              ? t(`nav.modules.${activeModule.id}`, { defaultValue: activeModule.label })
+              : t("shell.menu", { defaultValue: "Menu" })}
           </div>
           <div className="grid gap-1">
-            {activeModule.sidebar.map((item) => {
+            {(activeModule?.sidebar ?? []).map((item) => {
               const active = isNavItemActive(item, pathname);
               const Icon = item.icon;
               return (

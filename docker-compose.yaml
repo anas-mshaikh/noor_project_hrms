@@ -95,7 +95,6 @@ services:
       - ./backend/data:/app/data
       - ./backend/models:/app/models
       - ./backend/secrets:/app/secrets:ro
-      - ./backend/secrets/firebase-service-account.json:/app/secrets/firebase-service-account.json:ro
 
     depends_on:
       tests:
@@ -164,6 +163,8 @@ services:
         NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000"
     environment:
       NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000"
+      # Next.js BFF proxy target (server-side). Inside Docker, backend is reachable by service name.
+      API_PROXY_TARGET: "http://backend:8000"
       # Dev-only admin gate for /admin/import (override in your shell or .env)
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-admin}"
     ports:

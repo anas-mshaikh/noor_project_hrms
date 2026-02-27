@@ -45,6 +45,7 @@ def login(
             refresh_token=tokens.refresh_token,
             user=UserOut(id=ctx.user_id, email=ctx.email, status=ctx.status),
             roles=list(ctx.roles),
+            permissions=sorted(ctx.permissions),
             scope=ScopeOut(
                 tenant_id=ctx.scope.tenant_id,
                 company_id=ctx.scope.company_id,
@@ -79,6 +80,7 @@ def refresh(
             refresh_token=tokens.refresh_token,
             user=UserOut(id=ctx.user_id, email=ctx.email, status=ctx.status),
             roles=list(ctx.roles),
+            permissions=sorted(ctx.permissions),
             scope=ScopeOut(
                 tenant_id=ctx.scope.tenant_id,
                 company_id=ctx.scope.company_id,
@@ -103,6 +105,7 @@ def me(ctx: AuthContext = Depends(get_auth_context)) -> dict[str, object]:
         MeResponse(
             user=UserOut(id=ctx.user_id, email=ctx.email, status=ctx.status),
             roles=list(ctx.roles),
+            permissions=sorted(ctx.permissions),
             scope=ScopeOut(
                 tenant_id=ctx.scope.tenant_id,
                 company_id=ctx.scope.company_id,
@@ -113,4 +116,3 @@ def me(ctx: AuthContext = Depends(get_auth_context)) -> dict[str, object]:
             ),
         ).model_dump()
     )
-

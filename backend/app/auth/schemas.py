@@ -38,11 +38,14 @@ class TokenResponse(BaseModel):
     refresh_token: str
     user: UserOut
     roles: list[str]
+    # Permission codes effective for the active scope (tenant/company/branch).
+    permissions: list[str] = []
     scope: ScopeOut
 
 
 class MeResponse(BaseModel):
     user: UserOut
     roles: list[str]
+    # Permission codes effective for the active scope (tenant/company/branch).
+    permissions: list[str] = []
     scope: ScopeOut
-

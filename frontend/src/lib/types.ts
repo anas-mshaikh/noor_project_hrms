@@ -28,6 +28,14 @@ export type TokenResponse = {
   refresh_token: string;
   user: UserOut;
   roles: string[];
+  permissions: string[];
+  scope: ScopeOut;
+};
+
+export type MeResponse = {
+  user: UserOut;
+  roles: string[];
+  permissions: string[];
   scope: ScopeOut;
 };
 

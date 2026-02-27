@@ -8,6 +8,10 @@ backend API wiring coverage, and known broken areas.
 
 Note: This does **not** cover the React Native app in `mobile-application/`.
 
+See also:
+- Production-readiness audit (V0 checklist vs current implementation):
+  `/Users/anasshaikh/Documents/Work/noor_project_HRMS/attendence_system/docs/frontend/V0_PRODUCTION_READINESS_AUDIT.md`
+
 
 ## 1) Tech Stack & App Architecture
 
@@ -15,16 +19,21 @@ Note: This does **not** cover the React Native app in `mobile-application/`.
 - React: React 19.
 - Data fetching: TanStack React Query (`@tanstack/react-query`).
 - State:
-  - Auth (JWT access/refresh + scope) persisted via Zustand: `frontend/src/lib/auth.ts`
+  - Auth session (user/roles/permissions/scope) persisted via Zustand:
+    `frontend/src/lib/auth.ts`
   - Context selection (tenant/company/branch/camera) persisted via Zustand:
     `frontend/src/lib/selection.ts`
 - API client: `frontend/src/lib/api.ts`
+  - Same-origin: calls `/api/v1/*` which is handled by the Next.js BFF proxy route
+    `frontend/src/app/api/v1/[...path]/route.ts`.
+  - Tokens are stored as **HttpOnly cookies** (`noor_access_token`,
+    `noor_refresh_token`) set by the BFF. The browser does not store tokens in
+    localStorage.
   - Adds scope headers from persisted selection: `X-Tenant-Id`, `X-Company-Id`,
-    `X-Branch-Id`
-  - Adds `Authorization: Bearer ...` from persisted auth
-  - Auto-refresh on 401 via `/api/v1/auth/refresh`
-  - NOTE: No correlation-id header is sent from frontend (backend generates correlation
-    ids server-side).
+    `X-Branch-Id` (forwarded by the BFF to backend).
+  - On 401: BFF performs refresh rotation and retries once when safe.
+  - Extracts and surfaces correlation id (`X-Correlation-Id`) in structured API
+    errors; redirects to `/scope` on `iam.scope.*` fail-closed errors.
 - I18n: local JSON dictionaries with cookie + RTL support:
   - `frontend/src/lib/i18n.tsx`
   - `frontend/src/lib/locale.ts`
@@ -41,7 +50,8 @@ Composition:
 - Top bar: `TopBar`
   - Sticky header.
   - Logo navigates to active module home.
-  - Desktop module tabs (Attendance/HR/Tasks/Inbox/Notes/Settings).
+  - Desktop module tabs are permission-gated; placeholder modules are hidden in
+    Client V0 (Tasks/Inbox/Notes).
   - Right-side actions:
     - Notifications (toast: Coming soon)
     - Help (toast: Coming soon)
@@ -130,9 +140,15 @@ Login:
 - File: `frontend/src/app/login/page.tsx`
 - Calls: `POST /api/v1/auth/login`
 - On success:
-  - Stores access/refresh tokens in localStorage (Zustand persist).
-  - Sets selection headers (tenant/company/branch) from token scope.
+  - The BFF sets HttpOnly cookies (`noor_access_token`, `noor_refresh_token`).
+  - Frontend stores only a redacted session (user/roles/permissions/scope).
+  - Selection defaults (tenant/company/branch) are derived from session scope.
   - Redirects to `/dashboard`.
+
+Auth bootstrap:
+- Component: `frontend/src/components/AuthBootstrap.tsx`
+- Mounted from: `frontend/src/app/providers.tsx`
+- Calls: `GET /api/v1/auth/me` to hydrate auth session on reloads (cookies-based).
 
 Context picker:
 - Component: `frontend/src/components/StorePicker.tsx`
@@ -140,7 +156,8 @@ Context picker:
   - `GET /api/v1/tenancy/companies`
   - `GET /api/v1/tenancy/branches?company_id=...`
   - `GET /api/v1/branches/{branch_id}/cameras`
-- Tenant selection UI shows IDs from token `allowed_tenant_ids` (not tenant names).
+- Tenant selection UI shows IDs from session scope `allowed_tenant_ids` (not tenant
+  names).
 
 
 ## 6) Route/Screens Inventory (What Exists Today)
@@ -325,7 +342,9 @@ Interpretation:
     client redirects.
   - No Next.js middleware-based auth gating is present.
 - API base URL and security:
-  - `frontend/src/lib/api.ts` has a TODO comment about enterprise security hardening.
+  - All browser API calls go through the Next.js BFF route handler:
+    `frontend/src/app/api/v1/[...path]/route.ts`.
+  - Backend proxy target is configured via `API_PROXY_TARGET` (server-only env var).
 - Unused/legacy code:
   - `frontend/src/components/hr/*` appears unused (older HR widgets).
   - `frontend/src/lib/motion.ts` appears unused (HR uses `features/hr/lib/motion.ts`).
@@ -351,4 +370,3 @@ Interpretation:
 3) Add font setup (optional):
 - Implement `next/font` in `frontend/src/app/layout.tsx` or remove Geist vars from
   CSS.
-

@@ -41,6 +41,10 @@ export type NavItem = {
   description?: string;
   icon: LucideIcon;
   match?: MatchMode;
+  // Permission gating (frontend convenience only; backend remains the source of truth).
+  requiredPermissions?: string[];
+  // Hide items that are placeholders / not part of Client V0 navigation.
+  v0Hidden?: boolean;
 };
 
 export type ModuleDef = {
@@ -50,6 +54,8 @@ export type ModuleDef = {
   icon: LucideIcon;
   isActive: (pathname: string) => boolean;
   sidebar: NavItem[];
+  requiredPermissions?: string[];
+  v0Hidden?: boolean;
 };
 
 function startsWithPath(pathname: string, base: string): boolean {
@@ -98,6 +104,7 @@ const attendanceModule: ModuleDef = {
       description: "High-level attendance metrics",
       icon: LayoutDashboard,
       match: "exact",
+      requiredPermissions: ["vision:results:read"],
     },
     {
       id: "setup",
@@ -106,6 +113,7 @@ const attendanceModule: ModuleDef = {
       description: "Tenancy, branches, cameras",
       icon: Settings,
       match: "exact",
+      requiredPermissions: ["vision:camera:write", "tenancy:write"],
     },
     {
       id: "employees",
@@ -114,6 +122,7 @@ const attendanceModule: ModuleDef = {
       description: "Roster and face enrollment",
       icon: Users,
       match: "exact",
+      requiredPermissions: ["hr:employee:read"],
     },
     {
       id: "videos",
@@ -122,6 +131,7 @@ const attendanceModule: ModuleDef = {
       description: "Uploads and processing",
       icon: Video,
       match: "exact",
+      requiredPermissions: ["vision:video:upload", "vision:job:run", "vision:results:read"],
     },
     {
       id: "admin-import",
@@ -130,6 +140,7 @@ const attendanceModule: ModuleDef = {
       description: "Upload monthly excel",
       icon: FileUp,
       match: "exact",
+      requiredPermissions: ["imports:write"],
     },
   ],
 };
@@ -148,6 +159,7 @@ const hrModule: ModuleDef = {
       description: "Hiring performance and tasks",
       icon: Sparkles,
       match: "exact",
+      requiredPermissions: ["hr:recruiting:read"],
     },
     {
       id: "hr-openings",
@@ -156,6 +168,7 @@ const hrModule: ModuleDef = {
       description: "Job openings and JDs",
       icon: Briefcase,
       match: "prefix",
+      requiredPermissions: ["hr:recruiting:read"],
     },
     {
       id: "hr-runs",
@@ -164,6 +177,7 @@ const hrModule: ModuleDef = {
       description: "Screening runs and results",
       icon: Zap,
       match: "prefix",
+      requiredPermissions: ["hr:recruiting:read"],
     },
     {
       id: "hr-pipeline",
@@ -172,6 +186,7 @@ const hrModule: ModuleDef = {
       description: "Stages and movements",
       icon: LayoutGrid,
       match: "exact",
+      requiredPermissions: ["hr:recruiting:read"],
     },
     {
       id: "hr-onboarding",
@@ -180,6 +195,7 @@ const hrModule: ModuleDef = {
       description: "New hires checklist",
       icon: UserPlus,
       match: "prefix",
+      v0Hidden: true,
     },
   ],
 };
@@ -190,6 +206,7 @@ const tasksModule: ModuleDef = {
   href: "/tasks",
   icon: CheckSquare,
   isActive: (pathname) => startsWithPath(pathname, "/tasks"),
+  v0Hidden: true,
   sidebar: [
     {
       id: "tasks-my",
@@ -224,6 +241,7 @@ const inboxModule: ModuleDef = {
   href: "/inbox",
   icon: Inbox,
   isActive: (pathname) => startsWithPath(pathname, "/inbox"),
+  v0Hidden: true,
   sidebar: [
     {
       id: "inbox-all",
@@ -258,6 +276,7 @@ const notesModule: ModuleDef = {
   href: "/notes",
   icon: NotebookPen,
   isActive: (pathname) => startsWithPath(pathname, "/notes"),
+  v0Hidden: true,
   sidebar: [
     {
       id: "notes-all",
@@ -308,6 +327,7 @@ const settingsModule: ModuleDef = {
       description: "Company profile",
       icon: Settings,
       match: "prefix",
+      v0Hidden: true,
     },
     {
       id: "settings-access",
@@ -316,6 +336,7 @@ const settingsModule: ModuleDef = {
       description: "Permissions",
       icon: Shield,
       match: "prefix",
+      v0Hidden: true,
     },
     {
       id: "settings-integrations",
@@ -324,6 +345,7 @@ const settingsModule: ModuleDef = {
       description: "External services",
       icon: Plug,
       match: "prefix",
+      v0Hidden: true,
     },
   ],
 };
@@ -337,7 +359,38 @@ export const MODULES: ModuleDef[] = [
   settingsModule,
 ];
 
+function hasAnyPermission(
+  required: string[] | undefined,
+  permissions: Set<string>
+): boolean {
+  if (!required || required.length === 0) return true;
+  return required.some((p) => permissions.has(p));
+}
+
+/**
+ * Build a navigation view for the current user permissions.
+ *
+ * This is UI-only safety; backend `require_permission(...)` remains authoritative.
+ */
+export function buildNavForPermissions(permissionCodes: string[]): ModuleDef[] {
+  const perms = new Set(permissionCodes);
+
+  return MODULES.filter((m) => !m.v0Hidden)
+    .map((m) => {
+      const sidebar = m.sidebar.filter(
+        (i) => !i.v0Hidden && hasAnyPermission(i.requiredPermissions, perms)
+      );
+      return { ...m, sidebar };
+    })
+    .filter((m) => hasAnyPermission(m.requiredPermissions, perms))
+    .filter((m) => m.sidebar.length > 0);
+}
+
 export function getActiveModule(pathname: string): ModuleDef {
   // Prefer explicit modules, fall back to Attendance for everything else.
   return MODULES.find((m) => m.isActive(pathname)) ?? attendanceModule;
+}
+
+export function getActiveModuleFrom(modules: ModuleDef[], pathname: string): ModuleDef {
+  return modules.find((m) => m.isActive(pathname)) ?? attendanceModule;
 }

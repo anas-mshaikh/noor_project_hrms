@@ -3,57 +3,52 @@
 /**
  * lib/auth.ts
  *
- * Persist auth session (JWT access/refresh tokens + scope) in localStorage.
+ * Persist a minimal auth *session view* in localStorage.
  *
  * This is intentionally minimal:
- * - Backend is the source of truth for permissions.
- * - We store enough to attach Authorization headers and render basic UI.
+ * - Tokens are stored in HttpOnly cookies via the BFF proxy (see `app/api/v1/*`).
+ * - Frontend stores only non-secret identity/scope/permissions to render UI safely.
  */
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import type { TokenResponse } from "@/lib/types";
+import type { MeResponse } from "@/lib/types";
 
 type AuthState = {
-  accessToken?: string;
-  refreshToken?: string;
-  user?: TokenResponse["user"];
+  user?: MeResponse["user"];
   roles: string[];
-  scope?: TokenResponse["scope"];
+  permissions: string[];
+  scope?: MeResponse["scope"];
 
-  setFromTokenResponse: (t: TokenResponse) => void;
+  setFromSession: (s: MeResponse) => void;
   clear: () => void;
 };
 
 export const useAuth = create<AuthState>()(
   persist(
     (set) => ({
-      accessToken: undefined,
-      refreshToken: undefined,
       user: undefined,
       roles: [],
+      permissions: [],
       scope: undefined,
 
-      setFromTokenResponse: (t) =>
+      setFromSession: (s) =>
         set({
-          accessToken: t.access_token,
-          refreshToken: t.refresh_token,
-          user: t.user,
-          roles: t.roles ?? [],
-          scope: t.scope,
+          user: s.user,
+          roles: s.roles ?? [],
+          permissions: s.permissions ?? [],
+          scope: s.scope,
         }),
 
       clear: () =>
         set({
-          accessToken: undefined,
-          refreshToken: undefined,
           user: undefined,
           roles: [],
+          permissions: [],
           scope: undefined,
         }),
     }),
     { name: "attendance-admin-auth" }
   )
 );
-

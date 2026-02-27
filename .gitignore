@@ -19,6 +19,7 @@ backend/data/
 
 *report.json
 backend/app/secrets/
+backend/secrets/
 
 backend/.cache/
 backend/models/text_embeddings/

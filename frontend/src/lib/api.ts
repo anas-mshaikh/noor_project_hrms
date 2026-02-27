@@ -1,37 +1,71 @@
 /**
  * lib/api.ts
  *
- * A tiny backend client:
- * - apiJson(): JSON requests + consistent error handling
- * - apiForm(): multipart/form-data requests (faces upload)
- * - xhrUploadFormWithProgress(): PUT upload with progress (video upload)
+ * Browser-side API helper for the web frontend.
  *
- * Notes about your FastAPI backend:
- * - JSON endpoints live under /api/v1/...
- * - Responses are usually wrapped: { ok: true, data: ... } (enterprise envelope).
- * - Video upload expects: PUT /branches/{branch_id}/videos/{video_id}/file with FormData field name "file"
- * - Face upload expects: POST /branches/{branch_id}/employees/{employee_id}/faces/register with FormData field name "file" (single)
- *   (for multiple images, call the endpoint multiple times)
+ * Production-ready model (Client V0):
+ * - All `/api/v1/*` calls go to the Next.js BFF proxy route handler at
+ *   `src/app/api/v1/[...path]/route.ts`.
+ * - Access/refresh tokens are stored as HttpOnly cookies by the BFF.
+ * - The browser never handles refresh tokens directly.
+ *
+ * This module focuses on:
+ * - attaching scope headers (X-Tenant-Id / X-Company-Id / X-Branch-Id),
+ * - unwrapping the enterprise response envelope,
+ * - surfacing stable error codes and correlation ids for support.
  */
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-// TODO: MAKE this enterprise production ready for security purpose.
-const AUTH_STORAGE_KEY = "attendance-admin-auth";
+export const API_BASE = ""; // Same-origin. BFF routes live under `/api/v1/*`.
 
-type TokenResponse = {
-  access_token: string;
-  refresh_token: string;
+type Persisted<T> = { state: T; version?: number };
+
+type EnvelopeOk<T> = { ok: true; data: T; meta?: unknown };
+type EnvelopeErr = {
+  ok: false;
+  error: { code: string; message: string; details?: unknown; correlation_id?: string };
 };
+
+export class ApiError extends Error {
+  status: number;
+  code: string | null;
+  correlationId: string | null;
+  details: unknown | null;
+
+  constructor(opts: {
+    status: number;
+    message: string;
+    code?: string | null;
+    correlationId?: string | null;
+    details?: unknown | null;
+  }) {
+    super(opts.message);
+    this.name = "ApiError";
+    this.status = opts.status;
+    this.code = opts.code ?? null;
+    this.correlationId = opts.correlationId ?? null;
+    this.details = opts.details ?? null;
+  }
+}
 
 export function apiUrl(path: string): string {
   // Backend sometimes returns relative endpoints like "/api/v1/..."
-  // Convert those to absolute URLs using NEXT_PUBLIC_API_BASE_URL.
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  return `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
+  // Keep them same-origin so the Next.js BFF can proxy them.
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    // If the backend returns an absolute API URL, re-route it through the BFF.
+    // This keeps auth cookie behavior consistent and avoids cross-origin failures.
+    try {
+      const u = new URL(path);
+      if (u.pathname.startsWith("/api/v1/")) {
+        return `${API_BASE}${u.pathname}${u.search}`;
+      }
+    } catch {
+      // If parsing fails, fall back to the raw path.
+    }
+    return path;
+  }
+  if (!path.startsWith("/")) return `/${path}`;
+  return `${API_BASE}${path}`;
 }
-
-type Persisted<T> = { state: T; version?: number };
 
 function loadPersistedState<T>(key: string): T | null {
   if (typeof window === "undefined") return null;
@@ -44,50 +78,6 @@ function loadPersistedState<T>(key: string): T | null {
   } catch {
     return null;
   }
-}
-
-function authToken(): string | null {
-  const auth = loadPersistedState<{ accessToken?: string }>(AUTH_STORAGE_KEY);
-  return auth?.accessToken ?? null;
-}
-
-function refreshToken(): string | null {
-  const auth = loadPersistedState<{ refreshToken?: string }>(AUTH_STORAGE_KEY);
-  return auth?.refreshToken ?? null;
-}
-
-function saveAuthTokens(next: TokenResponse): void {
-  if (typeof window === "undefined") return;
-  try {
-    const current =
-      loadPersistedState<Record<string, unknown>>(AUTH_STORAGE_KEY) ?? {};
-    const updated = {
-      ...current,
-      accessToken: next.access_token,
-      refreshToken: next.refresh_token,
-    };
-    window.localStorage.setItem(
-      AUTH_STORAGE_KEY,
-      JSON.stringify({ state: updated, version: 0 })
-    );
-  } catch {
-    // Ignore storage errors (private mode / disabled storage).
-  }
-}
-
-function clearAuthStorage(): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.removeItem(AUTH_STORAGE_KEY);
-  } catch {
-    // Ignore storage errors.
-  }
-}
-
-function redirectToLoginIfNeeded(): void {
-  if (typeof window === "undefined") return;
-  if (window.location.pathname === "/login") return;
-  window.location.assign("/login");
 }
 
 function scopeHeaders(): Record<string, string> {
@@ -103,115 +93,125 @@ function scopeHeaders(): Record<string, string> {
   return headers;
 }
 
-function authHeaders(): Record<string, string> {
-  const token = authToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+function redirectToLoginIfNeeded(): void {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === "/login") return;
+  window.location.assign("/login");
 }
 
-let refreshInFlight: Promise<boolean> | null = null;
-
-async function tryRefreshAccessToken(): Promise<boolean> {
-  if (refreshInFlight) return refreshInFlight;
-
-  refreshInFlight = (async () => {
-    const rt = refreshToken();
-    if (!rt) return false;
-
-    try {
-      const res = await fetch(apiUrl("/api/v1/auth/refresh"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...scopeHeaders(),
-        },
-        body: JSON.stringify({ refresh_token: rt }),
-        cache: "no-store",
-      });
-
-      if (!res.ok) return false;
-      const raw = (await res.json()) as unknown;
-      const unwrapped = unwrapOkEnvelope<TokenResponse>(raw);
-      if (!unwrapped?.access_token || !unwrapped?.refresh_token) return false;
-      saveAuthTokens(unwrapped);
-      return true;
-    } catch {
-      return false;
-    } finally {
-      refreshInFlight = null;
-    }
-  })();
-
-  return refreshInFlight;
+function redirectToScopeIfNeeded(code: string, correlationId: string | null): void {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === "/scope") return;
+  const url = new URL("/scope", window.location.origin);
+  url.searchParams.set("reason", code);
+  if (correlationId) url.searchParams.set("cid", correlationId);
+  window.location.assign(url.toString());
 }
 
-async function readErrorBody(res: Response): Promise<string> {
-  // FastAPI errors may be either legacy {"detail": "..."} or enterprise envelope:
-  // {"ok": false, "error": {"code": "...", "message": "..."}}
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text) as Record<string, unknown>;
-    if (json && typeof json === "object") {
-      const ok = (json as any).ok;
-      if (ok === false && (json as any).error) {
-        const err = (json as any).error as any;
-        const code = typeof err.code === "string" ? err.code : "error";
-        const msg = typeof err.message === "string" ? err.message : "Request failed";
-        return `${code}: ${msg}`;
-      }
-    }
-    if (json && typeof json === "object" && "detail" in json) {
-      const detail = (json as Record<string, unknown>).detail;
-      return typeof detail === "string" ? detail : JSON.stringify(detail);
-    }
-  } catch {
-    // Not JSON, return raw response
-  }
-  return text;
+function isScopeErrorCode(code: string): boolean {
+  return (
+    code === "iam.scope.tenant_required" ||
+    code === "iam.scope.forbidden" ||
+    code === "iam.scope.forbidden_tenant" ||
+    code === "iam.scope.mismatch"
+  );
 }
 
 function unwrapOkEnvelope<T>(raw: unknown): T {
-  if (raw && typeof raw === "object" && "ok" in (raw as any)) {
-    const ok = (raw as any).ok;
-    if (ok === true) return (raw as any).data as T;
-    const err = (raw as any).error;
+  if (raw && typeof raw === "object" && "ok" in raw) {
+    const env = raw as EnvelopeOk<T> | EnvelopeErr;
+    if (env.ok === true) return env.data;
+    const err = (env as EnvelopeErr).error;
     if (err && typeof err === "object") {
-      const code = (err as any).code ?? "error";
-      const message = (err as any).message ?? "Request failed";
-      throw new Error(`${code}: ${message}`);
+      const code = String(err.code ?? "error");
+      const message = String(err.message ?? "Request failed");
+      const correlationId = err.correlation_id ? String(err.correlation_id) : null;
+      const details = err.details ?? null;
+      throw new ApiError({
+        status: 400,
+        code,
+        message: `${code}: ${message}`,
+        correlationId,
+        details,
+      });
     }
-    throw new Error("Request failed");
+    throw new ApiError({ status: 400, code: "error", message: "Request failed" });
   }
   return raw as T;
 }
 
-export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const attempt = async (useAuth: boolean): Promise<Response> =>
-    fetch(apiUrl(path), {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...scopeHeaders(),
-        ...(useAuth ? authHeaders() : {}),
-        ...(init?.headers ?? {}),
-      },
-      cache: "no-store",
-    });
+async function readError(res: Response): Promise<ApiError> {
+  const correlationId =
+    res.headers.get("x-correlation-id") ?? res.headers.get("x-trace-id");
 
-  let res = await attempt(true);
-  if (res.status === 401) {
-    const refreshed = await tryRefreshAccessToken();
-    if (refreshed) {
-      res = await attempt(true);
-    } else {
-      clearAuthStorage();
-      redirectToLoginIfNeeded();
+  const text = await res.text();
+  try {
+    const json = JSON.parse(text) as EnvelopeOk<unknown> | EnvelopeErr | Record<string, unknown>;
+    if (json && typeof json === "object") {
+      if ("ok" in json && (json as EnvelopeErr).ok === false && (json as EnvelopeErr).error) {
+        const err = (json as EnvelopeErr).error;
+        const code = String(err.code ?? "error");
+        const message = String(err.message ?? "Request failed");
+        const cid =
+          (err.correlation_id ? String(err.correlation_id) : null) ??
+          correlationId;
+        const details = err.details ?? null;
+        return new ApiError({
+          status: res.status,
+          code,
+          message: `${code}: ${message}`,
+          correlationId: cid,
+          details,
+        });
+      }
+      if ("detail" in json) {
+        const detail = (json as Record<string, unknown>).detail;
+        const msg = typeof detail === "string" ? detail : JSON.stringify(detail);
+        return new ApiError({
+          status: res.status,
+          code: null,
+          message: msg,
+          correlationId,
+        });
+      }
     }
+  } catch {
+    // Not JSON.
   }
 
+  return new ApiError({
+    status: res.status,
+    code: null,
+    message: text || `${res.status} ${res.statusText}`,
+    correlationId,
+  });
+}
+
+function maybeRedirectOnError(err: ApiError): void {
+  if (err.status === 401) {
+    redirectToLoginIfNeeded();
+    return;
+  }
+  if (err.code && isScopeErrorCode(err.code)) {
+    redirectToScopeIfNeeded(err.code, err.correlationId);
+  }
+}
+
+export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(apiUrl(path), {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...scopeHeaders(),
+      ...(init?.headers ?? {}),
+    },
+    cache: "no-store",
+  });
+
   if (!res.ok) {
-    throw new Error(
-      `${res.status} ${res.statusText}: ${await readErrorBody(res)}`
-    );
+    const err = await readError(res);
+    maybeRedirectOnError(err);
+    throw err;
   }
 
   const raw = (await res.json()) as unknown;
@@ -224,34 +224,21 @@ export async function apiForm<T>(
   init?: RequestInit
 ): Promise<T> {
   // IMPORTANT: don't set Content-Type for FormData; browser sets boundary.
-  const attempt = async (): Promise<Response> =>
-    fetch(apiUrl(path), {
-      method: init?.method ?? "POST",
-      ...init,
-      body: form,
-      headers: {
-        ...scopeHeaders(),
-        ...authHeaders(),
-        ...(init?.headers ?? {}),
-      },
-      cache: "no-store",
-    });
-
-  let res = await attempt();
-  if (res.status === 401) {
-    const refreshed = await tryRefreshAccessToken();
-    if (refreshed) {
-      res = await attempt();
-    } else {
-      clearAuthStorage();
-      redirectToLoginIfNeeded();
-    }
-  }
+  const res = await fetch(apiUrl(path), {
+    method: init?.method ?? "POST",
+    ...init,
+    body: form,
+    headers: {
+      ...scopeHeaders(),
+      ...(init?.headers ?? {}),
+    },
+    cache: "no-store",
+  });
 
   if (!res.ok) {
-    throw new Error(
-      `${res.status} ${res.statusText}: ${await readErrorBody(res)}`
-    );
+    const err = await readError(res);
+    maybeRedirectOnError(err);
+    throw err;
   }
 
   // Some endpoints might return JSON, some might return text; handle both.
@@ -271,6 +258,10 @@ export function xhrUploadFormWithProgress<T>(
   /**
    * Used for large video uploads (so you can show % progress).
    * We use XHR because fetch() upload progress is not reliable across browsers.
+   *
+   * IMPORTANT:
+   * - Requests go to the Next.js BFF proxy (same-origin), so HttpOnly cookies
+   *   are sent automatically by the browser.
    */
   const url = apiUrl(path);
 
@@ -278,8 +269,6 @@ export function xhrUploadFormWithProgress<T>(
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
 
-    const token = authToken();
-    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     const scope = scopeHeaders();
     for (const [k, v] of Object.entries(scope)) {
       xhr.setRequestHeader(k, v);
@@ -297,6 +286,9 @@ export function xhrUploadFormWithProgress<T>(
         } catch {
           resolve(xhr.responseText as unknown as T);
         }
+      } else if (xhr.status === 401) {
+        redirectToLoginIfNeeded();
+        reject(new ApiError({ status: 401, message: "unauthorized" }));
       } else {
         reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
       }
