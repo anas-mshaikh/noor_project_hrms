@@ -179,9 +179,15 @@ export default function SetupPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-            <StorePicker />
-          </div>
+          {user ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <StorePicker />
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-sm text-muted-foreground">
+              Sign in (or run bootstrap below) to load tenant/company/branch options.
+            </div>
+          )}
           <pre className="overflow-auto rounded-lg bg-muted/30 p-3 text-xs">
             {JSON.stringify(selectionSummary, null, 2)}
           </pre>

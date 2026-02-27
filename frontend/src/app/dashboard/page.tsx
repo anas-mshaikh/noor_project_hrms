@@ -15,13 +15,6 @@ import { apiJson } from "@/lib/api";
 import { useSelection } from "@/lib/selection";
 import type { AttendanceDailySummaryOut } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -32,6 +25,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DSCard } from "@/components/ds/DSCard";
+import { PageHeader } from "@/components/ds/PageHeader";
+import { RightPanelStack } from "@/components/ds/RightPanelStack";
+import { ListRightPanelTemplate } from "@/components/ds/templates/ListRightPanelTemplate";
 
 function toLocalDateInput(d: Date): string {
   const y = d.getFullYear();
@@ -41,7 +38,7 @@ function toLocalDateInput(d: Date): string {
 }
 
 function formatMinutes(minutes: number | null): string {
-  if (minutes === null) return "—";
+  if (minutes === null) return "-";
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
@@ -55,7 +52,7 @@ function PunchInTrend({ rows }: { rows: AttendanceDailySummaryOut[] }) {
   if (points.length < 2) {
     return (
       <div className="text-sm text-muted-foreground">
-        Not enough punch‑ins to draw a trend yet.
+        Not enough punch-ins to draw a trend yet.
       </div>
     );
   }
@@ -83,12 +80,12 @@ function PunchInTrend({ rows }: { rows: AttendanceDailySummaryOut[] }) {
   return (
     <div>
       <div className="mb-2 text-xs text-muted-foreground">
-        Earliest: {formatMinutes(min)} • Latest: {formatMinutes(max)}
+        Earliest: {formatMinutes(min)} | Latest: {formatMinutes(max)}
       </div>
       <svg
         width={width}
         height={height}
-        className="w-full rounded-lg border bg-background"
+        className="w-full rounded-[var(--ds-radius-16)] border border-border-subtle bg-surface-1"
         role="img"
         aria-label="Punch-in time trend"
       >
@@ -214,211 +211,236 @@ export default function DashboardPage() {
   }, [rows]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {t("nav.items.dashboard.title", { defaultValue: "Dashboard" })}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t("page.dashboard.subtitle", {
+    <ListRightPanelTemplate
+      header={
+        <PageHeader
+          title={t("nav.items.dashboard.title", { defaultValue: "Dashboard" })}
+          subtitle={t("page.dashboard.subtitle", {
             defaultValue: "Branch-scoped attendance summary across a date range.",
           })}
-        </p>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-          <CardDescription>
-            Pick a date range and a “late after” cutoff.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-3 text-sm sm:grid-cols-4">
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Start date</Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">End date</Label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Late after</Label>
-              <Input
-                type="time"
-                value={lateAfter}
-                onChange={(e) => setLateAfter(e.target.value)}
-              />
-            </div>
-
-            <div className="flex items-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => dailyQ.refetch()}
-                disabled={!branchId || Boolean(dateError)}
-              >
-                Refresh
-              </Button>
-            </div>
-          </div>
-
-          {!branchId && (
-            <div className="text-sm text-muted-foreground">
-              Select a branch to view the dashboard.
-            </div>
-          )}
-
-          {dateError && <div className="text-sm text-destructive">{dateError}</div>}
-        </CardContent>
-      </Card>
-
-      {branchId && !dateError && (
+          meta={
+            branchId ? (
+              <span className="rounded-full border border-border-subtle bg-surface-1 px-3 py-1 text-xs text-text-2">
+                branch_id: {branchId}
+              </span>
+            ) : (
+              <span className="rounded-full border border-border-subtle bg-surface-1 px-3 py-1 text-xs text-text-2">
+                Select a branch to view metrics
+              </span>
+            )
+          }
+        />
+      }
+      main={
         <>
-          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardContent className="p-5">
-                <div className="text-xs uppercase text-muted-foreground">
-                  Avg Present
-                </div>
-                <div className="mt-2 text-2xl font-semibold">
-                  {summary.presentAvg}
-                </div>
-                <div className="text-xs text-muted-foreground">per day</div>
-              </CardContent>
-            </Card>
+          <DSCard surface="card" className="p-[var(--ds-space-20)]">
+            <div className="space-y-1">
+              <div className="text-base font-semibold tracking-tight text-text-1">
+                Filters
+              </div>
+              <div className="text-sm text-text-2">
+                Pick a date range and a late-after cutoff.
+              </div>
+            </div>
 
-            <Card>
-              <CardContent className="p-5">
-                <div className="text-xs uppercase text-muted-foreground">
-                  Avg Absent
+            <div className="mt-4 space-y-3">
+              <div className="grid gap-3 text-sm sm:grid-cols-4">
+                <div className="space-y-1">
+                  <Label className="text-xs text-text-2">Start date</Label>
+                  <Input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
                 </div>
-                <div className="mt-2 text-2xl font-semibold">
-                  {summary.absentAvg}
-                </div>
-                <div className="text-xs text-muted-foreground">per day</div>
-              </CardContent>
-            </Card>
 
-            <Card>
-              <CardContent className="p-5">
-                <div className="text-xs uppercase text-muted-foreground">
-                  Avg Late
+                <div className="space-y-1">
+                  <Label className="text-xs text-text-2">End date</Label>
+                  <Input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                  />
                 </div>
-                <div className="mt-2 text-2xl font-semibold">
-                  {summary.lateAvg}
-                </div>
-                <div className="text-xs text-muted-foreground">per day</div>
-              </CardContent>
-            </Card>
 
-            <Card>
-              <CardContent className="p-5">
-                <div className="text-xs uppercase text-muted-foreground">
-                  Avg Worked
+                <div className="space-y-1">
+                  <Label className="text-xs text-text-2">Late after</Label>
+                  <Input
+                    type="time"
+                    value={lateAfter}
+                    onChange={(e) => setLateAfter(e.target.value)}
+                  />
                 </div>
-                <div className="mt-2 text-2xl font-semibold">
-                  {summary.avgWorkedMinutes ?? "—"}
-                </div>
-                <div className="text-xs text-muted-foreground">minutes</div>
-              </CardContent>
-            </Card>
-          </section>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Month Attendance (Daily)</CardTitle>
-              <CardDescription>Present/absent breakdown per day.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {dailyQ.isLoading ? (
-                <div className="text-sm text-muted-foreground">Loading…</div>
-              ) : dailyQ.isError ? (
-                <div className="text-sm text-destructive">
-                  {String(dailyQ.error)}
-                </div>
-              ) : (
-                <AttendanceBars rows={rows} />
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-2">
-                <CardTitle>Punch‑in Time Trend</CardTitle>
-                <div className="text-xs text-muted-foreground">
-                  Avg: {formatMinutes(summary.avgPunchInMinutes)}
+                <div className="flex items-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => dailyQ.refetch()}
+                    disabled={!branchId || Boolean(dateError)}
+                    className="border-border-subtle bg-surface-1 hover:bg-surface-2"
+                  >
+                    Refresh
+                  </Button>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <PunchInTrend rows={rows} />
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Daily Table</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {rows.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No data yet.</div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Present</TableHead>
-                      <TableHead>Absent</TableHead>
-                      <TableHead>Late</TableHead>
-                      <TableHead>Avg Worked</TableHead>
-                      <TableHead>Avg Punch‑in</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((r) => (
-                      <TableRow key={r.business_date}>
-                        <TableCell className="whitespace-nowrap">
-                          {r.business_date}
-                        </TableCell>
-                        <TableCell className="tabular-nums">
-                          {r.present_count}
-                        </TableCell>
-                        <TableCell className="tabular-nums">
-                          {r.absent_count}
-                        </TableCell>
-                        <TableCell className="tabular-nums">
-                          {r.late_count}
-                        </TableCell>
-                        <TableCell className="tabular-nums">
-                          {r.avg_worked_minutes === null
-                            ? "—"
-                            : Math.round(r.avg_worked_minutes)}
-                        </TableCell>
-                        <TableCell className="tabular-nums">
-                          {formatMinutes(r.avg_punch_in_minutes)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+              {dateError ? (
+                <div className="text-sm text-destructive">{dateError}</div>
+              ) : null}
+            </div>
+          </DSCard>
+
+          {branchId && !dateError ? (
+            <>
+              <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <DSCard surface="panel" className="p-[var(--ds-space-20)]">
+                  <div className="text-xs uppercase text-text-2">Avg Present</div>
+                  <div className="mt-2 text-2xl font-semibold text-text-1">
+                    {summary.presentAvg}
+                  </div>
+                  <div className="text-xs text-text-2">per day</div>
+                </DSCard>
+
+                <DSCard surface="panel" className="p-[var(--ds-space-20)]">
+                  <div className="text-xs uppercase text-text-2">Avg Absent</div>
+                  <div className="mt-2 text-2xl font-semibold text-text-1">
+                    {summary.absentAvg}
+                  </div>
+                  <div className="text-xs text-text-2">per day</div>
+                </DSCard>
+
+                <DSCard surface="panel" className="p-[var(--ds-space-20)]">
+                  <div className="text-xs uppercase text-text-2">Avg Late</div>
+                  <div className="mt-2 text-2xl font-semibold text-text-1">
+                    {summary.lateAvg}
+                  </div>
+                  <div className="text-xs text-text-2">per day</div>
+                </DSCard>
+
+                <DSCard surface="panel" className="p-[var(--ds-space-20)]">
+                  <div className="text-xs uppercase text-text-2">Avg Worked</div>
+                  <div className="mt-2 text-2xl font-semibold text-text-1">
+                    {summary.avgWorkedMinutes ?? "-"}
+                  </div>
+                  <div className="text-xs text-text-2">minutes</div>
+                </DSCard>
+              </section>
+
+              <DSCard surface="card" className="p-[var(--ds-space-20)]">
+                <div className="space-y-1">
+                  <div className="text-base font-semibold tracking-tight text-text-1">
+                    Month Attendance (Daily)
+                  </div>
+                  <div className="text-sm text-text-2">
+                    Present/absent breakdown per day.
+                  </div>
+                </div>
+                <div className="mt-4">
+                  {dailyQ.isLoading ? (
+                    <div className="text-sm text-text-2">Loading...</div>
+                  ) : dailyQ.isError ? (
+                    <div className="text-sm text-destructive">
+                      {String(dailyQ.error)}
+                    </div>
+                  ) : (
+                    <AttendanceBars rows={rows} />
+                  )}
+                </div>
+              </DSCard>
+
+              <DSCard surface="card" className="p-[var(--ds-space-20)]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-base font-semibold tracking-tight text-text-1">
+                    Punch-in Time Trend
+                  </div>
+                  <div className="text-xs text-text-2">
+                    Avg: {formatMinutes(summary.avgPunchInMinutes)}
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <PunchInTrend rows={rows} />
+                </div>
+              </DSCard>
+
+              <DSCard surface="card" className="p-[var(--ds-space-20)]">
+                <div className="text-base font-semibold tracking-tight text-text-1">
+                  Daily Table
+                </div>
+                <div className="mt-4">
+                  {rows.length === 0 ? (
+                    <div className="text-sm text-text-2">No data yet.</div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Present</TableHead>
+                          <TableHead>Absent</TableHead>
+                          <TableHead>Late</TableHead>
+                          <TableHead>Avg Worked</TableHead>
+                          <TableHead>Avg Punch-in</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {rows.map((r) => (
+                          <TableRow key={r.business_date}>
+                            <TableCell className="whitespace-nowrap">
+                              {r.business_date}
+                            </TableCell>
+                            <TableCell className="tabular-nums">
+                              {r.present_count}
+                            </TableCell>
+                            <TableCell className="tabular-nums">
+                              {r.absent_count}
+                            </TableCell>
+                            <TableCell className="tabular-nums">
+                              {r.late_count}
+                            </TableCell>
+                            <TableCell className="tabular-nums">
+                              {r.avg_worked_minutes === null
+                                ? "-"
+                                : Math.round(r.avg_worked_minutes)}
+                            </TableCell>
+                            <TableCell className="tabular-nums">
+                              {formatMinutes(r.avg_punch_in_minutes)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
+              </DSCard>
+            </>
+          ) : null}
         </>
-      )}
-    </div>
+      }
+      right={
+        <RightPanelStack>
+          <DSCard surface="panel" className="p-[var(--ds-space-20)]">
+            <div className="text-sm font-medium text-text-1">Scope</div>
+            <div className="mt-2 space-y-1 text-sm text-text-2">
+              <div>
+                <span className="text-text-3">branch_id</span>:{" "}
+                <span className="font-mono text-xs">{branchId ?? "-"}</span>
+              </div>
+            </div>
+            <div className="mt-3 text-xs text-text-3">
+              Payroll/attendance are computed on branch timezone. Always verify you are
+              looking at the correct branch.
+            </div>
+          </DSCard>
+
+          <DSCard surface="panel" className="p-[var(--ds-space-20)]">
+            <div className="text-sm font-medium text-text-1">Support</div>
+            <div className="mt-2 text-sm text-text-2">
+              If a metric looks wrong, check the date range and branch selection. When
+              reporting issues, include the correlation id from the error banner.
+            </div>
+          </DSCard>
+        </RightPanelStack>
+      }
+    />
   );
 }

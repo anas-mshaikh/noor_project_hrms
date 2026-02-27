@@ -21,9 +21,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       <TopBar />
 
-      <div className="shell-main relative flex min-h-[calc(100vh-56px)]">
+      <div className="shell-main relative flex min-h-[calc(100vh-56px)] items-start">
         <SidebarRail />
-        <main className="flex-1 px-4 py-6 md:px-6">
+        <main className="min-w-0 flex-1 px-4 py-6 md:px-6">
           {/* Keep content centered without affecting the rail's edge positioning (LTR/RTL). */}
           <div className="mx-auto w-full max-w-7xl">{children}</div>
         </main>

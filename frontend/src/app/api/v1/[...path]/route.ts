@@ -86,6 +86,10 @@ function passthroughHeaders(backendRes: Response): Headers {
   for (const [k, v] of backendRes.headers.entries()) {
     const key = k.toLowerCase();
     if (key === "set-cookie") continue;
+    // If we rewrite or re-stream the body (e.g. auth endpoints), these can
+    // easily become invalid and cause the browser to reject the response.
+    if (key === "content-length") continue;
+    if (key === "content-encoding") continue;
     if (key === "connection") continue;
     if (key === "keep-alive") continue;
     if (key === "transfer-encoding") continue;

@@ -117,6 +117,46 @@ function isScopeErrorCode(code: string): boolean {
   );
 }
 
+function clearSelectionForScopeError(code: string): void {
+  /**
+   * If the scope stored in localStorage drifts (e.g. old company/branch), the
+   * backend will fail-closed with `iam.scope.forbidden` and even `/auth/me`
+   * can become inaccessible (because it uses the same scope headers).
+   *
+   * To recover without forcing users to open devtools, we clear the invalid
+   * selection bits before sending them to `/scope`.
+   *
+   * IMPORTANT:
+   * - For `tenant_required`, we keep selection untouched.
+   * - For forbidden tenant, we also clear the tenant id so the user can re-pick.
+   */
+  if (typeof window === "undefined") return;
+  if (code === "iam.scope.tenant_required") return;
+
+  const key = "attendance-admin-selection";
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return;
+
+    const parsed = JSON.parse(raw) as { state?: Record<string, unknown>; version?: number };
+    if (!parsed || typeof parsed !== "object" || !parsed.state || typeof parsed.state !== "object") {
+      return;
+    }
+
+    // Clear dependent scope selections first.
+    delete parsed.state.companyId;
+    delete parsed.state.branchId;
+    delete parsed.state.cameraId;
+    if (code === "iam.scope.forbidden_tenant") {
+      delete parsed.state.tenantId;
+    }
+
+    window.localStorage.setItem(key, JSON.stringify(parsed));
+  } catch {
+    // Best-effort only.
+  }
+}
+
 function unwrapOkEnvelope<T>(raw: unknown): T {
   if (raw && typeof raw === "object" && "ok" in raw) {
     const env = raw as EnvelopeOk<T> | EnvelopeErr;
@@ -193,6 +233,7 @@ function maybeRedirectOnError(err: ApiError): void {
     return;
   }
   if (err.code && isScopeErrorCode(err.code)) {
+    clearSelectionForScopeError(err.code);
     redirectToScopeIfNeeded(err.code, err.correlationId);
   }
 }

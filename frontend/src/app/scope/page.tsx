@@ -19,6 +19,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { StorePicker } from "@/components/StorePicker";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useSelection } from "@/lib/selection";
 
 function reasonCopy(code: string | null): { title: string; body: string } {
   switch (code) {
@@ -49,6 +50,7 @@ function reasonCopy(code: string | null): { title: string; body: string } {
 export default function ScopePage() {
   const router = useRouter();
   const params = useSearchParams();
+  const resetSelection = useSelection((s) => s.reset);
 
   const reason = params.get("reason");
   const cid = params.get("cid");
@@ -83,10 +85,19 @@ export default function ScopePage() {
             <Button type="button" variant="secondary" onClick={() => router.push("/login")}>
               Sign in again
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                resetSelection();
+                router.refresh();
+              }}
+            >
+              Reset selection
+            </Button>
           </div>
         </CardContent>
       </Card>
     </div>
   );
 }
-

@@ -79,30 +79,38 @@ function ModuleTabs({ pathname, modules }: { pathname: string; modules: ModuleDe
 
 function TopBarIconButton({
   label,
+  description,
   onClick,
+  disabled,
   children,
 }: {
   label: string;
+  description?: string;
   onClick?: () => void;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          aria-label={label}
-          onClick={onClick}
-          className={cn(
-            "h-10 w-10 rounded-2xl border border-white/10 bg-white/[0.03] text-muted-foreground",
-            "hover:bg-white/[0.06] hover:text-foreground",
-            "focus-visible:ring-2 focus-visible:ring-violet-500/40 focus-visible:ring-offset-0"
-          )}
-        >
-          {children}
-        </Button>
+        {/* Radix tooltips won't trigger on disabled buttons; wrap in a span. */}
+        <span className="inline-flex">
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label={label}
+            onClick={disabled ? undefined : onClick}
+            disabled={disabled}
+            className={cn(
+              "h-10 w-10 rounded-2xl border border-white/10 bg-white/[0.03] text-muted-foreground",
+              "hover:bg-white/[0.06] hover:text-foreground",
+              "focus-visible:ring-2 focus-visible:ring-violet-500/40 focus-visible:ring-offset-0"
+            )}
+          >
+            {children}
+          </Button>
+        </span>
       </TooltipTrigger>
       <TooltipContent
         side="bottom"
@@ -110,6 +118,7 @@ function TopBarIconButton({
         className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-foreground shadow-lg backdrop-blur-xl"
       >
         <div className="text-xs font-medium">{label}</div>
+        {description ? <div className="mt-1 text-xs text-text-2">{description}</div> : null}
       </TooltipContent>
     </Tooltip>
   );
@@ -173,24 +182,16 @@ export function TopBar() {
         <div className="topbar-actions ml-auto flex items-center gap-2">
           <TopBarIconButton
             label={t("shell.notifications", { defaultValue: "Notifications" })}
-            onClick={() =>
-              toast(t("common.coming_soon", { defaultValue: "Coming soon" }), {
-                description: user
-                  ? t("shell.notifications_panel", { defaultValue: "Notifications panel" })
-                  : t("shell.sign_in_to_view_notifications", { defaultValue: "Sign in to view notifications" }),
-              })
-            }
+            description={t("common.not_available_v0", { defaultValue: "Not available in Client V0" })}
+            disabled
           >
             <Bell className="h-5 w-5" />
           </TopBarIconButton>
 
           <TopBarIconButton
             label={t("shell.help", { defaultValue: "Help" })}
-            onClick={() =>
-              toast(t("common.coming_soon", { defaultValue: "Coming soon" }), {
-                description: t("shell.help_shortcuts", { defaultValue: "Help & shortcuts" }),
-              })
-            }
+            description={t("common.not_available_v0", { defaultValue: "Not available in Client V0" })}
+            disabled
           >
             <CircleHelp className="h-5 w-5" />
           </TopBarIconButton>
@@ -259,12 +260,7 @@ export function TopBar() {
               </DropdownMenuSub>
               <DropdownMenuSeparator className="bg-white/10" />
               <DropdownMenuItem
-                onSelect={(e) => {
-                  e.preventDefault();
-                  toast(t("common.coming_soon", { defaultValue: "Coming soon" }), {
-                    description: t("shell.profile_page", { defaultValue: "Profile page" }),
-                  });
-                }}
+                disabled
               >
                 {t("shell.profile", { defaultValue: "Profile" })}
               </DropdownMenuItem>

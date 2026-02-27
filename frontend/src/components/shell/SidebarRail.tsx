@@ -52,15 +52,15 @@ export function SidebarRail() {
     <aside
       className={cn(
         "hidden w-[76px] shrink-0 bg-white/[0.02] backdrop-blur-xl md:flex",
+        // Keep the rail accessible even when main content scrolls.
+        "sticky top-14 h-[calc(100vh-56px)] self-start overflow-hidden",
         isRtl ? "border-l border-white/10" : "border-r border-white/10"
       )}
     >
       <div className="flex h-full w-full flex-col">
-        <div className="h-14" />
-
-        {/* Centered module navigation */}
-        <nav className="flex-1">
-          <div className="flex h-full flex-col items-center justify-center gap-3">
+        {/* Module navigation (scrollable if it ever grows). */}
+        <nav className="flex-1 overflow-y-auto overscroll-contain">
+          <div className="flex flex-col items-center gap-3 py-4">
             {(activeModule?.sidebar ?? []).map((item) => {
               const active = isNavItemActive(item, pathname);
               const Icon = item.icon;
@@ -131,7 +131,7 @@ export function SidebarRail() {
         </nav>
 
         {/* Context picker shortcut (optional but important for this app). */}
-        <div className="flex items-center justify-center p-3">
+        <div className="flex shrink-0 items-center justify-center p-3">
           <Sheet>
             <SheetTrigger asChild>
               <Button

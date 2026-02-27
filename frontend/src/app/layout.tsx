@@ -3,6 +3,9 @@ import { cookies } from "next/headers";
 import { headers } from "next/headers";
 import "./globals.css";
 
+import { GeistMono } from "geist/font/mono";
+import { GeistSans } from "geist/font/sans";
+
 import { Providers } from "./providers";
 import { Shell } from "@/components/Shell";
 import {
@@ -35,8 +38,12 @@ export default async function RootLayout({
   const dir = localeToDir(locale);
 
   return (
-    <html lang={locale} dir={dir} className="dark">
-      <body className="antialiased">
+    <html
+      lang={locale}
+      dir={dir}
+      className={`dark ${GeistSans.variable} ${GeistMono.variable}`}
+    >
+      <body className="antialiased font-sans">
         <Providers>
           <Shell>{children}</Shell>
         </Providers>

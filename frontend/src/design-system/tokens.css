@@ -1,0 +1,105 @@
+/*
+Design system tokens (v0).
+
+This file defines UI foundation primitives as CSS variables so components can be
+consistent and future-proof without requiring a separate package.
+
+Notes:
+- Dark mode is the default in this app (`<html class="dark">`).
+- Values are intentionally conservative ("quiet + functional") to keep the UI
+  premium without being loud.
+*/
+
+:root {
+  /* ----- Surfaces (light fallback) ----- */
+  --ds-surface-0: var(--background);
+  --ds-surface-1: oklch(0.985 0 0);
+  --ds-surface-2: oklch(1 0 0);
+  --ds-surface-3: oklch(1 0 0);
+
+  /* ----- Borders (light fallback) ----- */
+  --ds-border-subtle: var(--border);
+  --ds-border-strong: var(--input);
+
+  /* ----- Text levels ----- */
+  --ds-text-1: var(--foreground);
+  --ds-text-2: var(--muted-foreground);
+  --ds-text-3: var(--muted-foreground);
+
+  /* ----- Semantic colors (v0) ----- */
+  --ds-success: oklch(0.76 0.19 150);
+  --ds-warning: oklch(0.86 0.17 85);
+  --ds-danger: var(--destructive);
+  --ds-info: var(--primary);
+
+  /* ----- Radii scale ----- */
+  --ds-radius-12: 0.75rem;
+  --ds-radius-16: 1rem;
+  --ds-radius-20: 1.25rem;
+  --ds-radius-28: 1.75rem;
+
+  /* ----- Spacing scale ----- */
+  --ds-space-4: 0.25rem;
+  --ds-space-8: 0.5rem;
+  --ds-space-12: 0.75rem;
+  --ds-space-16: 1rem;
+  --ds-space-20: 1.25rem;
+  --ds-space-24: 1.5rem;
+
+  /* ----- Elevation (shadows) ----- */
+  --ds-elevation-subtle: 0 18px 60px -40px rgba(0, 0, 0, 0.35);
+  --ds-elevation-panel: 0 12px 40px -30px rgba(0, 0, 0, 0.28);
+  --ds-elevation-glow: 0 0 0 1px rgba(168, 85, 247, 0.14),
+    0 20px 60px -45px rgba(168, 85, 247, 0.22);
+
+  /* ----- Motion tokens ----- */
+  --ds-duration-fast: 120ms;
+  --ds-duration-normal: 180ms;
+  --ds-duration-slow: 240ms;
+  --ds-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ds-ease-entrance: cubic-bezier(0.2, 0.9, 0.2, 1);
+
+  /* ----- Density (comfortable default) ----- */
+  --ds-row-h: 44px;
+  --ds-row-px: 16px;
+  --ds-row-py: 10px;
+}
+
+.dark {
+  /* ----- Surfaces (dark glass) ----- */
+  --ds-surface-0: var(--background);
+  --ds-surface-1: oklch(1 0 0 / 0.03);
+  --ds-surface-2: oklch(1 0 0 / 0.05);
+  --ds-surface-3: oklch(1 0 0 / 0.08);
+
+  /* ----- Borders (dark glass) ----- */
+  --ds-border-subtle: oklch(1 0 0 / 0.10);
+  --ds-border-strong: oklch(1 0 0 / 0.18);
+
+  /* ----- Text levels (dark) ----- */
+  --ds-text-1: var(--foreground);
+  --ds-text-2: var(--muted-foreground);
+  --ds-text-3: oklch(1 0 0 / 0.55);
+
+  /* Keep semantic colors readable in dark mode. */
+  --ds-success: oklch(0.78 0.18 150);
+  --ds-warning: oklch(0.86 0.17 85);
+  --ds-danger: var(--destructive);
+  --ds-info: var(--primary);
+
+  /* In dark mode we want richer shadows. */
+  --ds-elevation-subtle: 0 18px 60px -40px rgba(0, 0, 0, 0.85);
+  --ds-elevation-panel: 0 12px 40px -30px rgba(0, 0, 0, 0.75);
+}
+
+.ds-density-comfortable {
+  --ds-row-h: 44px;
+  --ds-row-px: 16px;
+  --ds-row-py: 10px;
+}
+
+.ds-density-compact {
+  --ds-row-h: 36px;
+  --ds-row-px: 12px;
+  --ds-row-py: 8px;
+}

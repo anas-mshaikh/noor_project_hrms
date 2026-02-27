@@ -19,6 +19,7 @@ import { usePathname } from "next/navigation";
 
 import { apiJson } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useSelection } from "@/lib/selection";
 import type { MeResponse } from "@/lib/types";
 
 export function AuthBootstrap(): null {
@@ -26,15 +27,45 @@ export function AuthBootstrap(): null {
   const setFromSession = useAuth((s) => s.setFromSession);
   const clear = useAuth((s) => s.clear);
 
+  const selectedTenantId = useSelection((s) => s.tenantId);
+  const selectedCompanyId = useSelection((s) => s.companyId);
+  const selectedBranchId = useSelection((s) => s.branchId);
+  const setTenantId = useSelection((s) => s.setTenantId);
+  const setCompanyId = useSelection((s) => s.setCompanyId);
+  const setBranchId = useSelection((s) => s.setBranchId);
+
   useEffect(() => {
     // Avoid noisy calls while the user is explicitly on the login page.
-    if (pathname === "/login") return;
+    //
+    // Also skip /setup: it must be reachable on a fresh DB so the user can run
+    // bootstrap without being redirected to /login by the global 401 handler.
+    if (pathname === "/login" || pathname === "/setup") return;
 
     let cancelled = false;
     (async () => {
       try {
         const me = await apiJson<MeResponse>("/api/v1/auth/me");
-        if (!cancelled) setFromSession(me);
+        if (cancelled) return;
+
+        setFromSession(me);
+
+        // Keep local selection aligned with the server-validated scope.
+        // This prevents stale company/branch ids from locking users into
+        // `iam.scope.forbidden` loops.
+        const tenantId = String(me.scope.tenant_id);
+        const companyId = me.scope.company_id ? String(me.scope.company_id) : undefined;
+        const branchId = me.scope.branch_id ? String(me.scope.branch_id) : undefined;
+
+        if (selectedTenantId !== tenantId) {
+          // Changing tenant clears dependent selections.
+          setTenantId(tenantId);
+        }
+        if (selectedCompanyId !== companyId) {
+          setCompanyId(companyId);
+        }
+        if (selectedBranchId !== branchId) {
+          setBranchId(branchId);
+        }
       } catch {
         if (!cancelled) clear();
       }
@@ -43,8 +74,17 @@ export function AuthBootstrap(): null {
     return () => {
       cancelled = true;
     };
-  }, [pathname, setFromSession, clear]);
+  }, [
+    pathname,
+    setFromSession,
+    clear,
+    selectedTenantId,
+    selectedCompanyId,
+    selectedBranchId,
+    setTenantId,
+    setCompanyId,
+    setBranchId,
+  ]);
 
   return null;
 }
-
