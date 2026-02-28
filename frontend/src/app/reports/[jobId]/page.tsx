@@ -10,11 +10,11 @@
  * - artifacts (CSV/JSON/PDF download links)
  *
  * Backend endpoints used:
- * - GET /api/v1/jobs/{job_id}/attendance
- * - GET /api/v1/jobs/{job_id}/events?limit=1000
- * - GET /api/v1/jobs/{job_id}/metrics/hourly
- * - GET /api/v1/jobs/{job_id}/artifacts
- * - GET /api/v1/artifacts/{artifact_id}/download
+ * - GET /api/v1/branches/{branch_id}/jobs/{job_id}/attendance
+ * - GET /api/v1/branches/{branch_id}/jobs/{job_id}/events?limit=1000
+ * - GET /api/v1/branches/{branch_id}/jobs/{job_id}/metrics/hourly
+ * - GET /api/v1/branches/{branch_id}/jobs/{job_id}/artifacts
+ * - GET /api/v1/branches/{branch_id}/artifacts/{artifact_id}/download
  */
 
 import Link from "next/link";
@@ -22,7 +22,9 @@ import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "@/lib/i18n";
 
-import { apiJson, apiUrl } from "@/lib/api";
+import { apiDownload, apiJson, saveBlobAsFile } from "@/lib/api";
+import { toastApiError } from "@/lib/toastApiError";
+import { useSelection } from "@/lib/selection";
 import type {
   ArtifactOut,
   AttendanceOut,
@@ -52,31 +54,43 @@ export default function ReportPage() {
   const { t } = useTranslation();
   const params = useParams<{ jobId: string }>();
   const jobId = Array.isArray(params?.jobId) ? params.jobId[0] : params?.jobId;
+  const branchId = useSelection((s) => s.branchId);
 
   const attendanceQ = useQuery({
-    queryKey: ["attendance", jobId],
-    enabled: Boolean(jobId),
+    queryKey: ["attendance", branchId, jobId],
+    enabled: Boolean(jobId && branchId),
     queryFn: () => {
       if (!jobId) throw new Error("Missing jobId");
-      return apiJson<AttendanceOut[]>(`/api/v1/jobs/${jobId}/attendance`);
+      if (!branchId) throw new Error("Missing branchId");
+      return apiJson<AttendanceOut[]>(
+        `/api/v1/branches/${branchId}/jobs/${jobId}/attendance`
+      );
     },
   });
 
   const eventsQ = useQuery({
-    queryKey: ["events", jobId],
+    queryKey: ["events", branchId, jobId],
+    enabled: Boolean(jobId && branchId),
     queryFn: () =>
-      apiJson<EventOut[]>(`/api/v1/jobs/${jobId}/events?limit=1000`),
+      apiJson<EventOut[]>(
+        `/api/v1/branches/${branchId}/jobs/${jobId}/events?limit=1000`
+      ),
   });
 
   const metricsQ = useQuery({
-    queryKey: ["metrics-hourly", jobId],
+    queryKey: ["metrics-hourly", branchId, jobId],
+    enabled: Boolean(jobId && branchId),
     queryFn: () =>
-      apiJson<MetricsHourlyOut[]>(`/api/v1/jobs/${jobId}/metrics/hourly`),
+      apiJson<MetricsHourlyOut[]>(
+        `/api/v1/branches/${branchId}/jobs/${jobId}/metrics/hourly`
+      ),
   });
 
   const artifactsQ = useQuery({
-    queryKey: ["artifacts", jobId],
-    queryFn: () => apiJson<ArtifactOut[]>(`/api/v1/jobs/${jobId}/artifacts`),
+    queryKey: ["artifacts", branchId, jobId],
+    enabled: Boolean(jobId && branchId),
+    queryFn: () =>
+      apiJson<ArtifactOut[]>(`/api/v1/branches/${branchId}/jobs/${jobId}/artifacts`),
   });
 
   if (!jobId) {
@@ -88,6 +102,24 @@ export default function ReportPage() {
             Missing jobId in route.
           </CardDescription>
         </CardHeader>
+      </Card>
+    );
+  }
+
+  if (!branchId) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Report</CardTitle>
+          <CardDescription className="text-muted-foreground">
+            Select a branch to view this report.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button asChild variant="outline">
+            <Link href="/scope">Select branch</Link>
+          </Button>
+        </CardContent>
       </Card>
     );
   }
@@ -231,14 +263,23 @@ export default function ReportPage() {
                       </div>
                     </div>
 
-                    <Button asChild>
-                      <a
-                        href={apiUrl(`/api/v1/artifacts/${a.id}/download`)}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Download
-                      </a>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        if (!branchId) return;
+                        void (async () => {
+                          try {
+                            const out = await apiDownload(
+                              `/api/v1/branches/${branchId}/artifacts/${a.id}/download`
+                            );
+                            saveBlobAsFile(out.blob, out.filename);
+                          } catch (e) {
+                            toastApiError(e, t);
+                          }
+                        })();
+                      }}
+                    >
+                      Download
                     </Button>
                   </div>
 

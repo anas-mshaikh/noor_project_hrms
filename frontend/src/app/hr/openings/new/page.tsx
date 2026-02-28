@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTranslation } from "@/lib/i18n";
+import { toastApiError } from "@/lib/toastApiError";
 
 import { HrPageShell } from "@/features/hr/components/layout/HrPageShell";
 import { HrHeader } from "@/features/hr/components/layout/HrHeader";
@@ -78,9 +79,7 @@ export default function HROpeningsNewPage() {
               router.push(`/hr/openings/${created.id}`);
             },
             onError: (err) => {
-              toast(t("hr.openings_new_page.toast_failed", { defaultValue: "Failed to create opening" }), {
-                description: err instanceof Error ? err.message : "Unknown error",
-              });
+              toastApiError(err, t);
             },
           });
         }}

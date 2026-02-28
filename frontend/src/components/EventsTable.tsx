@@ -4,7 +4,7 @@
  * components/EventsTable.tsx
  *
  * Renders events from:
- *   GET /api/v1/jobs/{job_id}/events?limit=...
+ *   GET /api/v1/branches/{branch_id}/jobs/{job_id}/events?limit=...
  *
  * We highlight inferred events because they are important edge-cases:
  * - first_seen_inside (inferred entry)
@@ -15,6 +15,7 @@ import { useState } from "react";
 
 import type { EventOut } from "@/lib/types";
 import { apiUrl } from "@/lib/api";
+import { useSelection } from "@/lib/selection";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -54,6 +55,12 @@ function getReason(meta: Record<string, unknown>): string | null {
 
 export function EventsTable({ rows }: { rows: EventOut[] }) {
   const [preview, setPreview] = useState<EventOut | null>(null);
+  const branchId = useSelection((s) => s.branchId);
+
+  const snapshotPathFor = (eventId: string): string | null => {
+    if (!branchId) return null;
+    return `/api/v1/branches/${branchId}/events/${eventId}/snapshot`;
+  };
 
   if (rows.length === 0) {
     return <div className="text-sm text-muted-foreground">No events.</div>;
@@ -76,23 +83,31 @@ export function EventsTable({ rows }: { rows: EventOut[] }) {
             </DialogHeader>
 
             <div className="mt-3">
-              <img
-                src={apiUrl(`/api/v1/events/${preview.id}/snapshot`)}
-                alt={`${preview.event_type} snapshot`}
-                className="max-h-[72vh] w-full rounded object-contain"
-              />
+              {snapshotPathFor(preview.id) ? (
+                <img
+                  src={apiUrl(snapshotPathFor(preview.id)!)}
+                  alt={`${preview.event_type} snapshot`}
+                  className="max-h-[72vh] w-full rounded object-contain"
+                />
+              ) : (
+                <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+                  Select a branch to preview snapshots.
+                </div>
+              )}
             </div>
 
             <DialogFooter className="mt-4">
-              <Button asChild variant="outline">
-                <a
-                  href={apiUrl(`/api/v1/events/${preview.id}/snapshot`)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open in new tab
-                </a>
-              </Button>
+              {snapshotPathFor(preview.id) ? (
+                <Button asChild variant="outline">
+                  <a
+                    href={apiUrl(snapshotPathFor(preview.id)!)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open in new tab
+                  </a>
+                </Button>
+              ) : null}
               <Button type="button" onClick={() => setPreview(null)}>
                 Close
               </Button>
@@ -143,7 +158,7 @@ export function EventsTable({ rows }: { rows: EventOut[] }) {
                 </TableCell>
 
                 <TableCell>
-                  {e.snapshot_path ? (
+                  {e.snapshot_path && snapshotPathFor(e.id) ? (
                     <Button
                       type="button"
                       variant="ghost"
@@ -153,7 +168,7 @@ export function EventsTable({ rows }: { rows: EventOut[] }) {
                       onClick={() => setPreview(e)}
                     >
                       <img
-                        src={apiUrl(`/api/v1/events/${e.id}/snapshot`)}
+                        src={apiUrl(snapshotPathFor(e.id)!)}
                         alt={`${e.event_type} snapshot`}
                         className="h-10 w-10 rounded-md border object-cover"
                         loading="lazy"

@@ -9,9 +9,9 @@
  * - Link to report once DONE
  *
  * Backend endpoints used:
- * - GET  /api/v1/jobs/{job_id}
- * - POST /api/v1/jobs/{job_id}/cancel
- * - POST /api/v1/jobs/{job_id}/retry
+ * - GET  /api/v1/branches/{branch_id}/jobs/{job_id}
+ * - POST /api/v1/branches/{branch_id}/jobs/{job_id}/cancel
+ * - POST /api/v1/branches/{branch_id}/jobs/{job_id}/retry
  */
 
 import Link from "next/link";
@@ -20,7 +20,9 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "@/lib/i18n";
 
 import { apiJson } from "@/lib/api";
+import { useSelection } from "@/lib/selection";
 import type { JobReadResponse } from "@/lib/types";
+import { ErrorState } from "@/components/ds/ErrorState";
 import {
   Card,
   CardContent,
@@ -49,13 +51,15 @@ export default function JobPage() {
   const { t } = useTranslation();
   const params = useParams<{ jobId: string }>();
   const jobId = Array.isArray(params?.jobId) ? params.jobId[0] : params?.jobId;
+  const branchId = useSelection((s) => s.branchId);
 
   const jobQ = useQuery({
-    queryKey: ["job", jobId],
-    enabled: Boolean(jobId),
+    queryKey: ["job", branchId, jobId],
+    enabled: Boolean(jobId && branchId),
     queryFn: () => {
       if (!jobId) throw new Error("Missing jobId");
-      return apiJson<JobReadResponse>(`/api/v1/jobs/${jobId}`);
+      if (!branchId) throw new Error("Missing branchId");
+      return apiJson<JobReadResponse>(`/api/v1/branches/${branchId}/jobs/${jobId}`);
     },
     refetchInterval: (query) => {
       const data = query.state.data as JobReadResponse | undefined;
@@ -67,7 +71,8 @@ export default function JobPage() {
   const cancelM = useMutation({
     mutationFn: () => {
       if (!jobId) throw new Error("Missing jobId");
-      return apiJson<JobActionResponse>(`/api/v1/jobs/${jobId}/cancel`, {
+      if (!branchId) throw new Error("Missing branchId");
+      return apiJson<JobActionResponse>(`/api/v1/branches/${branchId}/jobs/${jobId}/cancel`, {
         method: "POST",
       });
     },
@@ -77,7 +82,8 @@ export default function JobPage() {
   const retryM = useMutation({
     mutationFn: () => {
       if (!jobId) throw new Error("Missing jobId");
-      return apiJson<JobActionResponse>(`/api/v1/jobs/${jobId}/retry`, {
+      if (!branchId) throw new Error("Missing branchId");
+      return apiJson<JobActionResponse>(`/api/v1/branches/${branchId}/jobs/${jobId}/retry`, {
         method: "POST",
       });
     },
@@ -97,6 +103,24 @@ export default function JobPage() {
     );
   }
 
+  if (!branchId) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Job</CardTitle>
+          <CardDescription className="text-muted-foreground">
+            Select a branch to view this job.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button asChild variant="outline">
+            <Link href="/scope">Select branch</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (jobQ.isLoading) {
     return (
       <Card>
@@ -110,14 +134,7 @@ export default function JobPage() {
 
   if (jobQ.isError) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Job</CardTitle>
-          <CardDescription className="text-destructive">
-            {String(jobQ.error)}
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <ErrorState title="Job" error={jobQ.error} onRetry={() => jobQ.refetch()} />
     );
   }
 

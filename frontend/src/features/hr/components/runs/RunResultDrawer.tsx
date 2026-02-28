@@ -5,6 +5,7 @@ import { AlertTriangle, Code2, FileText, Loader2, Sparkles } from "lucide-react"
 import { toast } from "sonner";
 
 import type { ScreeningResultRowOut, UUID } from "@/lib/types";
+import { toastApiError } from "@/lib/toastApiError";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -185,9 +186,7 @@ export function RunResultDrawer({
                       },
                       onError: (err) => {
                         setPollExplain(false);
-                        toast("Could not queue explanation", {
-                          description: err instanceof Error ? err.message : "Unknown error",
-                        });
+                        toastApiError(err);
                       },
                     }
                   );

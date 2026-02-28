@@ -4,7 +4,7 @@
  * components/AttendanceTable.tsx
  *
  * Renders attendance rows from:
- *   GET /api/v1/jobs/{job_id}/attendance
+ *   GET /api/v1/branches/{branch_id}/jobs/{job_id}/attendance
  *
  * The backend intentionally returns ALL employees for the store/day:
  * - present employees have punch_in/punch_out

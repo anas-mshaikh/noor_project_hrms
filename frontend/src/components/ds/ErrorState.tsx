@@ -14,6 +14,8 @@ import * as React from "react";
 import Link from "next/link";
 
 import { ApiError } from "@/lib/api";
+import { getErrorUx } from "@/lib/errorUx";
+import { useSelection } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { DSCard } from "@/components/ds/DSCard";
@@ -34,14 +36,29 @@ export function ErrorState({
   variant?: "card" | "inline";
 }) {
   const apiErr = error instanceof ApiError ? error : null;
-  const message =
-    apiErr?.message ?? (error instanceof Error ? error.message : "Unexpected error");
+  const ux = getErrorUx(error);
+  const message = apiErr
+    ? ux.description
+    : error instanceof Error
+      ? error.message
+      : "Unexpected error";
+
+  const resetSelection = useSelection((s) => s.reset);
+  const [copied, setCopied] = React.useState(false);
+
+  const correlationId = apiErr?.correlationId ?? null;
+  const canCopy = Boolean(correlationId && typeof navigator !== "undefined" && navigator.clipboard);
+
+  const headerTitle = apiErr ? ux.title : title;
+  const showScopeCtas =
+    apiErr?.code.startsWith("iam.scope.") || ux.suggestedActionKind === "reset_scope";
+  const showLoginCta = apiErr?.status === 401 || ux.suggestedActionKind === "go_login";
 
   const content = (
     <div className="space-y-4">
       <div className="space-y-1">
         <div className="text-base font-semibold tracking-tight text-text-1">
-          {title}
+          {headerTitle}
         </div>
         <div className="text-sm text-text-2">{message}</div>
       </div>
@@ -58,10 +75,32 @@ export function ErrorState({
                   <span className="text-text-2">code</span>: {apiErr.code}
                 </div>
               ) : null}
-              {apiErr.correlationId ? (
-                <div>
-                  <span className="text-text-2">correlation_id</span>:{" "}
-                  <span className="font-mono text-xs">{apiErr.correlationId}</span>
+              {correlationId ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <div>
+                    <span className="text-text-2">reference</span>:{" "}
+                    <span className="font-mono text-xs">{correlationId}</span>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!canCopy}
+                    onClick={() => {
+                      if (!correlationId) return;
+                      void navigator.clipboard.writeText(correlationId).then(
+                        () => {
+                          setCopied(true);
+                          window.setTimeout(() => setCopied(false), 1200);
+                        },
+                        () => {
+                          // Best-effort only.
+                        }
+                      );
+                    }}
+                  >
+                    {copied ? "Copied" : "Copy ref"}
+                  </Button>
                 </div>
               ) : null}
             </div>
@@ -76,12 +115,26 @@ export function ErrorState({
             Try again
           </Button>
         ) : null}
-        <Button asChild variant="secondary">
+        {showScopeCtas ? (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              resetSelection();
+              window.location.assign("/scope?reason=iam.scope.forbidden");
+            }}
+          >
+            Reset selection
+          </Button>
+        ) : null}
+        <Button asChild variant={showScopeCtas ? "outline" : "secondary"}>
           <Link href="/scope">Scope</Link>
         </Button>
-        <Button asChild variant="outline">
-          <Link href="/login">Sign in</Link>
-        </Button>
+        {showLoginCta ? (
+          <Button asChild variant="outline">
+            <Link href="/login">Sign in</Link>
+          </Button>
+        ) : null}
       </div>
     </div>
   );

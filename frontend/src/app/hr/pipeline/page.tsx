@@ -5,6 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { ChevronDown, Sparkles } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
+import { toastApiError } from "@/lib/toastApiError";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -148,10 +149,7 @@ export default function HRPipelinePage() {
       {
         onSuccess: () =>
           toast(t("hr.pipeline_page.moved_toast", { defaultValue: "Moved" })),
-        onError: (err) =>
-          toast(t("hr.pipeline_page.move_failed", { defaultValue: "Could not move" }), {
-            description: err instanceof Error ? err.message : "Unknown error",
-          }),
+        onError: (err) => toastApiError(err, t),
       }
     );
   }

@@ -39,6 +39,13 @@ function reasonCopy(code: string | null): { title: string; body: string } {
         title: "Scope mismatch",
         body: "Your request scope did not match the selected scope. Re-select your tenant/company/branch and try again.",
       };
+    case "iam.scope.invalid_tenant":
+    case "iam.scope.invalid_company":
+    case "iam.scope.invalid_branch":
+      return {
+        title: "Invalid selection",
+        body: "Your selection is invalid or expired. Re-select your tenant/company/branch and try again.",
+      };
     default:
       return {
         title: "Select context",

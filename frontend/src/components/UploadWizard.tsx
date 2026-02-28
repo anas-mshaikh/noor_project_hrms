@@ -18,7 +18,7 @@
  *     - computes sha256 and (best-effort) metadata via ffprobe
  *     - REQUIRED before job creation (backend enforces sha256 exists)
  *
- *  4) POST /api/v1/videos/{video_id}/jobs
+ *  4) POST /api/v1/branches/{branch_id}/videos/{video_id}/jobs
  *     - enqueues the worker job
  *
  * Notes:
@@ -199,7 +199,7 @@ export function UploadWizard() {
       // FastAPI expects a JSON body (JobCreateRequest).
       // config_overrides is optional but the body itself is required, so we send {}.
       const job = await apiJson<JobCreateResponse>(
-        `/api/v1/videos/${init.video_id}/jobs`,
+        `/api/v1/branches/${branchId}/videos/${init.video_id}/jobs`,
         {
           method: "POST",
           body: JSON.stringify({ config_overrides: {} }),

@@ -7,7 +7,7 @@
  * so this is a simple “table + tiny bars” view.
  *
  * Data source:
- *   GET /api/v1/jobs/{job_id}/metrics/hourly
+ *   GET /api/v1/branches/{branch_id}/jobs/{job_id}/metrics/hourly
  */
 
 import type { MetricsHourlyOut } from "@/lib/types";

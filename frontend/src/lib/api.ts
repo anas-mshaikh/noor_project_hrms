@@ -27,9 +27,12 @@ type EnvelopeErr = {
 
 export class ApiError extends Error {
   status: number;
-  code: string | null;
+  code: string;
   correlationId: string | null;
   details: unknown | null;
+  method: string | null;
+  endpoint: string | null;
+  isNetworkError: boolean;
 
   constructor(opts: {
     status: number;
@@ -37,13 +40,19 @@ export class ApiError extends Error {
     code?: string | null;
     correlationId?: string | null;
     details?: unknown | null;
+    method?: string | null;
+    endpoint?: string | null;
+    isNetworkError?: boolean;
   }) {
     super(opts.message);
     this.name = "ApiError";
     this.status = opts.status;
-    this.code = opts.code ?? null;
+    this.code = opts.code ?? "unknown";
     this.correlationId = opts.correlationId ?? null;
     this.details = opts.details ?? null;
+    this.method = opts.method ?? null;
+    this.endpoint = opts.endpoint ?? null;
+    this.isNetworkError = opts.isNetworkError ?? false;
   }
 }
 
@@ -113,8 +122,26 @@ function isScopeErrorCode(code: string): boolean {
     code === "iam.scope.tenant_required" ||
     code === "iam.scope.forbidden" ||
     code === "iam.scope.forbidden_tenant" ||
-    code === "iam.scope.mismatch"
+    code === "iam.scope.mismatch" ||
+    code === "iam.scope.invalid_tenant" ||
+    code === "iam.scope.invalid_company" ||
+    code === "iam.scope.invalid_branch"
   );
+}
+
+const SCOPE_TENANT_COOKIE = "noor_scope_tenant_id";
+const SCOPE_COMPANY_COOKIE = "noor_scope_company_id";
+const SCOPE_BRANCH_COOKIE = "noor_scope_branch_id";
+
+function cookieSecure(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.location.protocol === "https:" || process.env.NODE_ENV === "production";
+}
+
+function deleteCookie(name: string): void {
+  if (typeof document === "undefined") return;
+  const secure = cookieSecure() ? "; Secure" : "";
+  document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax${secure}`;
 }
 
 function clearSelectionForScopeError(code: string): void {
@@ -133,6 +160,13 @@ function clearSelectionForScopeError(code: string): void {
   if (typeof window === "undefined") return;
   if (code === "iam.scope.tenant_required") return;
 
+  // Keep the BFF cookie mirror aligned with the local selection reset.
+  deleteCookie(SCOPE_COMPANY_COOKIE);
+  deleteCookie(SCOPE_BRANCH_COOKIE);
+  if (code === "iam.scope.forbidden_tenant" || code === "iam.scope.invalid_tenant") {
+    deleteCookie(SCOPE_TENANT_COOKIE);
+  }
+
   const key = "attendance-admin-selection";
   try {
     const raw = window.localStorage.getItem(key);
@@ -147,7 +181,7 @@ function clearSelectionForScopeError(code: string): void {
     delete parsed.state.companyId;
     delete parsed.state.branchId;
     delete parsed.state.cameraId;
-    if (code === "iam.scope.forbidden_tenant") {
+    if (code === "iam.scope.forbidden_tenant" || code === "iam.scope.invalid_tenant") {
       delete parsed.state.tenantId;
     }
 
@@ -157,32 +191,51 @@ function clearSelectionForScopeError(code: string): void {
   }
 }
 
-function unwrapOkEnvelope<T>(raw: unknown): T {
+function correlationIdFrom(res: Response): string | null {
+  return res.headers.get("x-correlation-id") ?? res.headers.get("x-trace-id");
+}
+
+function unwrapOkEnvelopeOrThrow<T>(
+  raw: unknown,
+  ctx: {
+    status: number;
+    correlationId: string | null;
+    method: string;
+    endpoint: string;
+  }
+): T {
   if (raw && typeof raw === "object" && "ok" in raw) {
     const env = raw as EnvelopeOk<T> | EnvelopeErr;
     if (env.ok === true) return env.data;
     const err = (env as EnvelopeErr).error;
-    if (err && typeof err === "object") {
-      const code = String(err.code ?? "error");
-      const message = String(err.message ?? "Request failed");
-      const correlationId = err.correlation_id ? String(err.correlation_id) : null;
-      const details = err.details ?? null;
-      throw new ApiError({
-        status: 400,
-        code,
-        message: `${code}: ${message}`,
-        correlationId,
-        details,
-      });
-    }
-    throw new ApiError({ status: 400, code: "error", message: "Request failed" });
+    const code = String(err?.code ?? "unknown");
+    const message = String(err?.message ?? "Request failed");
+    const correlationId =
+      (err?.correlation_id ? String(err.correlation_id) : null) ?? ctx.correlationId;
+    const details = err?.details ?? null;
+
+    // Some legacy endpoints could theoretically return 200 with ok:false.
+    // We still treat it as a client-visible failure with a sensible status.
+    const status = ctx.status >= 200 && ctx.status < 300 ? 400 : ctx.status;
+    throw new ApiError({
+      status,
+      code,
+      message,
+      correlationId,
+      details,
+      method: ctx.method,
+      endpoint: ctx.endpoint,
+    });
   }
+
   return raw as T;
 }
 
-async function readError(res: Response): Promise<ApiError> {
-  const correlationId =
-    res.headers.get("x-correlation-id") ?? res.headers.get("x-trace-id");
+async function readError(
+  res: Response,
+  ctx: { method: string; endpoint: string }
+): Promise<ApiError> {
+  const correlationId = correlationIdFrom(res);
 
   const text = await res.text();
   try {
@@ -190,7 +243,7 @@ async function readError(res: Response): Promise<ApiError> {
     if (json && typeof json === "object") {
       if ("ok" in json && (json as EnvelopeErr).ok === false && (json as EnvelopeErr).error) {
         const err = (json as EnvelopeErr).error;
-        const code = String(err.code ?? "error");
+        const code = String(err.code ?? "unknown");
         const message = String(err.message ?? "Request failed");
         const cid =
           (err.correlation_id ? String(err.correlation_id) : null) ??
@@ -199,9 +252,11 @@ async function readError(res: Response): Promise<ApiError> {
         return new ApiError({
           status: res.status,
           code,
-          message: `${code}: ${message}`,
+          message,
           correlationId: cid,
           details,
+          method: ctx.method,
+          endpoint: ctx.endpoint,
         });
       }
       if ("detail" in json) {
@@ -209,9 +264,11 @@ async function readError(res: Response): Promise<ApiError> {
         const msg = typeof detail === "string" ? detail : JSON.stringify(detail);
         return new ApiError({
           status: res.status,
-          code: null,
+          code: "unknown",
           message: msg,
           correlationId,
+          method: ctx.method,
+          endpoint: ctx.endpoint,
         });
       }
     }
@@ -221,9 +278,11 @@ async function readError(res: Response): Promise<ApiError> {
 
   return new ApiError({
     status: res.status,
-    code: null,
+    code: "unknown",
     message: text || `${res.status} ${res.statusText}`,
     correlationId,
+    method: ctx.method,
+    endpoint: ctx.endpoint,
   });
 }
 
@@ -239,24 +298,46 @@ function maybeRedirectOnError(err: ApiError): void {
 }
 
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(apiUrl(path), {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...scopeHeaders(),
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  const method = String(init?.method ?? "GET").toUpperCase();
+  const endpoint = path;
+
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(path), {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...scopeHeaders(),
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+  } catch (e) {
+    throw new ApiError({
+      status: 0,
+      code: "network_error",
+      message: e instanceof Error ? e.message : "Network error",
+      correlationId: null,
+      details: null,
+      method,
+      endpoint,
+      isNetworkError: true,
+    });
+  }
 
   if (!res.ok) {
-    const err = await readError(res);
+    const err = await readError(res, { method, endpoint });
     maybeRedirectOnError(err);
     throw err;
   }
 
   const raw = (await res.json()) as unknown;
-  return unwrapOkEnvelope<T>(raw);
+  return unwrapOkEnvelopeOrThrow<T>(raw, {
+    status: res.status,
+    correlationId: correlationIdFrom(res),
+    method,
+    endpoint,
+  });
 }
 
 export async function apiForm<T>(
@@ -264,20 +345,37 @@ export async function apiForm<T>(
   form: FormData,
   init?: RequestInit
 ): Promise<T> {
+  const method = String(init?.method ?? "POST").toUpperCase();
+  const endpoint = path;
+
   // IMPORTANT: don't set Content-Type for FormData; browser sets boundary.
-  const res = await fetch(apiUrl(path), {
-    method: init?.method ?? "POST",
-    ...init,
-    body: form,
-    headers: {
-      ...scopeHeaders(),
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(path), {
+      method: init?.method ?? "POST",
+      ...init,
+      body: form,
+      headers: {
+        ...scopeHeaders(),
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+  } catch (e) {
+    throw new ApiError({
+      status: 0,
+      code: "network_error",
+      message: e instanceof Error ? e.message : "Network error",
+      correlationId: null,
+      details: null,
+      method,
+      endpoint,
+      isNetworkError: true,
+    });
+  }
 
   if (!res.ok) {
-    const err = await readError(res);
+    const err = await readError(res, { method, endpoint });
     maybeRedirectOnError(err);
     throw err;
   }
@@ -285,7 +383,12 @@ export async function apiForm<T>(
   // Some endpoints might return JSON, some might return text; handle both.
   const text = await res.text();
   try {
-    return unwrapOkEnvelope<T>(JSON.parse(text) as unknown);
+    return unwrapOkEnvelopeOrThrow<T>(JSON.parse(text) as unknown, {
+      status: res.status,
+      correlationId: correlationIdFrom(res),
+      method,
+      endpoint,
+    });
   } catch {
     return text as unknown as T;
   }
@@ -309,6 +412,8 @@ export function xhrUploadFormWithProgress<T>(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
+    const method = "PUT";
+    const endpoint = path;
 
     const scope = scopeHeaders();
     for (const [k, v] of Object.entries(scope)) {
@@ -321,21 +426,209 @@ export function xhrUploadFormWithProgress<T>(
     };
 
     xhr.onload = () => {
+      const correlationId =
+        xhr.getResponseHeader("x-correlation-id") ??
+        xhr.getResponseHeader("x-trace-id");
+
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          resolve(unwrapOkEnvelope<T>(JSON.parse(xhr.responseText) as unknown));
+          resolve(
+            unwrapOkEnvelopeOrThrow<T>(JSON.parse(xhr.responseText) as unknown, {
+              status: xhr.status,
+              correlationId,
+              method,
+              endpoint,
+            })
+          );
         } catch {
           resolve(xhr.responseText as unknown as T);
         }
       } else if (xhr.status === 401) {
         redirectToLoginIfNeeded();
-        reject(new ApiError({ status: 401, message: "unauthorized" }));
+        reject(
+          new ApiError({
+            status: 401,
+            code: "unauthorized",
+            message: "Unauthorized",
+            correlationId,
+            method,
+            endpoint,
+          })
+        );
       } else {
-        reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
+        // Try to parse a structured envelope error (preferred). Otherwise, fall back
+        // to a raw message.
+        try {
+          const json = JSON.parse(xhr.responseText) as EnvelopeErr;
+          if (json && typeof json === "object" && "ok" in json && json.ok === false && json.error) {
+            const cid =
+              (json.error.correlation_id ? String(json.error.correlation_id) : null) ??
+              correlationId;
+            const err = new ApiError({
+              status: xhr.status,
+              code: String(json.error.code ?? "unknown"),
+              message: String(json.error.message ?? "Request failed"),
+              correlationId: cid,
+              details: json.error.details ?? null,
+              method,
+              endpoint,
+            });
+            maybeRedirectOnError(err);
+            reject(err);
+            return;
+          }
+        } catch {
+          // ignore
+        }
+
+        const err = new ApiError({
+          status: xhr.status,
+          code: "unknown",
+          message: xhr.responseText
+            ? `Upload failed: ${xhr.status} ${xhr.responseText}`
+            : `Upload failed: ${xhr.status}`,
+          correlationId,
+          method,
+          endpoint,
+        });
+        maybeRedirectOnError(err);
+        reject(err);
       }
     };
 
-    xhr.onerror = () => reject(new Error("Upload network error"));
+    xhr.onerror = () =>
+      reject(
+        new ApiError({
+          status: 0,
+          code: "network_error",
+          message: "Upload network error",
+          correlationId: null,
+          details: null,
+          method: "PUT",
+          endpoint: path,
+          isNetworkError: true,
+        })
+      );
     xhr.send(form);
   });
+}
+
+export function isJsonContentType(contentType: string | null): boolean {
+  if (!contentType) return false;
+  const ct = contentType.toLowerCase();
+  return ct.includes("application/json") || ct.includes("+json");
+}
+
+export function parseContentDispositionFilename(header: string | null): string | null {
+  /**
+   * Parse the filename from a Content-Disposition header.
+   *
+   * Supports:
+   * - filename="report.csv"
+   * - filename*=UTF-8''report%20(1).csv
+   */
+  if (!header) return null;
+  const parts = header.split(";").map((p) => p.trim());
+
+  const filenameStar = parts.find((p) => p.toLowerCase().startsWith("filename*="));
+  if (filenameStar) {
+    const raw = filenameStar.split("=", 2)[1]?.trim() ?? "";
+    const unquoted = raw.replace(/^"(.*)"$/, "$1");
+    const idx = unquoted.indexOf("''");
+    const encoded = idx >= 0 ? unquoted.slice(idx + 2) : unquoted;
+    try {
+      const decoded = decodeURIComponent(encoded);
+      if (decoded) return decoded;
+    } catch {
+      if (encoded) return encoded;
+    }
+  }
+
+  const filename = parts.find((p) => p.toLowerCase().startsWith("filename="));
+  if (filename) {
+    const raw = filename.split("=", 2)[1]?.trim() ?? "";
+    const unquoted = raw.replace(/^"(.*)"$/, "$1");
+    return unquoted || null;
+  }
+
+  return null;
+}
+
+export function saveBlobAsFile(blob: Blob, filename: string): void {
+  /**
+   * Minimal browser download helper (no external dependencies).
+   *
+   * Note: Some browsers require the <a> to be attached to the DOM.
+   */
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "download";
+  a.rel = "noreferrer";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+function fallbackFilenameFromPath(path: string): string {
+  const clean = path.split("?")[0]?.split("#")[0] ?? path;
+  const parts = clean.split("/").filter(Boolean);
+  const last = parts[parts.length - 1] ?? "download";
+  // Avoid filenames like "download" for "/.../download".
+  if (last.toLowerCase() === "download") return "download";
+  return last;
+}
+
+export async function apiDownload(
+  path: string,
+  init?: RequestInit & { filename?: string }
+): Promise<{ filename: string; blob: Blob; contentType: string | null }> {
+  /**
+   * Download helper for "raw bytes" endpoints (artifacts, snapshots, exports).
+   *
+   * Rules:
+   * - Success responses are treated as bytes (we do NOT JSON-parse on success).
+   * - Failure responses are parsed as an envelope error when possible.
+   */
+  const method = String(init?.method ?? "GET").toUpperCase();
+  const endpoint = path;
+
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(path), {
+      ...init,
+      headers: {
+        ...scopeHeaders(),
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+  } catch (e) {
+    throw new ApiError({
+      status: 0,
+      code: "network_error",
+      message: e instanceof Error ? e.message : "Network error",
+      correlationId: null,
+      details: null,
+      method,
+      endpoint,
+      isNetworkError: true,
+    });
+  }
+
+  if (!res.ok) {
+    const err = await readError(res, { method, endpoint });
+    maybeRedirectOnError(err);
+    throw err;
+  }
+
+  const cd = res.headers.get("content-disposition");
+  const ct = res.headers.get("content-type");
+  const headerFilename = parseContentDispositionFilename(cd);
+  const filename = init?.filename ?? headerFilename ?? fallbackFilenameFromPath(path);
+  const blob = await res.blob();
+
+  return { filename, blob, contentType: ct };
 }

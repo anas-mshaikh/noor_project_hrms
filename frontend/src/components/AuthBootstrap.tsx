@@ -17,7 +17,7 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
-import { apiJson } from "@/lib/api";
+import { ApiError, apiJson } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useSelection } from "@/lib/selection";
 import type { MeResponse } from "@/lib/types";
@@ -66,8 +66,20 @@ export function AuthBootstrap(): null {
         if (selectedBranchId !== branchId) {
           setBranchId(branchId);
         }
-      } catch {
-        if (!cancelled) clear();
+      } catch (err) {
+        /**
+         * `/auth/me` can fail for reasons other than an expired session:
+         * - transient network errors
+         * - fail-closed scope errors (selection drift)
+         *
+         * The API layer already redirects to /login on 401 and /scope on scope errors.
+         * Avoid wiping the auth store on those recoverable cases; keep last-known
+         * permissions so nav doesn't flicker or disappear.
+         */
+        if (!cancelled) {
+          if (err instanceof ApiError && err.status !== 401) return;
+          clear();
+        }
       }
     })();
 

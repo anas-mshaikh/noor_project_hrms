@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "@/lib/i18n";
 
 import { apiJson } from "@/lib/api";
+import { useSelection } from "@/lib/selection";
 import { Button } from "@/components/ui/button";
 
 type UUID = string;
@@ -142,6 +143,7 @@ export default function CalibrationPage() {
   const cameraId = Array.isArray(params?.cameraId)
     ? params?.cameraId[0]
     : (params?.cameraId as string | undefined);
+  const branchId = useSelection((s) => s.branchId);
 
   const [imageObj, setImageObj] = useState<HTMLImageElement | null>(null);
   const [mode, setMode] = useState<DrawMode>("select");
@@ -150,9 +152,9 @@ export default function CalibrationPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   const cameraQ = useQuery({
-    queryKey: ["camera", cameraId],
-    enabled: Boolean(cameraId),
-    queryFn: () => apiJson<CameraOut>(`/api/v1/cameras/${cameraId}`),
+    queryKey: ["camera", branchId, cameraId],
+    enabled: Boolean(cameraId && branchId),
+    queryFn: () => apiJson<CameraOut>(`/api/v1/branches/${branchId}/cameras/${cameraId}`),
   });
 
   // Keep server state derived from query data.
@@ -185,11 +187,12 @@ export default function CalibrationPage() {
   const saveM = useMutation({
     mutationFn: async () => {
       if (!cameraId) throw new Error("Missing cameraId");
+      if (!branchId) throw new Error("Missing branchId");
       const errs = validate(state);
       if (errs.length) throw new Error(errs.join("; "));
       if (!state.frameSize) throw new Error("Upload a reference image first");
       const payload = buildPayload(state);
-      return apiJson(`/api/v1/cameras/${cameraId}/calibration`, {
+      return apiJson(`/api/v1/branches/${branchId}/cameras/${cameraId}/calibration`, {
         method: "PUT",
         body: JSON.stringify({ calibration_json: payload }),
       });
@@ -226,6 +229,20 @@ export default function CalibrationPage() {
           {t("page.calibration.title", { defaultValue: "Calibration" })}
         </h1>
         <p className="mt-2 text-destructive">cameraId missing in URL</p>
+      </div>
+    );
+  }
+
+  if (!branchId) {
+    return (
+      <div className="p-4">
+        <h1 className="text-xl font-semibold">
+          {t("page.calibration.title", { defaultValue: "Calibration" })}
+        </h1>
+        <p className="mt-2 text-muted-foreground">Select a branch to load this camera.</p>
+        <Button asChild variant="outline" className="mt-3">
+          <a href="/scope">Select branch</a>
+        </Button>
       </div>
     );
   }

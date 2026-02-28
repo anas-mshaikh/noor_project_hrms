@@ -22,6 +22,10 @@ export const dynamic = "force-dynamic";
 const ACCESS_COOKIE = "noor_access_token";
 const REFRESH_COOKIE = "noor_refresh_token";
 
+const SCOPE_TENANT_COOKIE = "noor_scope_tenant_id";
+const SCOPE_COMPANY_COOKIE = "noor_scope_company_id";
+const SCOPE_BRANCH_COOKIE = "noor_scope_branch_id";
+
 type EnvelopeOk<T> = { ok: true; data: T; meta?: unknown };
 type EnvelopeErr = {
   ok: false;
@@ -103,11 +107,38 @@ function passthroughHeaders(backendRes: Response): Headers {
   return headers;
 }
 
-function scopeHeadersFrom(req: NextRequest): Record<string, string> {
+function isBranchScopedPath(path: string): boolean {
+  // The backend treats branch_id/company_id/tenant_id path params as authoritative
+  // and will inject matching scope headers server-side. Avoid injecting branch/company
+  // from cookies for branch-scoped APIs to prevent `iam.scope.mismatch` surprises.
+  return path.startsWith("/api/v1/branches/");
+}
+
+function scopeHeadersFrom(req: NextRequest, path: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const name of ["x-tenant-id", "x-company-id", "x-branch-id"]) {
     const v = req.headers.get(name);
     if (v) out[name] = v;
+  }
+
+  // Cookie fallback for requests that cannot attach headers (e.g. <img>, <a download>, new tab).
+  if (!out["x-tenant-id"]) {
+    const v = req.cookies.get(SCOPE_TENANT_COOKIE)?.value;
+    if (v) out["x-tenant-id"] = v;
+  }
+
+  if (isBranchScopedPath(path)) {
+    // Let backend infer company/branch from the path params.
+    return out;
+  }
+
+  if (!out["x-company-id"]) {
+    const v = req.cookies.get(SCOPE_COMPANY_COOKIE)?.value;
+    if (v) out["x-company-id"] = v;
+  }
+  if (!out["x-branch-id"]) {
+    const v = req.cookies.get(SCOPE_BRANCH_COOKIE)?.value;
+    if (v) out["x-branch-id"] = v;
   }
   return out;
 }
@@ -131,7 +162,7 @@ async function proxyToBackend(
   targetUrl.search = req.nextUrl.search;
 
   const headers: Record<string, string> = {
-    ...scopeHeadersFrom(req),
+    ...scopeHeadersFrom(req, opts.path),
   };
 
   const contentType = req.headers.get("content-type");
@@ -237,7 +268,7 @@ async function refreshOnce(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...scopeHeadersFrom(req),
+        ...scopeHeadersFrom(req, "/api/v1/auth/refresh"),
       },
       body: JSON.stringify({ refresh_token: rt }),
       cache: "no-store",
@@ -313,7 +344,7 @@ async function handleAuthRefresh(req: NextRequest): Promise<NextResponse> {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...scopeHeadersFrom(req),
+        ...scopeHeadersFrom(req, "/api/v1/auth/refresh"),
       },
       body: JSON.stringify({ refresh_token: rt }),
       cache: "no-store",
@@ -361,7 +392,7 @@ async function handleAuthLogout(req: NextRequest): Promise<NextResponse> {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...scopeHeadersFrom(req),
+        ...scopeHeadersFrom(req, "/api/v1/auth/logout"),
       },
       body: JSON.stringify({ refresh_token: rt }),
       cache: "no-store",
