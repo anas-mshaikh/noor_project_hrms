@@ -1,0 +1,29 @@
+# Keep Docker build contexts small and deterministic.
+#
+# Note: backend services in docker-compose mount the working tree into /app, so
+# excluding source here does not affect dev; it only reduces image build time.
+
+# Large runtime artifacts / weights
+models/
+data/
+secrets/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs / local tooling
+.venv/
+.env
+.env.*
+
+# Coverage / reports
+.coverage
+htmlcov/
+coverage/
+
+# Editor / OS files
+.DS_Store

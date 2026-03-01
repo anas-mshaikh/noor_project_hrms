@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   db:
     # Postgres 17 + pgvector extension preinstalled
@@ -32,8 +30,7 @@ services:
 
   migrate:
     # Runs Alembic migrations once on startup, then exits.
-    build:
-      context: ./backend
+    image: attendence_system-backend
     env_file:
       - ./backend/.env.docker
     volumes:
@@ -46,6 +43,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      backend_image:
+        condition: service_completed_successfully
     command: ["alembic", "upgrade", "head"]
     restart: "no"
 
@@ -65,8 +64,7 @@ services:
 
   backend_tests:
     # Runs DB vNext smoke + all backend tests after migrations, then exits.
-    build:
-      context: ./backend
+    image: attendence_system-backend
     env_file:
       - ./backend/.env.docker
     environment:
@@ -77,16 +75,26 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    command: ["python", "scripts/run_all_tests.py"]
+      backend_image:
+        condition: service_completed_successfully
+    command:
+      [
+        "sh",
+        "-lc",
+        "if [ \"${SKIP_TESTS:-0}\" = \"1\" ]; then echo \"skipping backend tests\"; exit 0; fi; python scripts/run_all_tests.py",
+      ]
     restart: "no"
 
   frontend_tests:
     # Runs web frontend unit tests (Vitest), then exits.
     build:
       context: ./frontend
+      # Unit tests require source files; use the dedicated test stage (no `next build`).
+      target: test
     environment:
       NODE_ENV: test
-    command: ["npm", "run", "test"]
+    command:
+      ["sh", "-lc", "if [ \"${SKIP_TESTS:-0}\" = \"1\" ]; then echo \"skipping frontend tests\"; exit 0; fi; npm run test"]
     restart: "no"
 
   frontend_e2e:
@@ -105,14 +113,25 @@ services:
       PLAYWRIGHT_BASE_URL: "http://frontend:3000"
     depends_on:
       frontend:
-        condition: service_started
+        condition: service_healthy
     command: ["bash", "-lc", "npm ci && npm run test:e2e"]
     profiles: ["e2e"]
     restart: "no"
 
-  backend:
+  backend_image:
+    # Shared backend image build (dependencies only).
+    #
+    # Other backend services reference the same image to avoid rebuilding/exporting
+    # identical layers multiple times.
+    image: attendence_system-backend
     build:
       context: ./backend
+      target: runtime_deps
+    command: ["sh", "-lc", "echo backend image built"]
+    restart: "no"
+
+  backend:
+    image: attendence_system-backend
     env_file:
       - ./backend/.env.docker
     volumes:
@@ -126,12 +145,24 @@ services:
     depends_on:
       tests:
         condition: service_completed_successfully
+      backend_image:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys,urllib.request; u='http://localhost:8000/api/v1/health'; sys.exit(0 if urllib.request.urlopen(u, timeout=2).status==200 else 1)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   worker:
-    build:
-      context: ./backend
+    image: attendence_system-backend
     env_file:
       - ./backend/.env.docker
     volumes:
@@ -142,6 +173,8 @@ services:
 
     depends_on:
       tests:
+        condition: service_completed_successfully
+      backend_image:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
@@ -149,8 +182,7 @@ services:
 
   hr_worker:
     # Dedicated worker for HR resume parsing (RQ queue: "hr").
-    build:
-      context: ./backend
+    image: attendence_system-backend
     env_file:
       - ./backend/.env.docker
     volumes:
@@ -160,6 +192,8 @@ services:
       - ./backend/secrets:/app/secrets:ro
     depends_on:
       tests:
+        condition: service_completed_successfully
+      backend_image:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
@@ -167,8 +201,7 @@ services:
 
   work_worker:
     # Dedicated worker for operational task assignment (RQ queue: "work").
-    build:
-      context: ./backend
+    image: attendence_system-backend
     env_file:
       - ./backend/.env.docker
     volumes:
@@ -179,14 +212,15 @@ services:
     depends_on:
       tests:
         condition: service_completed_successfully
+      backend_image:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     command: ["python", "-m", "app.worker.work_worker"]
 
   notification_worker:
     # Dedicated poller for in-app notifications (outbox -> notifications).
-    build:
-      context: ./backend
+    image: attendence_system-backend
     env_file:
       - ./backend/.env.docker
     volumes:
@@ -196,6 +230,8 @@ services:
       - ./backend/secrets:/app/secrets:ro
     depends_on:
       tests:
+        condition: service_completed_successfully
+      backend_image:
         condition: service_completed_successfully
     command: ["python", "-m", "app.worker.notification_worker"]
 
@@ -215,7 +251,18 @@ services:
       - "3000:3000"
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   adminer:
     image: adminer:4

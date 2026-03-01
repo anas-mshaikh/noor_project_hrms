@@ -4,6 +4,14 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
+# Test (unit tests only; no Next build)
+FROM node:20-alpine AS test
+WORKDIR /app
+ENV NODE_ENV=test
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+CMD ["npm", "run", "test:unit"]
+
 # Build
 FROM node:20-alpine AS builder
 WORKDIR /app

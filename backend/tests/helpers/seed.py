@@ -1,7 +1,41 @@
 from __future__ import annotations
 
+import time
 import uuid
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
+
+
+def _is_deadlock_error(exc: BaseException) -> bool:
+    """
+    Best-effort detection for Postgres deadlock errors.
+
+    In test cleanup we prefer retrying a few times rather than failing the entire
+    suite due to transient lock ordering issues from background threads/tasks.
+    """
+
+    msg = str(exc).lower()
+    if "deadlock detected" in msg:
+        return True
+
+    # SQLAlchemy often wraps psycopg errors as OperationalError with .orig.
+    orig = getattr(exc, "orig", None)
+    if orig is None:
+        return False
+    return orig.__class__.__name__.lower() == "deadlockdetected"
+
+
+def _run_with_deadlock_retries(engine, *, fn, attempts: int = 5) -> None:
+    for i in range(attempts):
+        try:
+            with engine.begin() as conn:
+                fn(conn)
+            return
+        except OperationalError as e:
+            if not _is_deadlock_error(e) or i == attempts - 1:
+                raise
+            # Exponential backoff: 0.1s, 0.2s, 0.4s, 0.8s...
+            time.sleep(0.1 * (2**i))
 
 
 def require_tables(conn, *fqtns: str) -> None:
@@ -184,11 +218,14 @@ def seed_user(
 def cleanup(engine, *, tenant_id: str | None, user_ids: list[str]) -> None:
     # Delete tenant first (cascades to tenancy + scoped user_roles). Users are global in iam, so delete explicitly.
     if tenant_id is not None:
-        with engine.begin() as conn:
-            conn.execute(text("DELETE FROM tenancy.tenants WHERE id = :id"), {"id": tenant_id})
+        _run_with_deadlock_retries(
+            engine,
+            fn=lambda conn: conn.execute(text("DELETE FROM tenancy.tenants WHERE id = :id"), {"id": tenant_id}),
+        )
 
     if user_ids:
-        with engine.begin() as conn:
+        def _delete_users(conn) -> None:
             for uid in user_ids:
                 conn.execute(text("DELETE FROM iam.users WHERE id = :id"), {"id": uid})
 
+        _run_with_deadlock_retries(engine, fn=_delete_users)

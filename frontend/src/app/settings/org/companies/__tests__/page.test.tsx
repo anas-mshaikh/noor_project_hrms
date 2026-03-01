@@ -52,7 +52,9 @@ describe("/settings/org/companies", () => {
     expect(screen.getAllByRole("button", { name: /create company/i })[0]).toBeEnabled();
   });
 
-  it("creates a company and shows it in the table", async () => {
+  it(
+    "creates a company and shows it in the table",
+    async () => {
     const companies: CompanyOut[] = [];
 
     server.use(
@@ -88,6 +90,8 @@ describe("/settings/org/companies", () => {
     fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
 
     expect(await screen.findByText("Noor LLC")).toBeVisible();
-  });
+    },
+    // CI/Docker can be slower; this flow includes a mutation + refetch + re-render.
+    15_000
+  );
 });
-

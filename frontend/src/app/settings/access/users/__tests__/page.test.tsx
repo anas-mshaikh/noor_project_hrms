@@ -24,7 +24,9 @@ const SESSION: MeResponse = {
 };
 
 describe("/settings/access/users", () => {
-  it("renders users list with meta", async () => {
+  it(
+    "renders users list with meta",
+    async () => {
     server.use(
       http.get("*/api/v1/iam/users", ({ request }) => {
         const url = new URL(request.url);
@@ -58,6 +60,8 @@ describe("/settings/access/users", () => {
 
     expect(await screen.findByText("a@example.com")).toBeVisible();
     expect(screen.getByText("b@example.com")).toBeVisible();
-  });
+    },
+    // CI/Docker can be slower; allow extra time for initial render + query.
+    15_000
+  );
 });
-

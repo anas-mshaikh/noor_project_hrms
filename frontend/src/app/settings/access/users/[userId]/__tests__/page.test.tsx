@@ -25,7 +25,9 @@ const SESSION: MeResponse = {
 };
 
 describe("/settings/access/users/[userId]", () => {
-  it("validates branch role assignments and supports add/remove", async () => {
+  it(
+    "validates branch role assignments and supports add/remove",
+    async () => {
     const roles: RoleOut[] = [
       { code: "ADMIN", name: "Admin", description: "Full access" },
       { code: "HR_ADMIN", name: "HR Admin", description: null },
@@ -117,6 +119,9 @@ describe("/settings/access/users/[userId]", () => {
     fireEvent.click(screen.getByRole("button", { name: /^remove$/i }));
 
     expect(await screen.findByText("No role assignments")).toBeVisible();
-  });
+    },
+    // This is a full page flow test (tabs + sheet + multiple mutations) and can
+    // be slow under Docker/CI, so we give it a higher timeout to avoid flakes.
+    15_000
+  );
 });
-
