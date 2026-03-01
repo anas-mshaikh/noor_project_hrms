@@ -23,6 +23,11 @@ import { useSelection } from "@/lib/selection";
 
 function reasonCopy(code: string | null): { title: string; body: string } {
   switch (code) {
+    case "bootstrap":
+      return {
+        title: "Setup complete",
+        body: "Bootstrap succeeded. Review your tenant/company/branch selection and continue.",
+      };
     case "iam.scope.tenant_required":
       return {
         title: "Tenant selection required",

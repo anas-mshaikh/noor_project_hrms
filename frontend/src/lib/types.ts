@@ -40,6 +40,13 @@ export type MeResponse = {
 };
 
 // ----- Tenancy (vNext masters) -----
+export type CompanyCreate = {
+  name: string;
+  legal_name?: string | null;
+  currency_code?: string | null;
+  timezone?: string | null;
+};
+
 export type CompanyOut = {
   id: UUID;
   tenant_id: UUID;
@@ -48,6 +55,14 @@ export type CompanyOut = {
   currency_code: string | null;
   timezone: string | null;
   status: string;
+};
+
+export type BranchCreate = {
+  company_id: UUID;
+  name: string;
+  code: string;
+  timezone?: string | null;
+  address?: Record<string, unknown>;
 };
 
 export type BranchOut = {
@@ -61,6 +76,57 @@ export type BranchOut = {
   status: string;
 };
 
+export type OrgUnitCreate = {
+  company_id: UUID;
+  branch_id?: UUID | null;
+  parent_id?: UUID | null;
+  name: string;
+  unit_type?: string | null;
+};
+
+export type OrgUnitOut = {
+  id: UUID;
+  tenant_id: UUID;
+  company_id: UUID;
+  branch_id: UUID | null;
+  parent_id: UUID | null;
+  name: string;
+  unit_type: string | null;
+};
+
+export type OrgUnitNode = {
+  id: UUID;
+  name: string;
+  unit_type: string | null;
+  children: OrgUnitNode[];
+};
+
+export type JobTitleCreate = {
+  company_id: UUID;
+  name: string;
+};
+
+export type JobTitleOut = {
+  id: UUID;
+  tenant_id: UUID;
+  company_id: UUID;
+  name: string;
+};
+
+export type GradeCreate = {
+  company_id: UUID;
+  name: string;
+  level?: number | null;
+};
+
+export type GradeOut = {
+  id: UUID;
+  tenant_id: UUID;
+  company_id: UUID;
+  name: string;
+  level: number | null;
+};
+
 export type CameraListOut = {
   id: UUID;
   tenant_id: UUID;
@@ -69,6 +135,61 @@ export type CameraListOut = {
   placement: string | null;
   calibration_json: Record<string, unknown> | null;
   created_at: string;
+};
+
+// ----- IAM -----
+export type UsersListMeta = {
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+export type IamUserStatus = "ACTIVE" | "DISABLED" | string;
+
+export type IamUserOut = {
+  id: UUID;
+  email: string;
+  phone: string | null;
+  status: IamUserStatus;
+  created_at: string;
+};
+
+export type IamUserCreateIn = {
+  email: string;
+  phone?: string | null;
+  password: string;
+  status?: "ACTIVE" | "DISABLED";
+};
+
+export type IamUserPatchIn = {
+  phone?: string | null;
+  status?: "ACTIVE" | "DISABLED" | null;
+};
+
+export type IamRoleAssignIn = {
+  role_code: string;
+  tenant_id?: UUID | null;
+  company_id?: UUID | null;
+  branch_id?: UUID | null;
+};
+
+export type UserRoleOut = {
+  role_code: string;
+  tenant_id: UUID;
+  company_id: UUID | null;
+  branch_id: UUID | null;
+  created_at: string;
+};
+
+export type RoleOut = {
+  code: string;
+  name: string;
+  description: string | null;
+};
+
+export type PermissionOut = {
+  code: string;
+  description: string | null;
 };
 
 // ----- HR (canonical employee directory) -----

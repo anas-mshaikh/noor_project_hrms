@@ -327,7 +327,7 @@ const settingsModule: ModuleDef = {
       description: "Company profile",
       icon: Settings,
       match: "prefix",
-      v0Hidden: true,
+      requiredPermissions: ["tenancy:read", "tenancy:write"],
     },
     {
       id: "settings-access",
@@ -336,7 +336,12 @@ const settingsModule: ModuleDef = {
       description: "Permissions",
       icon: Shield,
       match: "prefix",
-      v0Hidden: true,
+      requiredPermissions: [
+        "iam:user:read",
+        "iam:user:write",
+        "iam:role:assign",
+        "iam:permission:read",
+      ],
     },
     {
       id: "settings-integrations",

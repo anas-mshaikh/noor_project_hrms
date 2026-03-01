@@ -297,6 +297,87 @@ function maybeRedirectOnError(err: ApiError): void {
   }
 }
 
+export async function apiEnvelope<T>(
+  path: string,
+  init?: RequestInit
+): Promise<{ data: T; meta?: unknown }> {
+  /**
+   * Envelope-aware API helper that preserves `meta` when returned.
+   *
+   * Prefer `apiJson<T>()` for most calls; use `apiEnvelope<T>()` only when the
+   * backend includes pagination meta (e.g., /iam/users).
+   */
+  const method = String(init?.method ?? "GET").toUpperCase();
+  const endpoint = path;
+
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(path), {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...scopeHeaders(),
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+  } catch (e) {
+    throw new ApiError({
+      status: 0,
+      code: "network_error",
+      message: e instanceof Error ? e.message : "Network error",
+      correlationId: null,
+      details: null,
+      method,
+      endpoint,
+      isNetworkError: true,
+    });
+  }
+
+  if (!res.ok) {
+    const err = await readError(res, { method, endpoint });
+    maybeRedirectOnError(err);
+    throw err;
+  }
+
+  const raw = (await res.json()) as unknown;
+  const correlationId = correlationIdFrom(res);
+
+  if (raw && typeof raw === "object" && "ok" in raw) {
+    const env = raw as EnvelopeOk<T> | EnvelopeErr;
+    if (env.ok === true) {
+      return {
+        data: (env as EnvelopeOk<T>).data,
+        meta: (env as EnvelopeOk<T>).meta,
+      };
+    }
+
+    const err = (env as EnvelopeErr).error;
+    const code = String(err?.code ?? "unknown");
+    const message = String(err?.message ?? "Request failed");
+    const cid =
+      (err?.correlation_id ? String(err.correlation_id) : null) ??
+      correlationId;
+    const details = err?.details ?? null;
+
+    const status = res.status >= 200 && res.status < 300 ? 400 : res.status;
+    const apiErr = new ApiError({
+      status,
+      code,
+      message,
+      correlationId: cid,
+      details,
+      method,
+      endpoint,
+    });
+    maybeRedirectOnError(apiErr);
+    throw apiErr;
+  }
+
+  // Non-enveloped responses are treated as data-only (legacy-safe).
+  return { data: raw as T };
+}
+
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const method = String(init?.method ?? "GET").toUpperCase();
   const endpoint = path;

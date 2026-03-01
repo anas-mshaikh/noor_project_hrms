@@ -9,10 +9,11 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "node",
+    environment: "jsdom",
     // Keep tests fast and deterministic.
     isolate: true,
     restoreMocks: true,
+    setupFiles: ["src/test/setup/vitest.setup.ts"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
   },
 });
-

@@ -168,6 +168,15 @@ cd frontend
 npm run test
 ```
 
+### Optional E2E (Playwright)
+This repo also includes a small Playwright smoke suite (runs against a running web container).
+
+Run with Docker (profile `e2e`):
+```bash
+cd /Users/anasshaikh/Documents/Work/noor_project_HRMS/attendence_system
+docker compose --profile e2e up --build --abort-on-container-exit --exit-code-from frontend_e2e frontend_e2e
+```
+
 
 ## 9) Quick Manual QA Checklist
 
@@ -182,4 +191,3 @@ npm run test
   - Upload video -> create job -> open report -> snapshot previews load
 - React Query:
   - 403/404 responses should **not** retry repeatedly
-

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, apiDownload, apiJson, parseContentDispositionFilename } from "./api";
+import { fail } from "@/test/msw/builders/response";
 
 function jsonResponse(body: unknown, opts?: { status?: number; headers?: Record<string, string> }): Response {
   return new Response(JSON.stringify(body), {
@@ -23,10 +24,7 @@ describe("lib/api", () => {
       "fetch",
       vi.fn(async () =>
         jsonResponse(
-          {
-            ok: false,
-            error: { code: "iam.scope.forbidden", message: "Scope not allowed", correlation_id: "payload-cid" },
-          },
+          fail("iam.scope.forbidden", "Scope not allowed", { correlation_id: "payload-cid" }),
           { status: 403, headers: { "x-correlation-id": "header-cid" } }
         )
       )
@@ -45,10 +43,7 @@ describe("lib/api", () => {
       "fetch",
       vi.fn(async () =>
         jsonResponse(
-          {
-            ok: false,
-            error: { code: "iam.scope.forbidden", message: "Scope not allowed" },
-          },
+          fail("iam.scope.forbidden", "Scope not allowed"),
           { status: 403, headers: { "x-correlation-id": "header-cid" } }
         )
       )
@@ -67,7 +62,7 @@ describe("lib/api", () => {
       "fetch",
       vi.fn(async () =>
         jsonResponse(
-          { ok: false, error: { code: "some.error", message: "Nope" } },
+          fail("some.error", "Nope"),
           { status: 200, headers: { "x-correlation-id": "cid" } }
         )
       )
@@ -92,7 +87,7 @@ describe("lib/api", () => {
       "fetch",
       vi.fn(async () =>
         jsonResponse(
-          { ok: false, error: { code: "vision.artifact.not_found", message: "Not found" } },
+          fail("vision.artifact.not_found", "Not found"),
           { status: 404, headers: { "x-correlation-id": "cid" } }
         )
       )

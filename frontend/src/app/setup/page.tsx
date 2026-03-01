@@ -19,11 +19,12 @@ import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "@/lib/i18n";
 
-import { apiJson } from "@/lib/api";
+import { ApiError, apiJson } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useSelection } from "@/lib/selection";
 import type { CameraListOut, MeResponse } from "@/lib/types";
 import { StorePicker } from "@/components/StorePicker";
+import { ErrorState } from "@/components/ds/ErrorState";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -118,10 +119,15 @@ export default function SetupPage() {
       setCompanyId(t.scope.company_id ? String(t.scope.company_id) : undefined);
       setBranchId(t.scope.branch_id ? String(t.scope.branch_id) : undefined);
 
-      // After bootstrap, user can create cameras / upload videos etc.
-      router.push("/dashboard");
+      // After bootstrap, route the user to scope selection (the selection is
+      // already set, but /scope provides a clear "continue" step).
+      router.push("/scope?reason=bootstrap");
     },
   });
+
+  const bootstrapErr = bootstrapM.error;
+  const alreadyConfigured =
+    bootstrapErr instanceof ApiError && bootstrapErr.code === "already_bootstrapped";
 
   // ----------------------------
   // 2) Create camera (branch-scoped)
@@ -162,7 +168,7 @@ export default function SetupPage() {
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {t("page.setup.subtitle", {
-            defaultValue: "Bootstrap tenancy (optional) and manage branch cameras.",
+            defaultValue: "First-time setup for a new environment (bootstrap) and basic context tools.",
           })}
         </p>
       </div>
@@ -212,90 +218,105 @@ export default function SetupPage() {
       </Card>
 
       {!user ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {t("page.setup.bootstrap_title", {
-                defaultValue: "Bootstrap (Optional)",
-              })}
-            </CardTitle>
-            <CardDescription>
-              {t("page.setup.bootstrap_desc", {
-                defaultValue:
-                  "Create a new tenant/company/branch and an admin user. This is meant for local/dev environments.",
-              })}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  {t("page.setup.tenant_name", { defaultValue: "Tenant name" })}
-                </Label>
-                <Input value={tenantName} onChange={(e) => setTenantName(e.target.value)} />
+        alreadyConfigured ? (
+          <ErrorState
+            title="Already configured"
+            error={bootstrapErr}
+            details={
+              <div className="text-sm text-text-2">
+                If you expected a fresh database, reset your local volumes and try again.
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  {t("page.setup.company_name", { defaultValue: "Company name" })}
-                </Label>
-                <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  {t("page.setup.branch_name", { defaultValue: "Branch name" })}
-                </Label>
-                <Input value={branchName} onChange={(e) => setBranchName(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  {t("page.setup.branch_code", { defaultValue: "Branch code" })}
-                </Label>
-                <Input value={branchCode} onChange={(e) => setBranchCode(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  {t("page.setup.timezone", { defaultValue: "Timezone" })}
-                </Label>
-                <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  {t("page.setup.currency", { defaultValue: "Currency" })}
-                </Label>
-                <Input value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  {t("page.setup.admin_email", { defaultValue: "Admin email" })}
-                </Label>
-                <Input value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  {t("page.setup.admin_password", { defaultValue: "Admin password" })}
-                </Label>
-                <Input
-                  type="password"
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" onClick={() => bootstrapM.mutate()} disabled={bootstrapM.isPending}>
-                {bootstrapM.isPending
-                  ? t("page.setup.bootstrapping", { defaultValue: "Bootstrapping..." })
-                  : t("page.setup.bootstrap_cta", { defaultValue: "Bootstrap" })}
-              </Button>
-              {bootstrapM.isError ? (
-                <div className="text-sm text-destructive">
-                  {bootstrapM.error instanceof Error ? bootstrapM.error.message : String(bootstrapM.error)}
+            }
+          />
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {t("page.setup.bootstrap_title", {
+                  defaultValue: "First-time setup (bootstrap)",
+                })}
+              </CardTitle>
+              <CardDescription>
+                {t("page.setup.bootstrap_desc", {
+                  defaultValue:
+                    "Create the first tenant/company/branch and an admin user. This can only be done once on a fresh database.",
+                })}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    {t("page.setup.tenant_name", { defaultValue: "Tenant name" })}
+                  </Label>
+                  <Input value={tenantName} onChange={(e) => setTenantName(e.target.value)} />
                 </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    {t("page.setup.company_name", { defaultValue: "Company name" })}
+                  </Label>
+                  <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    {t("page.setup.branch_name", { defaultValue: "Branch name" })}
+                  </Label>
+                  <Input value={branchName} onChange={(e) => setBranchName(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    {t("page.setup.branch_code", { defaultValue: "Branch code" })}
+                  </Label>
+                  <Input value={branchCode} onChange={(e) => setBranchCode(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    {t("page.setup.timezone", { defaultValue: "Timezone" })}
+                  </Label>
+                  <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    {t("page.setup.currency", { defaultValue: "Currency" })}
+                  </Label>
+                  <Input value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    {t("page.setup.admin_email", { defaultValue: "Admin email" })}
+                  </Label>
+                  <Input value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    {t("page.setup.admin_password", { defaultValue: "Admin password" })}
+                  </Label>
+                  <Input
+                    type="password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" onClick={() => bootstrapM.mutate()} disabled={bootstrapM.isPending}>
+                  {bootstrapM.isPending
+                    ? t("page.setup.bootstrapping", { defaultValue: "Bootstrapping..." })
+                    : t("page.setup.bootstrap_cta", { defaultValue: "Bootstrap" })}
+                </Button>
+              </div>
+
+              {bootstrapM.isError ? (
+                <ErrorState
+                  title="Bootstrap failed"
+                  error={bootstrapErr}
+                  variant="inline"
+                />
               ) : null}
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )
       ) : (
         <Card>
           <CardHeader>

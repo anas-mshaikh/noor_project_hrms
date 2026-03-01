@@ -50,6 +50,20 @@ services:
     restart: "no"
 
   tests:
+    # Test gate (CI/dev): waits for backend + frontend tests to pass, then exits 0.
+    #
+    # This preserves the existing "docker compose ... --exit-code-from tests tests"
+    # workflow, while ensuring web frontend unit tests also run.
+    image: alpine:3.19
+    depends_on:
+      backend_tests:
+        condition: service_completed_successfully
+      frontend_tests:
+        condition: service_completed_successfully
+    command: ["sh", "-lc", "echo 'all tests passed'"]
+    restart: "no"
+
+  backend_tests:
     # Runs DB vNext smoke + all backend tests after migrations, then exits.
     build:
       context: ./backend
@@ -64,6 +78,36 @@ services:
       migrate:
         condition: service_completed_successfully
     command: ["python", "scripts/run_all_tests.py"]
+    restart: "no"
+
+  frontend_tests:
+    # Runs web frontend unit tests (Vitest), then exits.
+    build:
+      context: ./frontend
+    environment:
+      NODE_ENV: test
+    command: ["npm", "run", "test"]
+    restart: "no"
+
+  frontend_e2e:
+    # Optional: Playwright E2E smoke tests (profile: e2e).
+    #
+    # Usage:
+    #   docker compose --profile e2e up --build --abort-on-container-exit --exit-code-from frontend_e2e frontend_e2e
+    #
+    # We use the official Playwright image (includes browsers + system deps).
+    image: mcr.microsoft.com/playwright:v1.58.2-jammy
+    working_dir: /work
+    volumes:
+      - ./frontend:/work
+    environment:
+      CI: "1"
+      PLAYWRIGHT_BASE_URL: "http://frontend:3000"
+    depends_on:
+      frontend:
+        condition: service_started
+    command: ["bash", "-lc", "npm ci && npm run test:e2e"]
+    profiles: ["e2e"]
     restart: "no"
 
   backend:

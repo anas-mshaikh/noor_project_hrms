@@ -60,6 +60,17 @@ export function getErrorUx(err: unknown): ErrorUx {
       };
     }
 
+    // Bootstrap is allowed only on a fresh DB; show a clearer message than a
+    // generic 409 "Conflict".
+    if (err.code === "already_bootstrapped") {
+      return {
+        title: "Already configured",
+        description:
+          "This environment is already configured. Sign in to continue, or choose a different tenant/company/branch if you have access.",
+        suggestedActionKind: "go_login",
+      };
+    }
+
     if (err.status === 404) {
       return {
         title: "Not found",
@@ -106,4 +117,3 @@ export function getErrorUx(err: unknown): ErrorUx {
     suggestedActionKind: "retry",
   };
 }
-
