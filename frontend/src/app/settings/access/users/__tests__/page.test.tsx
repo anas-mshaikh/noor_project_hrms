@@ -27,6 +27,8 @@ describe("/settings/access/users", () => {
   it(
     "renders users list with meta",
     async () => {
+    const USER_1_ID = "00000000-0000-4000-8000-000000000001";
+    const USER_2_ID = "00000000-0000-4000-8000-000000000002";
     server.use(
       http.get("*/api/v1/iam/users", ({ request }) => {
         const url = new URL(request.url);
@@ -36,14 +38,14 @@ describe("/settings/access/users", () => {
           ok: true,
           data: [
             {
-              id: "u-1",
+              id: USER_1_ID,
               email: "a@example.com",
               phone: null,
               status: "ACTIVE",
               created_at: "2026-02-01T10:00:00Z",
             },
             {
-              id: "u-2",
+              id: USER_2_ID,
               email: "b@example.com",
               phone: "+966555",
               status: "DISABLED",
@@ -58,7 +60,8 @@ describe("/settings/access/users", () => {
     useAuth.getState().setFromSession(SESSION);
     renderWithProviders(<UsersPage />);
 
-    expect(await screen.findByText("a@example.com")).toBeVisible();
+    const aLink = await screen.findByRole("link", { name: "a@example.com" });
+    expect(aLink).toHaveAttribute("href", `/settings/access/users/${USER_1_ID}`);
     expect(screen.getByText("b@example.com")).toBeVisible();
     },
     // CI/Docker can be slower; allow extra time for initial render + query.

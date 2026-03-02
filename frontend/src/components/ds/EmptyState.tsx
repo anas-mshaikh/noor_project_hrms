@@ -29,11 +29,19 @@ export function EmptyState({
   className?: string;
 }) {
   let iconNode: React.ReactNode = null;
-  if (typeof icon === "function") {
-    const Icon = icon as LucideIcon;
+  if (!icon) {
+    iconNode = null;
+  } else if (React.isValidElement(icon)) {
+    iconNode = icon;
+  } else if (
+    typeof icon === "function" ||
+    (typeof icon === "object" && icon !== null && "$$typeof" in icon)
+  ) {
+    // Lucide icons are `forwardRef(...)` components at runtime (typeof === "object").
+    const Icon = icon as unknown as LucideIcon;
     iconNode = <Icon className="h-5 w-5 text-text-2" />;
   } else {
-    iconNode = icon ?? null;
+    iconNode = icon;
   }
 
   return (

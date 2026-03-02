@@ -2,9 +2,11 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/lib/auth";
+import { parseUuidParam } from "@/lib/guards";
 import { cn } from "@/lib/utils";
 import { toastApiError } from "@/lib/toastApiError";
 import type {
@@ -88,8 +90,16 @@ function scopeLabel(r: UserRoleOut): string {
   return "Tenant";
 }
 
-export default function UserDetailPage({ params }: { params: { userId: string } }) {
-  const userId = params.userId as UUID;
+export default function UserDetailPage({ params }: { params: { userId?: string } }) {
+  // In production builds, using `useParams()` is the most reliable way to read dynamic
+  // route segments from a client component.
+  const routeParams = useParams() as { userId?: string | string[] };
+  const userIdRaw =
+    (Array.isArray(routeParams.userId) ? routeParams.userId[0] : routeParams.userId) ??
+    params?.userId ??
+    null;
+  const userId = parseUuidParam(userIdRaw);
+  const canLoad = Boolean(userId);
 
   const permissions = useAuth((s) => s.permissions);
   const permSet = React.useMemo(() => new Set(permissions ?? []), [permissions]);
@@ -101,22 +111,31 @@ export default function UserDetailPage({ params }: { params: { userId: string } 
 
   const userQ = useQuery({
     queryKey: iamKeys.user(userId),
-    queryFn: () => getUser(userId),
+    enabled: canLoad,
+    queryFn: () => {
+      if (!userId) throw new Error("Missing user id");
+      return getUser(userId);
+    },
   });
 
   const rolesQ = useQuery({
     queryKey: iamKeys.userRoles(userId),
-    queryFn: () => listUserRoles(userId),
+    enabled: canLoad,
+    queryFn: () => {
+      if (!userId) throw new Error("Missing user id");
+      return listUserRoles(userId);
+    },
   });
 
   const rolesCatalogQ = useQuery({
     queryKey: iamKeys.roles(),
+    enabled: canLoad,
     queryFn: () => listRoles(),
   });
 
   const companiesQ = useQuery({
     queryKey: tenancyKeys.companies(),
-    enabled: canReadTenancy,
+    enabled: canLoad && canReadTenancy,
     queryFn: () => listCompanies(),
   });
 
@@ -145,6 +164,7 @@ export default function UserDetailPage({ params }: { params: { userId: string } 
 
   const patchM = useMutation({
     mutationFn: async () => {
+      if (!userId) throw new Error("Missing user id");
       const payload: IamUserPatchIn = {
         phone: phone.trim() ? phone.trim() : null,
         status,
@@ -169,13 +189,14 @@ export default function UserDetailPage({ params }: { params: { userId: string } 
 
   const branchesQ = useQuery({
     queryKey: tenancyKeys.branches(scopeCompanyId || null),
-    enabled: canReadTenancy && Boolean(scopeCompanyId),
+    enabled: canLoad && canReadTenancy && Boolean(scopeCompanyId),
     queryFn: () => listBranches({ companyId: scopeCompanyId || null }),
   });
   const branches = (branchesQ.data ?? []) as BranchOut[];
 
   const assignM = useMutation({
     mutationFn: async () => {
+      if (!userId) throw new Error("Missing user id");
       setAssignError(null);
       const err = validateRoleAssignmentInput({
         roleCode,
@@ -229,6 +250,7 @@ export default function UserDetailPage({ params }: { params: { userId: string } 
 
   const removeM = useMutation({
     mutationFn: async () => {
+      if (!userId) throw new Error("Missing user id");
       if (!removeTarget) throw new Error("No role selected.");
       return removeUserRole(userId, {
         roleCode: removeTarget.role_code,
@@ -249,6 +271,34 @@ export default function UserDetailPage({ params }: { params: { userId: string } 
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
     "disabled:cursor-not-allowed disabled:opacity-50"
   );
+
+  if (!userIdRaw) {
+    return (
+      <ErrorState
+        title="Missing user id"
+        error={new Error("Open a user from the Users list.")}
+        details={
+          <Button asChild variant="outline">
+            <Link href="/settings/access/users">Back to users</Link>
+          </Button>
+        }
+      />
+    );
+  }
+
+  if (!userId) {
+    return (
+      <ErrorState
+        title="Invalid user id"
+        error={new Error(`Got: ${String(userIdRaw)}`)}
+        details={
+          <Button asChild variant="outline">
+            <Link href="/settings/access/users">Back to users</Link>
+          </Button>
+        }
+      />
+    );
+  }
 
   if (userQ.error) {
     return <ErrorState title="Could not load user" error={userQ.error} onRetry={userQ.refetch} />;

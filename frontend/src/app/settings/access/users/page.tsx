@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/lib/auth";
+import { isUuid } from "@/lib/guards";
 import { cn } from "@/lib/utils";
 import { toastApiError } from "@/lib/toastApiError";
 import type { IamUserCreateIn, IamUserOut, UsersListMeta } from "@/lib/types";
@@ -313,21 +314,32 @@ export default function UsersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((u) => (
-                  <TableRow key={u.id}>
-                    <TableCell className="font-medium">
-                      <Link
-                        href={`/settings/access/users/${u.id}`}
-                        className="underline-offset-4 hover:underline"
-                      >
-                        {u.email}
-                      </Link>
-                    </TableCell>
+                {items.map((u, idx) => {
+                  const id = typeof u.id === "string" ? u.id : "";
+                  const canLink = Boolean(id) && isUuid(id);
+                  return (
+                    <TableRow key={canLink ? id : `${u.email}:${idx}`}>
+                      <TableCell className="font-medium">
+                        {canLink ? (
+                          <Link
+                            href={`/settings/access/users/${id}`}
+                            className="underline-offset-4 hover:underline"
+                          >
+                            {u.email}
+                          </Link>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span>{u.email}</span>
+                            <span className="text-xs text-text-3">(invalid id)</span>
+                          </div>
+                        )}
+                      </TableCell>
                     <TableCell className="text-text-2">{u.phone ?? "—"}</TableCell>
                     <TableCell className="text-text-2">{u.status}</TableCell>
                     <TableCell className="text-text-2">{formatDateTime(u.created_at)}</TableCell>
-                  </TableRow>
-                ))}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -365,4 +377,3 @@ export default function UsersPage() {
     />
   );
 }
-

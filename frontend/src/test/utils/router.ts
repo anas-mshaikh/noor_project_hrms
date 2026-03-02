@@ -12,6 +12,7 @@ import { vi } from "vitest";
 
 let pathname = "/";
 let searchParams = new URLSearchParams();
+let params: Record<string, string | string[] | undefined> = {};
 
 export const routerPush = vi.fn<(url: string) => void>();
 export const routerReplace = vi.fn<(url: string) => void>();
@@ -42,9 +43,14 @@ export function setSearchParams(
   searchParams = p;
 }
 
+export function setParams(next: Record<string, string | string[] | undefined>): void {
+  params = next;
+}
+
 export function resetRouterMocks(): void {
   pathname = "/";
   searchParams = new URLSearchParams();
+  params = {};
   routerPush.mockReset();
   routerReplace.mockReset();
   routerRefresh.mockReset();
@@ -66,6 +72,6 @@ vi.mock("next/navigation", () => {
     }),
     usePathname: () => pathname,
     useSearchParams: () => searchParams,
+    useParams: () => params,
   };
 });
-

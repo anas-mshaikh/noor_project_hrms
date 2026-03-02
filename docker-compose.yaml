@@ -81,7 +81,7 @@ services:
       [
         "sh",
         "-lc",
-        "if [ \"${SKIP_TESTS:-0}\" = \"1\" ]; then echo \"skipping backend tests\"; exit 0; fi; python scripts/run_all_tests.py",
+        'if [ "${SKIP_TESTS:-0}" = "1" ]; then echo "skipping backend tests"; exit 0; fi; python scripts/run_all_tests.py',
       ]
     restart: "no"
 
@@ -94,7 +94,11 @@ services:
     environment:
       NODE_ENV: test
     command:
-      ["sh", "-lc", "if [ \"${SKIP_TESTS:-0}\" = \"1\" ]; then echo \"skipping frontend tests\"; exit 0; fi; npm run test"]
+      [
+        "sh",
+        "-lc",
+        'if [ "${SKIP_TESTS:-0}" = "1" ]; then echo "skipping frontend tests"; exit 0; fi; npm run test',
+      ]
     restart: "no"
 
   frontend_e2e:
@@ -142,6 +146,11 @@ services:
       - ./backend/secrets:/app/secrets:ro
     ports:
       - "8000:8000"
+    # The shared `attendence_system-backend` image is built from the `runtime_deps`
+    # target (dependencies only). In that target, the base image default CMD is
+    # `python3`, which exits immediately in a non-interactive container. Run
+    # uvicorn explicitly for the API service.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     depends_on:
       tests:
         condition: service_completed_successfully

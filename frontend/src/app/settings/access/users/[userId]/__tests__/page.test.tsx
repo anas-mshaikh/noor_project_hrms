@@ -25,9 +25,19 @@ const SESSION: MeResponse = {
 };
 
 describe("/settings/access/users/[userId]", () => {
+  it("fails closed for invalid userId params (no API call)", async () => {
+    // MSW is strict (`onUnhandledRequest: "error"`). If the page makes any request,
+    // this test will fail. That is intentional.
+    renderWithProviders(<UserDetailPage params={{ userId: "undefined" }} />);
+
+    expect(await screen.findByText("Invalid user id")).toBeVisible();
+    expect(screen.getByText("Got: undefined")).toBeVisible();
+  });
+
   it(
     "validates branch role assignments and supports add/remove",
     async () => {
+    const USER_ID = "00000000-0000-4000-8000-000000000001";
     const roles: RoleOut[] = [
       { code: "ADMIN", name: "Admin", description: "Full access" },
       { code: "HR_ADMIN", name: "HR Admin", description: null },
@@ -36,11 +46,11 @@ describe("/settings/access/users/[userId]", () => {
     const assignments: UserRoleOut[] = [];
 
     server.use(
-      http.get("*/api/v1/iam/users/u-1", () =>
+      http.get(`*/api/v1/iam/users/${USER_ID}`, () =>
         HttpResponse.json({
           ok: true,
           data: {
-            id: "u-1",
+            id: USER_ID,
             email: "user1@example.com",
             phone: null,
             status: "ACTIVE",
@@ -48,11 +58,11 @@ describe("/settings/access/users/[userId]", () => {
           },
         })
       ),
-      http.get("*/api/v1/iam/users/u-1/roles", () =>
+      http.get(`*/api/v1/iam/users/${USER_ID}/roles`, () =>
         HttpResponse.json({ ok: true, data: assignments })
       ),
       http.get("*/api/v1/iam/roles", () => HttpResponse.json({ ok: true, data: roles })),
-      http.post("*/api/v1/iam/users/u-1/roles", async ({ request }) => {
+      http.post(`*/api/v1/iam/users/${USER_ID}/roles`, async ({ request }) => {
         const body = (await request.json()) as IamRoleAssignIn;
         const created: UserRoleOut = {
           role_code: body.role_code,
@@ -64,7 +74,7 @@ describe("/settings/access/users/[userId]", () => {
         assignments.unshift(created);
         return HttpResponse.json({ ok: true, data: created });
       }),
-      http.delete("*/api/v1/iam/users/u-1/roles", ({ request }) => {
+      http.delete(`*/api/v1/iam/users/${USER_ID}/roles`, ({ request }) => {
         const url = new URL(request.url);
         const roleCode = url.searchParams.get("role_code");
         const companyId = url.searchParams.get("company_id");
@@ -82,7 +92,7 @@ describe("/settings/access/users/[userId]", () => {
     );
 
     useAuth.getState().setFromSession(SESSION);
-    renderWithProviders(<UserDetailPage params={{ userId: "u-1" }} />);
+    renderWithProviders(<UserDetailPage params={{ userId: USER_ID }} />);
 
     expect(
       await screen.findByRole("heading", { name: "user1@example.com" })

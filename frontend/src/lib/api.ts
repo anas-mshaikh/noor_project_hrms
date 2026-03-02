@@ -76,6 +76,44 @@ export function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
 }
 
+function assertNoInvalidPathSegments(
+  path: string,
+  ctx: { method: string; endpoint: string }
+): void {
+  /**
+   * DEV/TEST guardrail:
+   * If we accidentally interpolate an undefined/null into a path param, the browser
+   * will literally request `/.../undefined`, which is noisy and can look like a
+   * backend failure. Catch it early so it fails fast in local dev + CI.
+   */
+  if (process.env.NODE_ENV === "production") return;
+
+  let pathname = "";
+  try {
+    const base =
+      typeof window !== "undefined" && window.location?.origin
+        ? window.location.origin
+        : "http://localhost";
+    pathname = new URL(apiUrl(path), base).pathname;
+  } catch {
+    pathname = path;
+  }
+
+  const segments = pathname.split("/").filter(Boolean);
+  const hasBadSegment = segments.some((s) => s === "undefined" || s === "null");
+  if (!hasBadSegment) return;
+
+  throw new ApiError({
+    status: 0,
+    code: "client.invalid_path_param",
+    message: "Client constructed an invalid URL (undefined/null path segment).",
+    correlationId: null,
+    details: { path, pathname },
+    method: ctx.method,
+    endpoint: ctx.endpoint,
+  });
+}
+
 function loadPersistedState<T>(key: string): T | null {
   if (typeof window === "undefined") return null;
   try {
@@ -310,6 +348,8 @@ export async function apiEnvelope<T>(
   const method = String(init?.method ?? "GET").toUpperCase();
   const endpoint = path;
 
+  assertNoInvalidPathSegments(path, { method, endpoint });
+
   let res: Response;
   try {
     res = await fetch(apiUrl(path), {
@@ -382,6 +422,8 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const method = String(init?.method ?? "GET").toUpperCase();
   const endpoint = path;
 
+  assertNoInvalidPathSegments(path, { method, endpoint });
+
   let res: Response;
   try {
     res = await fetch(apiUrl(path), {
@@ -428,6 +470,8 @@ export async function apiForm<T>(
 ): Promise<T> {
   const method = String(init?.method ?? "POST").toUpperCase();
   const endpoint = path;
+
+  assertNoInvalidPathSegments(path, { method, endpoint });
 
   // IMPORTANT: don't set Content-Type for FormData; browser sets boundary.
   let res: Response;
@@ -675,6 +719,8 @@ export async function apiDownload(
    */
   const method = String(init?.method ?? "GET").toUpperCase();
   const endpoint = path;
+
+  assertNoInvalidPathSegments(path, { method, endpoint });
 
   let res: Response;
   try {
