@@ -60,6 +60,38 @@ export function getErrorUx(err: unknown): ErrorUx {
       };
     }
 
+    if (err.code === "ess.not_linked") {
+      return {
+        title: "Account not linked",
+        description: "Your user account is not linked to an employee profile yet. Contact HR to link your account.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "mss.not_linked") {
+      return {
+        title: "Account not linked",
+        description: "Your user account is not linked to an employee profile yet. Contact HR to enable manager access.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "mss.no_current_employment") {
+      return {
+        title: "No current employment",
+        description: "Your employee profile does not have a current employment record. Contact HR for assistance.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "mss.forbidden_employee") {
+      return {
+        title: "Not allowed",
+        description: "You do not have access to this team member.",
+        suggestedActionKind: "none",
+      };
+    }
+
     // Bootstrap is allowed only on a fresh DB; show a clearer message than a
     // generic 409 "Conflict".
     if (err.code === "already_bootstrapped") {
@@ -68,6 +100,39 @@ export function getErrorUx(err: unknown): ErrorUx {
         description:
           "This environment is already configured. Sign in to continue, or choose a different tenant/company/branch if you have access.",
         suggestedActionKind: "go_login",
+      };
+    }
+
+    if (err.code === "hr.employee.code_exists") {
+      return {
+        title: "Employee code already exists",
+        description: "Choose a unique employee code and try again.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "hr.branch.invalid") {
+      return {
+        title: "Invalid branch",
+        description: "The selected branch is not part of the active company scope.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "hr.manager.cycle") {
+      return {
+        title: "Invalid manager assignment",
+        description: "This change would create a reporting cycle. Select a different manager and try again.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code.startsWith("hr.employee_user_link.")) {
+      return {
+        title: "Link conflict",
+        description:
+          "This employee or user is already linked. If you believe this is wrong, contact an administrator.",
+        suggestedActionKind: "none",
       };
     }
 

@@ -27,6 +27,8 @@ import {
 export type ModuleId =
   | "attendance"
   | "hr"
+  | "ess"
+  | "mss"
   | "tasks"
   | "inbox"
   | "notes"
@@ -91,6 +93,8 @@ const attendanceModule: ModuleDef = {
   isActive: (pathname) =>
     !(
       startsWithPath(pathname, "/hr") ||
+      startsWithPath(pathname, "/ess") ||
+      startsWithPath(pathname, "/mss") ||
       startsWithPath(pathname, "/tasks") ||
       startsWithPath(pathname, "/inbox") ||
       startsWithPath(pathname, "/notes") ||
@@ -189,6 +193,15 @@ const hrModule: ModuleDef = {
       requiredPermissions: ["hr:recruiting:read"],
     },
     {
+      id: "hr-employees",
+      href: "/hr/employees",
+      title: "Employees",
+      description: "Employee directory and profiles",
+      icon: Users,
+      match: "prefix",
+      requiredPermissions: ["hr:employee:read"],
+    },
+    {
       id: "hr-onboarding",
       href: "/hr/onboarding",
       title: "Onboarding",
@@ -196,6 +209,46 @@ const hrModule: ModuleDef = {
       icon: UserPlus,
       match: "prefix",
       v0Hidden: true,
+    },
+  ],
+};
+
+const essModule: ModuleDef = {
+  id: "ess",
+  label: "Self Service",
+  href: "/ess/me",
+  icon: Users,
+  isActive: (pathname) => startsWithPath(pathname, "/ess"),
+  requiredPermissions: ["ess:profile:read", "ess:profile:write"],
+  sidebar: [
+    {
+      id: "ess-me",
+      href: "/ess/me",
+      title: "My Profile",
+      description: "Your employee profile",
+      icon: Users,
+      match: "exact",
+      requiredPermissions: ["ess:profile:read"],
+    },
+  ],
+};
+
+const mssModule: ModuleDef = {
+  id: "mss",
+  label: "My Team",
+  href: "/mss/team",
+  icon: Users,
+  isActive: (pathname) => startsWithPath(pathname, "/mss"),
+  requiredPermissions: ["hr:team:read"],
+  sidebar: [
+    {
+      id: "mss-team",
+      href: "/mss/team",
+      title: "My Team",
+      description: "Direct and indirect reports",
+      icon: Users,
+      match: "prefix",
+      requiredPermissions: ["hr:team:read"],
     },
   ],
 };
@@ -358,6 +411,8 @@ const settingsModule: ModuleDef = {
 export const MODULES: ModuleDef[] = [
   attendanceModule,
   hrModule,
+  essModule,
+  mssModule,
   tasksModule,
   inboxModule,
   notesModule,

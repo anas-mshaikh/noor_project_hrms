@@ -22,6 +22,7 @@ from app.domains.hr_core.schemas import (
     EssProfilePatchIn,
     EmploymentChangeIn,
     EmploymentOut,
+    LinkedUserOut,
     ManagerSummaryOut,
     PersonOut,
     EmployeeOut,
@@ -53,6 +54,7 @@ class HRCoreService:
 
         current = row.current_employment
         mgr = row.manager
+        linked = row.linked_user
 
         return Employee360Out(
             employee=EmployeeOut(
@@ -107,6 +109,16 @@ class HRCoreService:
                     employee_code=mgr.employee_code,
                 )
                 if mgr is not None
+                else None
+            ),
+            linked_user=(
+                LinkedUserOut(
+                    user_id=linked.user_id,
+                    email=linked.email,
+                    status=linked.status,
+                    linked_at=linked.linked_at,
+                )
+                if linked is not None
                 else None
             ),
         )
@@ -229,6 +241,7 @@ class HRCoreService:
                 org_unit_id=r.org_unit_id,
                 manager_employee_id=r.manager_employee_id,
                 manager_name=r.manager_name,
+                has_user_link=r.has_user_link,
             )
             for r in rows
         ]
@@ -473,9 +486,48 @@ class HRCoreService:
         if repo.get_employee_by_id(db, tenant_id=scope.tenant_id, company_id=scope.company_id, employee_id=employee_id) is None:
             raise AppError(code="hr.employee.not_found", message="Employee not found", status_code=404)
 
+        existing = repo.get_employee_user_link(db, employee_id=employee_id)
+        if existing is not None:
+            # Idempotent: linking the same user twice is safe.
+            if existing.user_id == payload.user_id:
+                return EmployeeUserLinkOut(
+                    employee_id=existing.employee_id,
+                    user_id=existing.user_id,
+                    created_at=existing.created_at,
+                )
+
+            raise AppError(
+                code="hr.employee_user_link.conflict",
+                message="Employee is already linked to a different user",
+                status_code=409,
+                details={
+                    "employee_id": str(employee_id),
+                    "existing_user_id": str(existing.user_id),
+                    "requested_user_id": str(payload.user_id),
+                },
+            )
+
         user = repo.get_user_by_id(db, user_id=payload.user_id)
         if user is None:
             raise AppError(code="iam.user.not_found", message="User not found", status_code=404)
+
+        mapping = repo.get_employee_id_by_user_id(db, user_id=payload.user_id)
+        if mapping is not None and mapping[0] != employee_id:
+            linked_employee_id, linked_tenant_id, _linked_company_id = mapping
+            details = {
+                "user_id": str(payload.user_id),
+                "employee_id": str(employee_id),
+            }
+            # Avoid cross-tenant leakage: only include the linked employee id when
+            # it belongs to the current tenant.
+            if linked_tenant_id == scope.tenant_id:
+                details["linked_employee_id"] = str(linked_employee_id)
+            raise AppError(
+                code="hr.employee_user_link.user_in_use",
+                message="User is already linked to a different employee",
+                status_code=409,
+                details=details,
+            )
 
         try:
             link = repo.insert_employee_user_link(db, employee_id=employee_id, user_id=payload.user_id)
@@ -522,7 +574,47 @@ class HRCoreService:
             db.commit()
         except IntegrityError as e:
             db.rollback()
-            raise AppError(code="hr.employee_user_link.duplicate", message="Employee/user link already exists", status_code=409) from e
+            # Best-effort conflict disambiguation (race-safe).
+            refreshed = repo.get_employee_user_link(db, employee_id=employee_id)
+            if refreshed is not None:
+                if refreshed.user_id == payload.user_id:
+                    return EmployeeUserLinkOut(
+                        employee_id=refreshed.employee_id,
+                        user_id=refreshed.user_id,
+                        created_at=refreshed.created_at,
+                    )
+                raise AppError(
+                    code="hr.employee_user_link.conflict",
+                    message="Employee is already linked to a different user",
+                    status_code=409,
+                    details={
+                        "employee_id": str(employee_id),
+                        "existing_user_id": str(refreshed.user_id),
+                        "requested_user_id": str(payload.user_id),
+                    },
+                ) from e
+
+            refreshed_mapping = repo.get_employee_id_by_user_id(db, user_id=payload.user_id)
+            if refreshed_mapping is not None and refreshed_mapping[0] != employee_id:
+                linked_employee_id, linked_tenant_id, _linked_company_id = refreshed_mapping
+                details = {
+                    "user_id": str(payload.user_id),
+                    "employee_id": str(employee_id),
+                }
+                if linked_tenant_id == scope.tenant_id:
+                    details["linked_employee_id"] = str(linked_employee_id)
+                raise AppError(
+                    code="hr.employee_user_link.user_in_use",
+                    message="User is already linked to a different employee",
+                    status_code=409,
+                    details=details,
+                ) from e
+
+            raise AppError(
+                code="hr.employee_user_link.duplicate",
+                message="Employee/user link already exists",
+                status_code=409,
+            ) from e
 
         return EmployeeUserLinkOut(employee_id=link.employee_id, user_id=link.user_id, created_at=link.created_at)
 

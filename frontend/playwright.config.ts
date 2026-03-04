@@ -1,5 +1,20 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000';
+
+function isLocalUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
+const shouldStartWebServer = isLocalUrl(baseURL);
+const baseUrlObj = new URL(baseURL);
+const basePort = baseUrlObj.port ? Number(baseUrlObj.port) : 3000;
+
 /**
  * Read environment variables from file.
  * https://github.com/motdotla/dotenv
@@ -26,7 +41,10 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('')`. */
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000',
+    baseURL,
+
+    // Keep e2e assertions stable across machines (avoid accept-language drift into non-English locales).
+    locale: 'en-US',
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
@@ -70,10 +88,23 @@ export default defineConfig({
     // },
   ],
 
-  /* Run your local dev server before starting the tests */
-  // webServer: {
-  //   command: 'npm run start',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  // },
+  /**
+   * Local DX: make `npm run test:e2e` work without manually starting the app.
+   *
+   * If baseURL points at localhost, we start (or reuse) a local Next server.
+   * If baseURL points at a non-local host (e.g. Docker Compose `http://frontend:3000`),
+   * we assume a server is already running and skip starting one here.
+   */
+  webServer: shouldStartWebServer
+    ? {
+        command: process.env.CI
+          ? `npm run build && npm run start -- -p ${basePort} -H 127.0.0.1`
+          : `npm run dev -- -p ${basePort} -H 127.0.0.1`,
+        // /login does not require backend connectivity (AuthBootstrap skips it),
+        // so it is a safe readiness probe for smoke tests.
+        url: new URL('/login', baseURL).toString(),
+        reuseExistingServer: !process.env.CI,
+        timeout: 120_000,
+      }
+    : undefined,
 });

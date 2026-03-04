@@ -127,11 +127,19 @@ class ManagerSummaryOut(BaseModel):
     employee_code: str | None = None
 
 
+class LinkedUserOut(BaseModel):
+    user_id: UUID
+    email: EmailStr
+    status: str
+    linked_at: datetime
+
+
 class Employee360Out(BaseModel):
     employee: EmployeeOut
     person: PersonOut
     current_employment: EmploymentOut | None
     manager: ManagerSummaryOut | None
+    linked_user: LinkedUserOut | None = None
 
 
 class EmployeeDirectoryRowOut(BaseModel):
@@ -145,6 +153,7 @@ class EmployeeDirectoryRowOut(BaseModel):
     org_unit_id: UUID | None
     manager_employee_id: UUID | None
     manager_name: str | None
+    has_user_link: bool = False
 
 
 class EmployeeUserLinkOut(BaseModel):

@@ -205,6 +205,8 @@ Representative tests:
 Local:
 - Unit/component tests: `cd frontend && npm run test`
 - E2E (Playwright): `cd frontend && npm run test:e2e`
+  - By default, Playwright will start a local Next dev server automatically.
+  - If you set `PLAYWRIGHT_BASE_URL` (e.g. Docker), Playwright assumes the server is already running.
 
 Docker (full gate):
 - From repo root:
@@ -215,6 +217,14 @@ Skip tests (developer escape hatch):
 
 Note:
 - Docker test container uses a dedicated frontend Dockerfile stage (no Next build tax for unit tests).
+- Docker builds are optimized to reduce disk + build time:
+  - `.dockerignore` keeps contexts small:
+    - backend: `/Users/anasshaikh/Documents/Work/noor_project_HRMS/attendence_system/backend/.dockerignore` (excludes `models/` ~GBs, `data/`, caches)
+    - frontend: `/Users/anasshaikh/Documents/Work/noor_project_HRMS/attendence_system/frontend/.dockerignore`
+  - Backend uses a shared dependency image target:
+    - Dockerfile: `/Users/anasshaikh/Documents/Work/noor_project_HRMS/attendence_system/backend/Dockerfile` (`runtime_deps` + `runtime`)
+    - Compose helper service: `backend_image` in `/Users/anasshaikh/Documents/Work/noor_project_HRMS/attendence_system/docker-compose.yaml`
+      - other python services depend on it to avoid rebuilding/exporting identical layers multiple times.
 
 
 ## 7) Known Issues / Follow-ups
@@ -222,4 +232,3 @@ Note:
 - Login failures are almost always “DB is not fresh” (bootstrap already performed); reset volumes for a true first install.
 - Onboarding routes are still UI-only and hidden in Client V0 nav.
 - Consider adding a tiny “M3 admin runbook” (bootstrap/reset DB + first admin user) for faster onboarding.
-

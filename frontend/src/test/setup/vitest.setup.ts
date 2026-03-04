@@ -1,5 +1,6 @@
 import React from "react";
 import "@testing-library/jest-dom/vitest";
+import { configure } from "@testing-library/react";
 import { cleanup } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
 
@@ -52,6 +53,9 @@ const originalLocationReplace =
     : null;
 
 beforeAll(() => {
+  // Docker/CI can be noticeably slower than local runs; keep `findBy*` resilient.
+  configure({ asyncUtilTimeout: 5_000 });
+
   server.listen({ onUnhandledRequest: "error" });
 
   // Avoid jsdom "navigation not implemented" warnings from scope/login redirects.

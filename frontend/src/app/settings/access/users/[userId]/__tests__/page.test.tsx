@@ -110,16 +110,16 @@ describe("/settings/access/users/[userId]", () => {
     fireEvent.click(addRoleButtons[0]!);
 
     // Select role and scope=Branch, but leave company/branch ids empty.
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "ADMIN" } });
-    fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "BRANCH" } });
+    fireEvent.change(await screen.findByLabelText("Role"), { target: { value: "ADMIN" } });
+    fireEvent.change(await screen.findByLabelText("Scope"), { target: { value: "BRANCH" } });
     fireEvent.click(screen.getByRole("button", { name: /^assign$/i }));
     expect(await screen.findByText("Company is required.")).toBeVisible();
 
-    fireEvent.change(screen.getByLabelText("Company ID"), { target: { value: "c-1" } });
+    fireEvent.change(await screen.findByLabelText("Company ID"), { target: { value: "c-1" } });
     fireEvent.click(screen.getByRole("button", { name: /^assign$/i }));
     expect(await screen.findByText("Branch is required.")).toBeVisible();
 
-    fireEvent.change(screen.getByLabelText("Branch ID"), { target: { value: "b-1" } });
+    fireEvent.change(await screen.findByLabelText("Branch ID"), { target: { value: "b-1" } });
     fireEvent.click(screen.getByRole("button", { name: /^assign$/i }));
 
     expect(await screen.findByText("ADMIN")).toBeVisible();
@@ -132,6 +132,6 @@ describe("/settings/access/users/[userId]", () => {
     },
     // This is a full page flow test (tabs + sheet + multiple mutations) and can
     // be slow under Docker/CI, so we give it a higher timeout to avoid flakes.
-    15_000
+    30_000
   );
 });

@@ -200,15 +200,187 @@ export type EmployeeDirectoryRowOut = {
   full_name: string;
   email: string | null;
   phone: string | null;
-  branch_id: UUID;
+  branch_id: UUID | null;
   org_unit_id: UUID | null;
   manager_employee_id: UUID | null;
   manager_name: string | null;
+  has_user_link?: boolean;
 };
 
 export type EmployeeDirectoryListOut = {
   items: EmployeeDirectoryRowOut[];
   paging: { limit: number; offset: number; total: number };
+};
+
+export type HrManagerSummaryOut = {
+  employee_id: UUID;
+  display_name: string;
+  employee_code: string | null;
+};
+
+export type HrPersonOut = {
+  id: UUID;
+  tenant_id: UUID;
+  first_name: string;
+  last_name: string;
+  dob: string | null;
+  nationality: string | null;
+  email: string | null;
+  phone: string | null;
+  address: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type HrEmployeeOut = {
+  id: UUID;
+  tenant_id: UUID;
+  company_id: UUID;
+  person_id: UUID;
+  employee_code: string;
+  status: string;
+  join_date: string | null;
+  termination_date: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type HrEmploymentOut = {
+  id: UUID;
+  tenant_id: UUID;
+  company_id: UUID;
+  employee_id: UUID;
+  branch_id: UUID;
+  org_unit_id: UUID | null;
+  job_title_id: UUID | null;
+  grade_id: UUID | null;
+  manager_employee_id: UUID | null;
+  start_date: string;
+  end_date: string | null;
+  is_primary: boolean | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type HrLinkedUserOut = {
+  user_id: UUID;
+  email: string;
+  status: string;
+  linked_at: string;
+};
+
+export type HrEmployee360Out = {
+  employee: HrEmployeeOut;
+  person: HrPersonOut;
+  current_employment: HrEmploymentOut | null;
+  manager: HrManagerSummaryOut | null;
+  linked_user: HrLinkedUserOut | null;
+};
+
+export type HrEmployeeCreateIn = {
+  person: {
+    first_name: string;
+    last_name: string;
+    dob?: string | null;
+    nationality?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    address: Record<string, unknown>;
+  };
+  employee: {
+    company_id: UUID;
+    employee_code: string;
+    join_date?: string | null;
+    status?: "ACTIVE" | "INACTIVE" | "TERMINATED" | string;
+  };
+  employment: {
+    start_date: string;
+    branch_id: UUID;
+    org_unit_id?: UUID | null;
+    job_title_id?: UUID | null;
+    grade_id?: UUID | null;
+    manager_employee_id?: UUID | null;
+    is_primary: boolean;
+  };
+};
+
+export type HrEmploymentChangeIn = {
+  start_date: string;
+  branch_id: UUID;
+  org_unit_id?: UUID | null;
+  job_title_id?: UUID | null;
+  grade_id?: UUID | null;
+  manager_employee_id?: UUID | null;
+};
+
+export type HrEmployeeLinkUserIn = {
+  user_id: UUID;
+};
+
+export type HrEmployeeUserLinkOut = {
+  employee_id: UUID;
+  user_id: UUID;
+  created_at: string;
+};
+
+export type EssProfilePatchIn = {
+  email?: string | null;
+  phone?: string | null;
+  address?: Record<string, unknown> | null;
+};
+
+export type PagingOut = {
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+export type MssEmployeeSummaryOut = {
+  employee_id: UUID;
+  employee_code: string;
+  display_name: string;
+  status: string;
+  branch_id: UUID | null;
+  org_unit_id: UUID | null;
+  job_title_id: UUID | null;
+  grade_id: UUID | null;
+  manager_employee_id: UUID | null;
+  relationship_depth: number;
+};
+
+export type MssTeamListOut = {
+  items: MssEmployeeSummaryOut[];
+  paging: PagingOut;
+};
+
+export type MssPersonOut = {
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  phone: string | null;
+};
+
+export type MssEmployeeOut = {
+  id: UUID;
+  employee_code: string;
+  status: string;
+  join_date: string | null;
+  termination_date: string | null;
+};
+
+export type MssEmploymentOut = {
+  branch_id: UUID;
+  org_unit_id: UUID | null;
+  job_title_id: UUID | null;
+  grade_id: UUID | null;
+  manager_employee_id: UUID | null;
+};
+
+export type MssEmployeeProfileOut = {
+  employee: MssEmployeeOut;
+  person: MssPersonOut;
+  current_employment: MssEmploymentOut | null;
+  manager: HrManagerSummaryOut | null;
 };
 
 // Face system endpoints intentionally return file paths + ids only.

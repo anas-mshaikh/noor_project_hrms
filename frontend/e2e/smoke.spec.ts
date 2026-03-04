@@ -103,7 +103,10 @@ async function mockSessionForSettings(page: import("@playwright/test").Page) {
 
 test("login page loads", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByRole("heading")).toBeVisible();
+  // Login page has multiple headings (e.g. "Sign in" + section titles). Assert the primary H1.
+  await expect(
+    page.getByRole("heading", { name: /sign in|iniciar sesi[oó]n/i })
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: /sign in|iniciar sesi[oó]n/i })).toBeVisible();
 });
 
@@ -121,4 +124,3 @@ test("settings org + access pages load (mocked session)", async ({ page }) => {
   await page.goto("/settings/access/users");
   await expect(page.getByRole("heading", { name: /users/i })).toBeVisible();
 });
-

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
@@ -20,11 +20,20 @@ class ManagerSummary:
 
 
 @dataclass(frozen=True)
+class LinkedUserSummary:
+    user_id: UUID
+    email: str
+    status: str
+    linked_at: datetime
+
+
+@dataclass(frozen=True)
 class Employee360Row:
     employee: Employee
     person: Person
     current_employment: EmployeeEmployment | None
     manager: ManagerSummary | None
+    linked_user: LinkedUserSummary | None
 
 
 @dataclass(frozen=True)
@@ -39,6 +48,7 @@ class EmployeeDirectoryRow:
     org_unit_id: UUID | None
     manager_employee_id: UUID | None
     manager_name: str | None
+    has_user_link: bool
 
 
 def _current_employment_subquery() -> sa.Subquery:
@@ -235,7 +245,30 @@ def get_employee_360_by_id(
                 employee_code=mgr_emp.employee_code,
             )
 
-    return Employee360Row(employee=employee, person=person, current_employment=current, manager=manager)
+    linked_user: LinkedUserSummary | None = None
+    link_row = db.execute(
+        sa.select(EmployeeUserLink, User)
+        .join(User, User.id == EmployeeUserLink.user_id)
+        .where(EmployeeUserLink.employee_id == employee_id, User.deleted_at.is_(None))
+        .limit(1)
+    ).first()
+    if link_row is not None:
+        link: EmployeeUserLink = link_row[0]
+        user: User = link_row[1]
+        linked_user = LinkedUserSummary(
+            user_id=user.id,
+            email=user.email,
+            status=user.status,
+            linked_at=link.created_at,
+        )
+
+    return Employee360Row(
+        employee=employee,
+        person=person,
+        current_employment=current,
+        manager=manager,
+        linked_user=linked_user,
+    )
 
 
 def list_employees_directory(
@@ -279,6 +312,12 @@ def list_employees_directory(
         filters.append(ce.c.org_unit_id == org_unit_id)
         filters.append(ce.c.rn == 1)
 
+    has_user_link = sa.exists(
+        sa.select(1)
+        .select_from(EmployeeUserLink)
+        .where(EmployeeUserLink.employee_id == Employee.id)
+    ).label("has_user_link")
+
     base = (
         sa.select(
             Employee.id.label("employee_id"),
@@ -293,6 +332,7 @@ def list_employees_directory(
             ce.c.manager_employee_id.label("manager_employee_id"),
             mgr_person.first_name.label("mgr_first_name"),
             mgr_person.last_name.label("mgr_last_name"),
+            has_user_link,
         )
         .select_from(Employee)
         .join(Person, Person.id == Employee.person_id)
@@ -330,6 +370,7 @@ def list_employees_directory(
                 org_unit_id=r.org_unit_id,
                 manager_employee_id=r.manager_employee_id,
                 manager_name=mgr_name,
+                has_user_link=bool(r.has_user_link),
             )
         )
 
