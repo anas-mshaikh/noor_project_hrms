@@ -3,6 +3,7 @@ import {
   AtSign,
   BadgeCheck,
   Briefcase,
+  Calendar,
   CheckSquare,
   FileUp,
   Inbox,
@@ -92,9 +93,12 @@ const attendanceModule: ModuleDef = {
   icon: LayoutDashboard,
   isActive: (pathname) =>
     !(
+      startsWithPath(pathname, "/attendance") ||
+      startsWithPath(pathname, "/leave") ||
       startsWithPath(pathname, "/hr") ||
       startsWithPath(pathname, "/ess") ||
       startsWithPath(pathname, "/mss") ||
+      startsWithPath(pathname, "/workflow") ||
       startsWithPath(pathname, "/tasks") ||
       startsWithPath(pathname, "/inbox") ||
       startsWithPath(pathname, "/notes") ||
@@ -216,11 +220,59 @@ const hrModule: ModuleDef = {
 const essModule: ModuleDef = {
   id: "ess",
   label: "Self Service",
-  href: "/ess/me",
+  href: "/attendance/punch",
   icon: Users,
-  isActive: (pathname) => startsWithPath(pathname, "/ess"),
-  requiredPermissions: ["ess:profile:read", "ess:profile:write"],
+  isActive: (pathname) =>
+    // ESS owns self-service attendance + leave routes.
+    // Team calendar is a manager view and is highlighted under MSS instead.
+    (startsWithPath(pathname, "/ess") ||
+      startsWithPath(pathname, "/attendance") ||
+      startsWithPath(pathname, "/leave")) &&
+    !startsWithPath(pathname, "/leave/team-calendar"),
+  requiredPermissions: [
+    "ess:profile:read",
+    "attendance:punch:read",
+    "attendance:correction:read",
+    "leave:balance:read",
+    "leave:request:read",
+  ],
   sidebar: [
+    {
+      id: "ess-attendance-punch",
+      href: "/attendance/punch",
+      title: "Punch",
+      description: "Punch in and out",
+      icon: LayoutDashboard,
+      match: "exact",
+      requiredPermissions: ["attendance:punch:read"],
+    },
+    {
+      id: "ess-attendance-days",
+      href: "/attendance/days",
+      title: "Days",
+      description: "Daily status and minutes",
+      icon: LayoutGrid,
+      match: "exact",
+      requiredPermissions: ["attendance:correction:read"],
+    },
+    {
+      id: "ess-attendance-corrections",
+      href: "/attendance/corrections",
+      title: "My Corrections",
+      description: "Submitted attendance corrections",
+      icon: MessageCircle,
+      match: "prefix",
+      requiredPermissions: ["attendance:correction:read"],
+    },
+    {
+      id: "ess-leave",
+      href: "/leave",
+      title: "Leave",
+      description: "Balances and requests",
+      icon: Calendar,
+      match: "prefix",
+      requiredPermissions: ["leave:balance:read", "leave:request:read"],
+    },
     {
       id: "ess-me",
       href: "/ess/me",
@@ -238,8 +290,9 @@ const mssModule: ModuleDef = {
   label: "My Team",
   href: "/mss/team",
   icon: Users,
-  isActive: (pathname) => startsWithPath(pathname, "/mss"),
-  requiredPermissions: ["hr:team:read"],
+  isActive: (pathname) =>
+    startsWithPath(pathname, "/mss") || startsWithPath(pathname, "/leave/team-calendar"),
+  requiredPermissions: ["hr:team:read", "leave:team:read"],
   sidebar: [
     {
       id: "mss-team",
@@ -249,6 +302,15 @@ const mssModule: ModuleDef = {
       icon: Users,
       match: "prefix",
       requiredPermissions: ["hr:team:read"],
+    },
+    {
+      id: "mss-leave-team-calendar",
+      href: "/leave/team-calendar",
+      title: "Team Calendar",
+      description: "Approved leave spans",
+      icon: Calendar,
+      match: "prefix",
+      requiredPermissions: ["leave:team:read"],
     },
   ],
 };
@@ -290,12 +352,31 @@ const tasksModule: ModuleDef = {
 
 const inboxModule: ModuleDef = {
   id: "inbox",
-  label: "Inbox",
-  href: "/inbox",
+  label: "Workflow",
+  href: "/workflow/inbox",
   icon: Inbox,
-  isActive: (pathname) => startsWithPath(pathname, "/inbox"),
-  v0Hidden: true,
+  isActive: (pathname) =>
+    startsWithPath(pathname, "/workflow") || startsWithPath(pathname, "/inbox"),
+  requiredPermissions: ["workflow:request:read", "workflow:request:admin"],
   sidebar: [
+    {
+      id: "workflow-inbox",
+      href: "/workflow/inbox",
+      title: "Inbox",
+      description: "Requests assigned to you",
+      icon: Inbox,
+      match: "prefix",
+      requiredPermissions: ["workflow:request:read", "workflow:request:admin"],
+    },
+    {
+      id: "workflow-outbox",
+      href: "/workflow/outbox",
+      title: "Outbox",
+      description: "Requests you created",
+      icon: MessageCircle,
+      match: "prefix",
+      requiredPermissions: ["workflow:request:read", "workflow:request:admin"],
+    },
     {
       id: "inbox-all",
       href: "/inbox",
@@ -303,6 +384,7 @@ const inboxModule: ModuleDef = {
       description: "Team and system threads",
       icon: Inbox,
       match: "exact",
+      v0Hidden: true,
     },
     {
       id: "inbox-groups",
@@ -311,6 +393,7 @@ const inboxModule: ModuleDef = {
       description: "Channels & groups",
       icon: MessageCircle,
       match: "prefix",
+      v0Hidden: true,
     },
     {
       id: "inbox-mentions",
@@ -319,6 +402,7 @@ const inboxModule: ModuleDef = {
       description: "Where you were tagged",
       icon: AtSign,
       match: "prefix",
+      v0Hidden: true,
     },
   ],
 };
@@ -404,6 +488,15 @@ const settingsModule: ModuleDef = {
       icon: Plug,
       match: "prefix",
       v0Hidden: true,
+    },
+    {
+      id: "settings-workflow",
+      href: "/settings/workflow",
+      title: "Workflow",
+      description: "Definitions and routing",
+      icon: SlidersHorizontal,
+      match: "prefix",
+      requiredPermissions: ["workflow:definition:read", "workflow:definition:write"],
     },
   ],
 };

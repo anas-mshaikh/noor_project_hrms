@@ -136,6 +136,230 @@ export function getErrorUx(err: unknown): ErrorUx {
       };
     }
 
+    // ----- Attendance (ESS) -----
+    if (err.code === "attendance.correction.too_old") {
+      return {
+        title: "Correction window closed",
+        description: "This day is too old to correct. Contact HR if you need an exception.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "attendance.correction.future_not_allowed") {
+      return {
+        title: "Future correction not allowed",
+        description: "You cannot submit a correction for a future day.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "attendance.correction.reason_required") {
+      return {
+        title: "Reason required",
+        description: "Add a reason and try again.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "attendance.correction.conflict.leave") {
+      return {
+        title: "Cannot correct a leave day",
+        description: "This day is on leave and cannot be corrected.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "attendance.correction.pending_exists") {
+      return {
+        title: "Correction already pending",
+        description: "A pending correction already exists for this day.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "attendance.correction.idempotency.conflict") {
+      return {
+        title: "Duplicate submission",
+        description: "This idempotency key was already used with a different correction payload.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "attendance.punch.disabled") {
+      return {
+        title: "Punching disabled",
+        description: "Punching is disabled for this branch. Contact HR for assistance.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "attendance.punch.already_in") {
+      return {
+        title: "Already punched in",
+        description: "You are already punched in. Punch out to close your current session.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "attendance.punch.not_in") {
+      return {
+        title: "Not punched in",
+        description: "You are not currently punched in.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "attendance.punch.conflict.leave") {
+      return {
+        title: "Cannot punch on leave",
+        description: "You cannot punch in on a day that is on leave.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "attendance.punch.multiple_sessions_not_allowed") {
+      return {
+        title: "Multiple sessions not allowed",
+        description: "This branch does not allow multiple work sessions in a single day.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    // ----- Leave (ESS/MSS) -----
+    if (err.code === "leave.overlap") {
+      return {
+        title: "Overlapping leave",
+        description: "This leave request overlaps with an existing request.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "leave.insufficient_balance") {
+      return {
+        title: "Insufficient balance",
+        description: "You do not have enough leave balance for this request.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "leave.policy.missing") {
+      return {
+        title: "Leave policy missing",
+        description: "Your employee profile is missing leave policy configuration. Contact HR for help.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "leave.policy.rule.missing") {
+      return {
+        title: "Leave type not allowed",
+        description: "This leave type is not allowed under your policy. Contact HR for help.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "leave.calendar.missing") {
+      return {
+        title: "Leave calendar not configured",
+        description: "Weekly off / holiday calendar is missing for your branch. Contact HR to configure it.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "leave.attachment_required") {
+      return {
+        title: "Attachment required",
+        description: "This leave type requires an attachment. Add an attachment and try again.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "leave.half_day.invalid") {
+      return {
+        title: "Invalid half-day request",
+        description: "Half-day leave must be for a single day and requires selecting AM or PM.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "leave.invalid_range") {
+      return {
+        title: "Invalid date range",
+        description: "Check the selected dates and try again.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    // ----- Workflow backbone -----
+    if (err.code === "workflow.step.not_assignee") {
+      return {
+        title: "Not allowed",
+        description: "You are not assigned to approve this request.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (
+      err.code === "workflow.request.not_pending" ||
+      err.code === "workflow.step.not_pending" ||
+      err.code === "workflow.step.already_decided"
+    ) {
+      return {
+        title: "Already finalized",
+        description: "This request is no longer pending. Refresh to see the latest status.",
+        suggestedActionKind: "retry",
+      };
+    }
+
+    // Participant-safe not-found (hide existence).
+    if (err.code === "workflow.request.not_participant") {
+      return {
+        title: "Not found",
+        description: "The requested workflow request does not exist or you do not have access.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "workflow.request.not_found") {
+      return {
+        title: "Not found",
+        description: "The requested workflow request does not exist or you do not have access.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "workflow.request_type.not_found") {
+      return {
+        title: "Unknown request type",
+        description: "This workflow request type does not exist. Contact an administrator.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "workflow.definition.not_found") {
+      return {
+        title: "Workflow definition not found",
+        description: "This workflow definition is missing or invalid. Review the definition configuration and try again.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "workflow.no_assignees") {
+      return {
+        title: "No approvers configured",
+        description: "No approvers could be resolved for this workflow. Contact an administrator.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "workflow.manager_missing") {
+      return {
+        title: "Manager not set",
+        description: "This workflow requires a manager, but no manager is assigned. Contact HR for help.",
+        suggestedActionKind: "none",
+      };
+    }
+
     if (err.status === 404) {
       return {
         title: "Not found",

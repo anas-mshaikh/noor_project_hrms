@@ -383,6 +383,305 @@ export type MssEmployeeProfileOut = {
   manager: HrManagerSummaryOut | null;
 };
 
+// ----- Attendance (ESS/MSS) -----
+export type PunchStateOut = {
+  today_business_date: string; // YYYY-MM-DD
+  is_punched_in: boolean;
+  open_session_started_at: string | null;
+  base_minutes_today: number;
+  effective_minutes_today: number;
+  effective_status_today: string;
+};
+
+export type AttendanceDayOverrideOut = {
+  kind: string; // "LEAVE" | "CORRECTION"
+  status: string;
+  source_type: string;
+  source_id: UUID;
+};
+
+export type AttendanceDayOut = {
+  day: string; // YYYY-MM-DD
+  base_status: string;
+  effective_status: string;
+  base_minutes: number;
+  effective_minutes: number;
+  first_in: string | null;
+  last_out: string | null;
+  has_open_session: boolean;
+  sources: string[];
+  override: AttendanceDayOverrideOut | null;
+};
+
+export type AttendanceDaysOut = {
+  items: AttendanceDayOut[];
+};
+
+export type AttendanceCorrectionCreateIn = {
+  day: string; // YYYY-MM-DD
+  correction_type: string;
+  requested_override_status: string;
+  reason?: string | null;
+  evidence_file_ids?: UUID[];
+  idempotency_key?: string | null;
+};
+
+export type AttendanceCorrectionOut = {
+  id: UUID;
+  tenant_id: UUID;
+  employee_id: UUID;
+  branch_id: UUID;
+  day: string; // YYYY-MM-DD
+  correction_type: string;
+  requested_override_status: string;
+  reason: string | null;
+  evidence_file_ids: UUID[];
+  status: string;
+  workflow_request_id: UUID | null;
+  idempotency_key: string | null;
+  created_at: string;
+  updated_at: string;
+  meta?: Record<string, unknown> | null;
+};
+
+export type AttendanceCorrectionListOut = {
+  items: AttendanceCorrectionOut[];
+  next_cursor: string | null;
+};
+
+// ----- Leave (ESS/MSS) -----
+export type LeaveBalanceOut = {
+  leave_type_code: string;
+  leave_type_name: string;
+  period_year: number;
+  balance_days: number;
+  used_days: number;
+  pending_days: number;
+};
+
+export type LeaveBalancesOut = {
+  items: LeaveBalanceOut[];
+};
+
+export type LeaveRequestCreateIn = {
+  leave_type_code: string;
+  start_date: string; // YYYY-MM-DD
+  end_date: string; // YYYY-MM-DD
+  unit?: "DAY" | "HALF_DAY" | string;
+  half_day_part?: "AM" | "PM" | string | null;
+  reason?: string | null;
+  attachment_file_ids?: UUID[];
+  idempotency_key?: string | null;
+};
+
+export type LeaveRequestOut = {
+  id: UUID;
+  tenant_id: UUID;
+  employee_id: UUID;
+  company_id: UUID | null;
+  branch_id: UUID | null;
+  leave_type_code: string;
+  leave_type_name: string | null;
+  policy_id: UUID;
+  start_date: string; // YYYY-MM-DD
+  end_date: string; // YYYY-MM-DD
+  unit: string;
+  half_day_part: string | null;
+  requested_days: number;
+  reason: string | null;
+  status: string;
+  workflow_request_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LeaveRequestListOut = {
+  items: LeaveRequestOut[];
+  next_cursor: string | null;
+};
+
+export type TeamLeaveSpanOut = {
+  leave_request_id: UUID;
+  employee_id: UUID;
+  start_date: string; // YYYY-MM-DD
+  end_date: string; // YYYY-MM-DD
+  leave_type_code: string;
+  requested_days: number;
+};
+
+export type TeamCalendarOut = {
+  items: TeamLeaveSpanOut[];
+};
+
+// ----- Workflow (backbone) -----
+export type WorkflowRequestCreateIn = {
+  request_type_code: string;
+  payload: Record<string, unknown>;
+  subject_employee_id?: UUID | null;
+  entity_type?: string | null;
+  entity_id?: UUID | null;
+  company_id?: UUID | null;
+  branch_id?: UUID | null;
+  idempotency_key?: string | null;
+  comment?: string | null;
+};
+
+export type WorkflowRequestApproveIn = {
+  comment?: string | null;
+};
+
+export type WorkflowRequestRejectIn = {
+  comment: string;
+};
+
+export type WorkflowCommentCreateIn = {
+  body: string;
+};
+
+export type WorkflowAttachmentCreateIn = {
+  file_id: UUID;
+  note?: string | null;
+};
+
+export type WorkflowRequestSummaryOut = {
+  id: UUID;
+  request_type_code: string;
+  status: string;
+  current_step: number;
+  subject: string | null;
+  payload: Record<string, unknown> | null;
+  tenant_id: UUID;
+  company_id: UUID;
+  branch_id: UUID | null;
+  created_by_user_id: UUID | null;
+  requester_employee_id: UUID;
+  subject_employee_id: UUID | null;
+  entity_type: string | null;
+  entity_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkflowRequestListOut = {
+  items: WorkflowRequestSummaryOut[];
+  next_cursor: string | null;
+};
+
+export type WorkflowRequestStepOut = {
+  id: UUID;
+  step_order: number;
+  assignee_type: string | null;
+  assignee_role_code: string | null;
+  assignee_user_id: UUID | null;
+  assignee_user_ids: UUID[];
+  decision: string | null;
+  decided_at: string | null;
+  decided_by_user_id: UUID | null;
+  comment: string | null;
+  created_at: string;
+};
+
+export type WorkflowRequestCommentOut = {
+  id: UUID;
+  author_user_id: UUID;
+  body: string;
+  created_at: string;
+};
+
+export type WorkflowRequestAttachmentOut = {
+  id: UUID;
+  file_id: UUID;
+  uploaded_by_user_id: UUID | null;
+  note: string | null;
+  created_at: string;
+};
+
+export type WorkflowRequestEventOut = {
+  id: UUID;
+  actor_user_id: UUID | null;
+  event_type: string;
+  data: Record<string, unknown>;
+  correlation_id: string | null;
+  created_at: string;
+};
+
+export type WorkflowRequestDetailOut = {
+  request: WorkflowRequestSummaryOut;
+  steps: WorkflowRequestStepOut[];
+  comments: WorkflowRequestCommentOut[];
+  attachments: WorkflowRequestAttachmentOut[];
+  events: WorkflowRequestEventOut[];
+};
+
+// Approve/reject/cancel return a small action payload (not the full request).
+export type WorkflowRequestActionOut = {
+  id: string;
+  status: string;
+  current_step?: number;
+  cancelled_at?: string;
+};
+
+export type WorkflowDefinitionCreateIn = {
+  request_type_code: string;
+  code: string;
+  name: string;
+  version: number;
+  company_id?: UUID | null;
+};
+
+export type WorkflowDefinitionStepIn = {
+  step_index: number;
+  assignee_type: "MANAGER" | "ROLE" | "USER" | string;
+  assignee_role_code?: string | null;
+  assignee_user_id?: UUID | null;
+  scope_mode?: "TENANT" | "COMPANY" | "BRANCH" | string;
+  fallback_role_code?: string | null;
+};
+
+export type WorkflowDefinitionStepsIn = {
+  steps: WorkflowDefinitionStepIn[];
+};
+
+export type WorkflowDefinitionStepOut = {
+  step_index: number;
+  assignee_type: string;
+  assignee_role_code: string | null;
+  assignee_user_id: UUID | null;
+  scope_mode: string;
+  fallback_role_code: string | null;
+};
+
+export type WorkflowDefinitionOut = {
+  id: UUID;
+  tenant_id: UUID;
+  company_id: UUID | null;
+  request_type_code: string;
+  code: string | null;
+  name: string;
+  version: number | null;
+  is_active: boolean;
+  created_by_user_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+  steps: WorkflowDefinitionStepOut[];
+};
+
+// ----- DMS (files, used by workflow attachments) -----
+export type DmsFileOut = {
+  id: UUID;
+  tenant_id: UUID;
+  storage_provider: "LOCAL" | "S3" | string;
+  original_filename: string;
+  content_type: string;
+  size_bytes: number;
+  sha256: string | null;
+  status: "UPLOADING" | "READY" | "FAILED" | "DELETED" | string;
+  created_by_user_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+  meta: Record<string, unknown> | null;
+};
+
 // Face system endpoints intentionally return file paths + ids only.
 export type FaceRegisterOut = {
   employee_id: UUID;

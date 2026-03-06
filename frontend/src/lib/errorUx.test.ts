@@ -43,5 +43,34 @@ describe("lib/errorUx", () => {
     });
     expect(getErrorUx(err)).toMatchObject({ suggestedActionKind: "retry" });
   });
-});
 
+  it("maps workflow assignee errors to Not allowed", () => {
+    const err = new ApiError({
+      status: 403,
+      code: "workflow.step.not_assignee",
+      message: "Not an assignee",
+      correlationId: "cid",
+    });
+    expect(getErrorUx(err)).toMatchObject({ title: "Not allowed" });
+  });
+
+  it("maps attendance correction conflicts to friendly copy", () => {
+    const err = new ApiError({
+      status: 409,
+      code: "attendance.correction.pending_exists",
+      message: "Pending exists",
+      correlationId: "cid",
+    });
+    expect(getErrorUx(err)).toMatchObject({ title: "Correction already pending" });
+  });
+
+  it("maps leave overlap to friendly copy", () => {
+    const err = new ApiError({
+      status: 409,
+      code: "leave.overlap",
+      message: "Overlap",
+      correlationId: "cid",
+    });
+    expect(getErrorUx(err)).toMatchObject({ title: "Overlapping leave" });
+  });
+});
