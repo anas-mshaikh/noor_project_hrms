@@ -207,4 +207,74 @@ describe("/workflow/requests/[requestId]", () => {
       ),
     );
   });
+
+  it("renders payrun approval affordances and invalidates payroll queries after approve", async () => {
+    const requestId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+    let status = "PENDING";
+    const buildDetail = (): WorkflowRequestDetailOut => ({
+      request: {
+        id: requestId,
+        request_type_code: "PAYRUN_APPROVAL",
+        status,
+        current_step: 0,
+        subject: "Approve March payroll",
+        payload: {
+          payrun_id: "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb",
+          period_key: "2026-03",
+          branch_id: SESSION.scope.branch_id,
+          totals: { net_total: "5000.00" },
+        },
+        tenant_id: SESSION.scope.tenant_id,
+        company_id: SESSION.scope.company_id!,
+        branch_id: SESSION.scope.branch_id,
+        created_by_user_id: SESSION.user.id,
+        requester_employee_id: "aaaaaaaa-3333-4333-8333-aaaaaaaaaaaa",
+        subject_employee_id: null,
+        entity_type: "payroll.payrun",
+        entity_id: "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb",
+        created_at: new Date(0).toISOString(),
+        updated_at: new Date(0).toISOString(),
+      },
+      steps: [],
+      comments: [],
+      attachments: [],
+      events: [],
+    });
+
+    server.use(
+      http.get("*/api/v1/workflow/requests/:id", () => HttpResponse.json(ok(buildDetail()))),
+      http.post("*/api/v1/workflow/requests/:id/approve", () => {
+        status = "APPROVED";
+        return HttpResponse.json(ok({ id: requestId, status: "APPROVED", current_step: 0 }));
+      }),
+    );
+
+    const queryClient = createQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    seedSession(SESSION);
+    setPathname(`/workflow/requests/${requestId}`);
+    setSearchParams({});
+    setParams({ requestId });
+
+    renderWithProviders(<WorkflowRequestDeepLinkPage params={{ requestId }} />, {
+      queryClient,
+    });
+
+    const openLink = await screen.findByRole("link", { name: "Open payrun" });
+    expect(openLink).toHaveAttribute(
+      "href",
+      "/payroll/payruns/bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb",
+    );
+    expect(await screen.findByText("Payrun approval")).toBeVisible();
+    expect(await screen.findByText("2026-03")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: ["payroll"] }),
+      ),
+    );
+  });
 });

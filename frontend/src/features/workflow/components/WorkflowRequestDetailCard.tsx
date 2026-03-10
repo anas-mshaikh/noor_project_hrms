@@ -29,13 +29,16 @@ export function WorkflowRequestDetailCard({
 }) {
   const req = detail.request;
   const rows = payloadToRows(req.payload ?? {}, req.request_type_code);
-  const openDocHref =
+  const openHref =
     req.entity_type === "dms.document" && req.entity_id
       ? compatibilityDocHref({
           docId: req.entity_id,
           employeeId: req.subject_employee_id ?? null,
         })
-      : null;
+      : req.entity_type === "payroll.payrun" && req.entity_id
+        ? `/payroll/payruns/${req.entity_id}`
+        : null;
+  const openLabel = req.entity_type === "payroll.payrun" ? "Open payrun" : "Open document";
 
   return (
     <div className="space-y-6">
@@ -79,10 +82,10 @@ export function WorkflowRequestDetailCard({
         )}
       </div>
 
-      {openDocHref ? (
+      {openHref ? (
         <div>
           <Button asChild type="button" variant="secondary">
-            <Link href={openDocHref}>Open document</Link>
+            <Link href={openHref}>{openLabel}</Link>
           </Button>
         </div>
       ) : null}

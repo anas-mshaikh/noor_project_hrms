@@ -927,6 +927,231 @@ export type PayableRecomputeOut = {
   computed_rows: number;
 };
 
+// ----- Payroll (admin + ESS payslips) -----
+export type PayrollCalendarCreateIn = {
+  code: string;
+  name: string;
+  currency_code: string;
+  timezone: string;
+  is_active?: boolean;
+};
+
+export type PayrollCalendarOut = {
+  id: UUID;
+  tenant_id: UUID;
+  code: string;
+  name: string;
+  frequency: "MONTHLY" | string;
+  currency_code: string;
+  timezone: string;
+  is_active: boolean;
+  created_by_user_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayrollPeriodCreateIn = {
+  period_key: string;
+  start_date: string;
+  end_date: string;
+};
+
+export type PayrollPeriodOut = {
+  id: UUID;
+  tenant_id: UUID;
+  calendar_id: UUID;
+  period_key: string;
+  start_date: string;
+  end_date: string;
+  status: "OPEN" | "CLOSED" | string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayrollComponentCreateIn = {
+  code: string;
+  name: string;
+  component_type: "EARNING" | "DEDUCTION" | string;
+  calc_mode: "FIXED" | "PERCENT_OF_GROSS" | "MANUAL" | string;
+  default_amount?: string | number | null;
+  default_percent?: string | number | null;
+  is_taxable?: boolean;
+  is_active?: boolean;
+};
+
+export type PayrollComponentOut = {
+  id: UUID;
+  tenant_id: UUID;
+  code: string;
+  name: string;
+  component_type: "EARNING" | "DEDUCTION" | string;
+  calc_mode: "FIXED" | "PERCENT_OF_GROSS" | "MANUAL" | string;
+  default_amount: string | number | null;
+  default_percent: string | number | null;
+  is_taxable: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SalaryStructureCreateIn = {
+  code: string;
+  name: string;
+  is_active?: boolean;
+};
+
+export type SalaryStructureOut = {
+  id: UUID;
+  tenant_id: UUID;
+  code: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SalaryStructureLineCreateIn = {
+  component_id: UUID;
+  sort_order: number;
+  calc_mode_override?: "FIXED" | "PERCENT_OF_GROSS" | "MANUAL" | string | null;
+  amount_override?: string | number | null;
+  percent_override?: string | number | null;
+};
+
+export type SalaryStructureLineOut = {
+  id: UUID;
+  tenant_id: UUID;
+  salary_structure_id: UUID;
+  component_id: UUID;
+  sort_order: number;
+  calc_mode_override: "FIXED" | "PERCENT_OF_GROSS" | "MANUAL" | string | null;
+  amount_override: string | number | null;
+  percent_override: string | number | null;
+  created_at: string;
+};
+
+export type SalaryStructureDetailOut = {
+  structure: SalaryStructureOut;
+  lines: SalaryStructureLineOut[];
+};
+
+export type EmployeeCompensationUpsertIn = {
+  currency_code: string;
+  salary_structure_id: UUID;
+  base_amount: string | number;
+  effective_from: string;
+  effective_to?: string | null;
+  overrides_json?: Record<string, unknown> | null;
+};
+
+export type EmployeeCompensationOut = {
+  id: UUID;
+  tenant_id: UUID;
+  employee_id: UUID;
+  currency_code: string;
+  salary_structure_id: UUID;
+  base_amount: string | number;
+  effective_from: string;
+  effective_to: string | null;
+  overrides_json: Record<string, unknown> | null;
+  created_by_user_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayrunGenerateIn = {
+  calendar_id: UUID;
+  period_key: string;
+  branch_id?: UUID | null;
+  idempotency_key?: string | null;
+};
+
+export type PayrunOut = {
+  id: UUID;
+  tenant_id: UUID;
+  calendar_id: UUID;
+  period_id: UUID;
+  branch_id: UUID | null;
+  version: number;
+  status:
+    | "DRAFT"
+    | "PENDING_APPROVAL"
+    | "APPROVED"
+    | "PUBLISHED"
+    | "CANCELED"
+    | string;
+  generated_at: string;
+  generated_by_user_id: UUID | null;
+  workflow_request_id: UUID | null;
+  idempotency_key: string | null;
+  totals_json: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayrunItemOut = {
+  id: UUID;
+  tenant_id: UUID;
+  payrun_id: UUID;
+  employee_id: UUID;
+  payable_days: number;
+  payable_minutes: number;
+  working_days_in_period: number;
+  gross_amount: string | number;
+  deductions_amount: string | number;
+  net_amount: string | number;
+  status: "INCLUDED" | "EXCLUDED" | string;
+  computed_json: Record<string, unknown>;
+  anomalies_json: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type PayrunItemLineOut = {
+  id: UUID;
+  tenant_id: UUID;
+  payrun_item_id: UUID;
+  component_id: UUID;
+  component_code: string;
+  component_type: "EARNING" | "DEDUCTION" | string;
+  amount: string | number;
+  meta_json: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type PayrunDetailOut = {
+  payrun: PayrunOut;
+  items: PayrunItemOut[];
+  lines: PayrunItemLineOut[] | null;
+};
+
+export type PayrunSubmitApprovalOut = {
+  payrun_id: UUID;
+  workflow_request_id: UUID;
+  status: string;
+};
+
+export type PayrunPublishOut = {
+  payrun_id: UUID;
+  published_count: number;
+  status: string;
+};
+
+export type PayslipOut = {
+  id: UUID;
+  tenant_id: UUID;
+  payrun_id: UUID;
+  employee_id: UUID;
+  status: "READY" | "PUBLISHED" | string;
+  dms_document_id: UUID | null;
+  period_key: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayslipListOut = {
+  items: PayslipOut[];
+};
+
 // Face system endpoints intentionally return file paths + ids only.
 export type FaceRegisterOut = {
   employee_id: UUID;

@@ -864,6 +864,348 @@ async function mockSessionForRosterPayables(page: import("@playwright/test").Pag
   return { employeeId };
 }
 
+async function mockSessionForPayroll(page: import("@playwright/test").Page) {
+  const scope = { tenantId: "t-1", companyId: "c-1", branchId: "b-1" };
+  const payrunId = "70000000-0000-4000-8000-000000000001";
+  const workflowRequestId = "70000000-0000-4000-8000-000000000002";
+  const payslipId = "70000000-0000-4000-8000-000000000003";
+
+  await seedScope(page, scope);
+
+  const session = {
+    ok: true,
+    data: {
+      user: { id: "u-payroll-1", email: "payroll@example.com", status: "ACTIVE" },
+      roles: ["HR"],
+      permissions: [
+        "payroll:calendar:read",
+        "payroll:payrun:read",
+        "payroll:payrun:generate",
+        "payroll:payrun:submit",
+        "payroll:payrun:publish",
+        "payroll:payrun:export",
+        "payroll:payslip:read",
+        "workflow:request:read",
+        "workflow:request:approve",
+      ],
+      scope: {
+        tenant_id: scope.tenantId,
+        company_id: scope.companyId,
+        branch_id: scope.branchId,
+        allowed_tenant_ids: [scope.tenantId],
+        allowed_company_ids: [scope.companyId],
+        allowed_branch_ids: [scope.branchId],
+      },
+    },
+  };
+
+  let payrunStatus: "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "PUBLISHED" = "DRAFT";
+  let workflowStatus: "PENDING" | "APPROVED" = "PENDING";
+  let payslipDownloadCount = 0;
+
+  await page.route("**/api/v1/auth/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(session),
+    });
+  });
+
+  await page.route("**/api/v1/tenancy/companies", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: [
+          {
+            id: scope.companyId,
+            tenant_id: scope.tenantId,
+            name: "Demo Company",
+            legal_name: "Demo Company LLC",
+            currency_code: "SAR",
+            timezone: "Asia/Riyadh",
+            status: "ACTIVE",
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route("**/api/v1/tenancy/branches**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, data: [] }),
+    });
+  });
+
+  await page.route("**/api/v1/payroll/calendars", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: [
+          {
+            id: "70000000-0000-4000-8000-000000000010",
+            tenant_id: scope.tenantId,
+            code: "MONTHLY",
+            name: "Monthly Payroll",
+            frequency: "MONTHLY",
+            currency_code: "SAR",
+            timezone: "Asia/Riyadh",
+            is_active: true,
+            created_by_user_id: null,
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route("**/api/v1/payroll/calendars/*/periods**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: [
+          {
+            id: "70000000-0000-4000-8000-000000000011",
+            tenant_id: scope.tenantId,
+            calendar_id: "70000000-0000-4000-8000-000000000010",
+            period_key: "2026-03",
+            start_date: "2026-03-01",
+            end_date: "2026-03-31",
+            status: "OPEN",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route("**/api/v1/payroll/payruns/generate", async (route) => {
+    payrunStatus = "DRAFT";
+    workflowStatus = "PENDING";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          id: payrunId,
+          tenant_id: scope.tenantId,
+          calendar_id: "70000000-0000-4000-8000-000000000010",
+          period_id: "70000000-0000-4000-8000-000000000011",
+          branch_id: scope.branchId,
+          version: 1,
+          status: payrunStatus,
+          generated_at: "2026-03-01T10:00:00Z",
+          generated_by_user_id: null,
+          workflow_request_id: null,
+          idempotency_key: "payrun:test",
+          totals_json: {
+            included_count: 1,
+            excluded_count: 0,
+            gross_total: "5000.00",
+            deductions_total: "0.00",
+            net_total: "5000.00",
+            currency_code: "SAR",
+            computed_at: "2026-03-01T10:00:00Z",
+          },
+          created_at: "2026-03-01T10:00:00Z",
+          updated_at: "2026-03-01T10:00:00Z",
+        },
+      }),
+    });
+  });
+
+  await page.route(`**/api/v1/payroll/payruns/${payrunId}?**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          payrun: {
+            id: payrunId,
+            tenant_id: scope.tenantId,
+            calendar_id: "70000000-0000-4000-8000-000000000010",
+            period_id: "70000000-0000-4000-8000-000000000011",
+            branch_id: scope.branchId,
+            version: 1,
+            status: payrunStatus,
+            generated_at: "2026-03-01T10:00:00Z",
+            generated_by_user_id: null,
+            workflow_request_id: payrunStatus === "DRAFT" ? null : workflowRequestId,
+            idempotency_key: "payrun:test",
+            totals_json: {
+              included_count: 1,
+              excluded_count: 0,
+              gross_total: "5000.00",
+              deductions_total: "0.00",
+              net_total: "5000.00",
+              currency_code: "SAR",
+              computed_at: "2026-03-01T10:00:00Z",
+            },
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+          },
+          items: [
+            {
+              id: "70000000-0000-4000-8000-000000000020",
+              tenant_id: scope.tenantId,
+              payrun_id: payrunId,
+              employee_id: "employee-1",
+              payable_days: 31,
+              payable_minutes: 14880,
+              working_days_in_period: 31,
+              gross_amount: "5000.00",
+              deductions_amount: "0.00",
+              net_amount: "5000.00",
+              status: "INCLUDED",
+              computed_json: { base_amount: "5000.00" },
+              anomalies_json: null,
+              created_at: "2026-03-01T10:00:00Z",
+            },
+          ],
+          lines: [
+            {
+              id: "70000000-0000-4000-8000-000000000021",
+              tenant_id: scope.tenantId,
+              payrun_item_id: "70000000-0000-4000-8000-000000000020",
+              component_id: "component-1",
+              component_code: "BASIC",
+              component_type: "EARNING",
+              amount: "5000.00",
+              meta_json: null,
+              created_at: "2026-03-01T10:00:00Z",
+            },
+          ],
+        },
+      }),
+    });
+  });
+
+  await page.route(`**/api/v1/payroll/payruns/${payrunId}/submit-approval`, async (route) => {
+    payrunStatus = "PENDING_APPROVAL";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          payrun_id: payrunId,
+          workflow_request_id: workflowRequestId,
+          status: payrunStatus,
+        },
+      }),
+    });
+  });
+
+  await page.route(`**/api/v1/workflow/requests/${workflowRequestId}`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          request: {
+            id: workflowRequestId,
+            request_type_code: "PAYRUN_APPROVAL",
+            status: workflowStatus,
+            current_step: 0,
+            subject: "Approve March payroll",
+            payload: { payrun_id: payrunId, period_key: "2026-03", branch_id: scope.branchId },
+            tenant_id: scope.tenantId,
+            company_id: scope.companyId,
+            branch_id: scope.branchId,
+            created_by_user_id: session.data.user.id,
+            requester_employee_id: null,
+            subject_employee_id: null,
+            entity_type: "payroll.payrun",
+            entity_id: payrunId,
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+          },
+          steps: [],
+          comments: [],
+          attachments: [],
+          events: [],
+        },
+      }),
+    });
+  });
+
+  await page.route(`**/api/v1/workflow/requests/${workflowRequestId}/approve`, async (route) => {
+    workflowStatus = "APPROVED";
+    payrunStatus = "APPROVED";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, data: { id: workflowRequestId, status: "APPROVED", current_step: 0 } }),
+    });
+  });
+
+  await page.route(`**/api/v1/payroll/payruns/${payrunId}/publish`, async (route) => {
+    payrunStatus = "PUBLISHED";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: { payrun_id: payrunId, published_count: 1, status: payrunStatus },
+      }),
+    });
+  });
+
+  await page.route("**/api/v1/ess/me/payslips**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          items:
+            payrunStatus === "PUBLISHED"
+              ? [
+                  {
+                    id: payslipId,
+                    tenant_id: scope.tenantId,
+                    payrun_id: payrunId,
+                    employee_id: "employee-1",
+                    status: "PUBLISHED",
+                    dms_document_id: "doc-1",
+                    period_key: "2026-03",
+                    created_at: "2026-03-01T10:00:00Z",
+                    updated_at: "2026-03-01T10:00:00Z",
+                  },
+                ]
+              : [],
+        },
+      }),
+    });
+  });
+
+  await page.route(`**/api/v1/ess/me/payslips/${payslipId}/download`, async (route) => {
+    payslipDownloadCount += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: {
+        "Content-Disposition": 'attachment; filename="payslip_2026-03.json"',
+      },
+      body: JSON.stringify({ payslip_id: payslipId, period_key: "2026-03" }),
+    });
+  });
+
+  return { payrunId, workflowRequestId, payslipId, getPayslipDownloadCount: () => payslipDownloadCount };
+}
+
 test("login page loads", async ({ page }) => {
   await page.goto("/login");
   // Login page has multiple headings (e.g. "Sign in" + section titles). Assert the primary H1.
@@ -966,5 +1308,41 @@ test.describe("roster + payables (mocked)", () => {
     await expect(page.getByRole("heading", { name: /payables admin/i })).toBeVisible();
     await page.getByRole("button", { name: /^recompute$/i }).click();
     await expect(page.getByText("2026-01-01")).toBeVisible();
+  });
+});
+
+test.describe("payroll (mocked)", () => {
+  test.skip(({ browserName }) => browserName !== "chromium", "chromium-only");
+
+  test("generate, approve, publish, and expose payslip", async ({ page }) => {
+    const payroll = await mockSessionForPayroll(page);
+
+    await page.goto("/payroll/payruns");
+    await expect(page.getByRole("heading", { name: /payruns/i })).toBeVisible();
+
+    await page.getByRole("button", { name: /generate payrun/i }).click();
+    await page.selectOption("#payrun-calendar", "70000000-0000-4000-8000-000000000010");
+    await page.selectOption("#payrun-period", "2026-03");
+    await page.getByRole("button", { name: /^generate payrun$/i }).last().click();
+
+    await expect(page).toHaveURL(new RegExp(`/payroll/payruns/${payroll.payrunId}$`));
+    await expect(page.getByRole("button", { name: /submit for approval/i })).toBeVisible();
+    await page.getByRole("button", { name: /submit for approval/i }).click();
+
+    await expect(page.getByRole("link", { name: /open approval request/i })).toBeVisible();
+    await page.goto(`/workflow/requests/${payroll.workflowRequestId}`);
+    await expect(page.getByRole("link", { name: /open payrun/i })).toBeVisible();
+    await page.getByRole("button", { name: /^approve$/i }).click();
+
+    await page.goto(`/payroll/payruns/${payroll.payrunId}`);
+    await expect(page.getByRole("button", { name: /^publish$/i })).toBeEnabled();
+    await page.getByRole("button", { name: /^publish$/i }).click();
+    await expect(page.getByText(/status published/i)).toBeVisible();
+
+    await page.goto(`/ess/payslips?year=2026&payslipId=${payroll.payslipId}`);
+    await expect(page.getByRole("heading", { name: /payslips/i })).toBeVisible();
+    await expect(page.getByText("2026-03")).toBeVisible();
+    await page.getByRole("button", { name: /download payslip/i }).click();
+    await expect.poll(() => payroll.getPayslipDownloadCount()).toBe(1);
   });
 });

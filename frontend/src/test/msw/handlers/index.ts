@@ -11,6 +11,7 @@ import { scopeHandlers } from "@/test/msw/handlers/scope.handlers";
 import { tenancyHandlers } from "@/test/msw/handlers/tenancy.handlers";
 import { workflowHandlers } from "@/test/msw/handlers/workflow.handlers";
 import { dmsHandlers } from "@/test/msw/handlers/dms.handlers";
+import { payrollHandlers } from "@/test/msw/handlers/payroll.handlers";
 
 export const handlers = [
   ...authHandlers,
@@ -26,4 +27,5 @@ export const handlers = [
   ...leaveHandlers,
   ...rosterHandlers,
   ...payablesHandlers,
+  ...payrollHandlers,
 ];

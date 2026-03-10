@@ -113,4 +113,26 @@ describe("lib/errorUx", () => {
     });
     expect(getErrorUx(err)).toMatchObject({ title: "Work calendar missing" });
   });
+
+  it("maps payroll compensation overlap to friendly copy", () => {
+    const err = new ApiError({
+      status: 409,
+      code: "payroll.compensation.overlap",
+      message: "Overlap",
+      correlationId: "cid",
+    });
+    expect(getErrorUx(err)).toMatchObject({ title: "Overlapping compensation" });
+  });
+
+  it("maps payroll workflow definition missing to guided copy", () => {
+    const err = new ApiError({
+      status: 409,
+      code: "workflow.definition.no_active",
+      message: "No active workflow definition",
+      correlationId: "cid",
+    });
+    expect(getErrorUx(err)).toMatchObject({
+      title: "Approval workflow not configured",
+    });
+  });
 });

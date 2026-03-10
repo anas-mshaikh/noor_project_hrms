@@ -159,6 +159,8 @@ export default function WorkflowInboxPage() {
       ];
       if (requestQ.data?.request.entity_type === "dms.document") {
         invalidations.push(qc.invalidateQueries({ queryKey: ["dms"] }));
+      } else if (requestQ.data?.request.entity_type === "payroll.payrun") {
+        invalidations.push(qc.invalidateQueries({ queryKey: ["payroll"] }));
       }
       await Promise.all(invalidations);
       updateSelectedId(null);
@@ -182,6 +184,8 @@ export default function WorkflowInboxPage() {
       ];
       if (requestQ.data?.request.entity_type === "dms.document") {
         invalidations.push(qc.invalidateQueries({ queryKey: ["dms"] }));
+      } else if (requestQ.data?.request.entity_type === "payroll.payrun") {
+        invalidations.push(qc.invalidateQueries({ queryKey: ["payroll"] }));
       }
       await Promise.all(invalidations);
       updateSelectedId(null);

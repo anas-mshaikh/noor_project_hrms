@@ -94,6 +94,7 @@ export default function WorkflowOutboxPage() {
     mutationFn: async (id: UUID) => cancelRequest(id),
     onSuccess: async () => {
       const isDms = cancelTarget?.entity_type === "dms.document";
+      const isPayroll = cancelTarget?.entity_type === "payroll.payrun";
       setCancelTarget(null);
       const invalidations = [
         qc.invalidateQueries({ queryKey: ["workflow", "outbox"] }),
@@ -102,6 +103,8 @@ export default function WorkflowOutboxPage() {
       ];
       if (isDms) {
         invalidations.push(qc.invalidateQueries({ queryKey: ["dms"] }));
+      } else if (isPayroll) {
+        invalidations.push(qc.invalidateQueries({ queryKey: ["payroll"] }));
       }
       await Promise.all(invalidations);
     },
@@ -228,7 +231,7 @@ export default function WorkflowOutboxPage() {
                     <TableCell className="text-text-2">{r.subject ?? "—"}</TableCell>
                     <TableCell className="text-text-2">{formatDateTime(r.created_at)}</TableCell>
                     <TableCell className="text-right">
-                      {r.status === "PENDING" ? (
+                      {r.status === "PENDING" && r.entity_type !== "payroll.payrun" ? (
                         <Button
                           type="button"
                           variant="outline"

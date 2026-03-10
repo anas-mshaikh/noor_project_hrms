@@ -507,6 +507,111 @@ export function getErrorUx(err: unknown): ErrorUx {
       };
     }
 
+    // ----- Payroll -----
+    if (err.code === "payroll.calendar.not_found") {
+      return {
+        title: "Calendar not found",
+        description: "The selected payroll calendar does not exist or is not accessible.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "payroll.period.not_found") {
+      return {
+        title: "Period not found",
+        description: "The selected payroll period does not exist for this calendar.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "payroll.period.invalid_key") {
+      return {
+        title: "Invalid period key",
+        description: "Use the YYYY-MM format for payroll periods.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "payroll.component.not_found") {
+      return {
+        title: "Component not found",
+        description: "The selected payroll component is missing or inactive.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "payroll.structure.not_found") {
+      return {
+        title: "Salary structure not found",
+        description: "The selected salary structure does not exist or is not accessible.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "payroll.compensation.overlap") {
+      return {
+        title: "Overlapping compensation",
+        description: "This employee already has a compensation record that overlaps the selected dates.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "payroll.payrun.not_found") {
+      return {
+        title: "Payrun not found",
+        description: "The selected payrun does not exist or is not accessible in the current scope.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "payroll.payrun.invalid_state") {
+      return {
+        title: "Payrun action not allowed",
+        description: "This payrun is not in the right state for that action. Refresh and review the latest status.",
+        suggestedActionKind: "retry",
+      };
+    }
+
+    if (err.code === "payroll.payrun.generate.failed") {
+      return {
+        title: "Payrun generation failed",
+        description: "The payrun could not be generated. Review prerequisites and try again.",
+        suggestedActionKind: "retry",
+      };
+    }
+
+    if (err.code === "payroll.payrun.not_approved") {
+      return {
+        title: "Approval required",
+        description: "This payrun must be approved before it can be published.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "payroll.payrun.already_published") {
+      return {
+        title: "Already published",
+        description: "This payrun has already been published.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "payroll.payslip.not_found") {
+      return {
+        title: "Not found",
+        description: "The requested payslip does not exist or is not accessible.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "workflow.definition.no_active") {
+      return {
+        title: "Approval workflow missing",
+        description: "No active workflow definition exists for payrun approval. Configure workflow definitions, then try again.",
+        suggestedActionKind: "none",
+      };
+    }
+
     if (err.status === 404) {
       return {
         title: "Not found",

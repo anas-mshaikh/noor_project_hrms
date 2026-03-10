@@ -96,6 +96,7 @@ const attendanceModule: ModuleDef = {
       startsWithPath(pathname, "/dms") ||
       startsWithPath(pathname, "/attendance") ||
       startsWithPath(pathname, "/leave") ||
+      startsWithPath(pathname, "/payroll") ||
       startsWithPath(pathname, "/roster") ||
       startsWithPath(pathname, "/payables") ||
       startsWithPath(pathname, "/hr") ||
@@ -163,6 +164,7 @@ const hrModule: ModuleDef = {
   icon: Sparkles,
   isActive: (pathname) =>
     startsWithPath(pathname, "/hr") ||
+    startsWithPath(pathname, "/payroll") ||
     startsWithPath(pathname, "/roster") ||
     startsWithPath(pathname, "/payables/admin") ||
     startsWithPath(pathname, "/dms/employee-docs") ||
@@ -213,6 +215,77 @@ const hrModule: ModuleDef = {
       icon: Users,
       match: "prefix",
       requiredPermissions: ["hr:employee:read"],
+    },
+    {
+      id: "hr-payroll-home",
+      href: "/payroll",
+      title: "Payroll",
+      description: "Payroll setup and runs",
+      icon: BadgeCheck,
+      match: "prefix",
+      requiredPermissions: [
+        "payroll:calendar:read",
+        "payroll:calendar:write",
+        "payroll:component:read",
+        "payroll:component:write",
+        "payroll:structure:read",
+        "payroll:structure:write",
+        "payroll:compensation:read",
+        "payroll:compensation:write",
+        "payroll:payrun:read",
+        "payroll:payrun:generate",
+      ],
+    },
+    {
+      id: "hr-payroll-calendars",
+      href: "/payroll/calendars",
+      title: "Calendars",
+      description: "Payroll calendars and periods",
+      icon: Calendar,
+      match: "prefix",
+      requiredPermissions: ["payroll:calendar:read", "payroll:calendar:write"],
+    },
+    {
+      id: "hr-payroll-components",
+      href: "/payroll/components",
+      title: "Components",
+      description: "Earnings and deductions",
+      icon: Library,
+      match: "prefix",
+      requiredPermissions: ["payroll:component:read", "payroll:component:write"],
+    },
+    {
+      id: "hr-payroll-structures",
+      href: "/payroll/structures",
+      title: "Structures",
+      description: "Salary structures",
+      icon: LayoutGrid,
+      match: "prefix",
+      requiredPermissions: ["payroll:structure:read", "payroll:structure:write"],
+    },
+    {
+      id: "hr-payroll-compensation",
+      href: "/payroll/compensation",
+      title: "Compensation",
+      description: "Employee compensation records",
+      icon: Users,
+      match: "prefix",
+      requiredPermissions: ["payroll:compensation:read", "payroll:compensation:write"],
+    },
+    {
+      id: "hr-payroll-payruns",
+      href: "/payroll/payruns",
+      title: "Payruns",
+      description: "Generate, approve, and publish",
+      icon: BadgeCheck,
+      match: "prefix",
+      requiredPermissions: [
+        "payroll:payrun:read",
+        "payroll:payrun:generate",
+        "payroll:payrun:submit",
+        "payroll:payrun:publish",
+        "payroll:payrun:export",
+      ],
     },
     {
       id: "hr-roster-shifts",
@@ -313,6 +386,15 @@ const essModule: ModuleDef = {
     "dms:document:read",
   ],
   sidebar: [
+    {
+      id: "ess-payslips",
+      href: "/ess/payslips",
+      title: "Payslips",
+      description: "Published payroll payslips",
+      icon: BadgeCheck,
+      match: "prefix",
+      requiredPermissions: ["payroll:payslip:read"],
+    },
     {
       id: "ess-attendance-punch",
       href: "/attendance/punch",

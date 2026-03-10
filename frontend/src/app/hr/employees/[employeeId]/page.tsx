@@ -155,7 +155,9 @@ export default function HrEmployeeDetailPage({ params }: { params: { employeeId?
   }, [branchId, changeBranchId, changeOpen]);
 
   const changeOrgUnitsQ = useQuery({
-    queryKey: tenancyKeys.orgUnits({ companyId: companyUuid, branchId: changeBranchId || null }),
+    queryKey: companyUuid
+      ? tenancyKeys.orgUnits({ companyId: companyUuid, branchId: changeBranchId || null })
+      : (["tenancy", "org-units", null, changeBranchId || null] as const),
     enabled: Boolean(companyUuid && canReadTenancy && changeOpen),
     queryFn: () =>
       listOrgUnits({
@@ -326,7 +328,7 @@ export default function HrEmployeeDetailPage({ params }: { params: { employeeId?
             <TabsTrigger value="documents">
               Documents
             </TabsTrigger>
-            <TabsTrigger value="payroll" disabled>
+            <TabsTrigger value="payroll">
               Payroll
             </TabsTrigger>
           </TabsList>
@@ -645,6 +647,28 @@ export default function HrEmployeeDetailPage({ params }: { params: { employeeId?
                       </div>
                     </div>
                   )}
+                </DSCard>
+              </TabsContent>
+
+              <TabsContent value="payroll" className="mt-0">
+                <DSCard surface="card" className="p-[var(--ds-space-20)]">
+                  <div className="space-y-4">
+                    <div>
+                      <div className="text-sm font-semibold tracking-tight text-text-1">
+                        Payroll
+                      </div>
+                      <div className="mt-1 text-sm text-text-2">
+                        Manage compensation records for this employee in the payroll workspace.
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button asChild type="button">
+                        <Link href={`/payroll/compensation?employeeId=${employeeId}`}>
+                          Open compensation
+                        </Link>
+                      </Button>
+                    </div>
+                  </div>
                 </DSCard>
               </TabsContent>
             </Tabs>

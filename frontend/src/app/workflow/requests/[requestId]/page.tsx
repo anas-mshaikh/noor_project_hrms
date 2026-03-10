@@ -70,6 +70,8 @@ export default function WorkflowRequestDeepLinkPage({
       ];
       if (requestQ.data?.request.entity_type === "dms.document") {
         invalidations.push(qc.invalidateQueries({ queryKey: ["dms"] }));
+      } else if (requestQ.data?.request.entity_type === "payroll.payrun") {
+        invalidations.push(qc.invalidateQueries({ queryKey: ["payroll"] }));
       }
       await Promise.all(invalidations);
       await requestQ.refetch();
@@ -92,6 +94,8 @@ export default function WorkflowRequestDeepLinkPage({
       ];
       if (requestQ.data?.request.entity_type === "dms.document") {
         invalidations.push(qc.invalidateQueries({ queryKey: ["dms"] }));
+      } else if (requestQ.data?.request.entity_type === "payroll.payrun") {
+        invalidations.push(qc.invalidateQueries({ queryKey: ["payroll"] }));
       }
       await Promise.all(invalidations);
       await requestQ.refetch();
@@ -111,6 +115,8 @@ export default function WorkflowRequestDeepLinkPage({
       ];
       if (requestQ.data?.request.entity_type === "dms.document") {
         invalidations.push(qc.invalidateQueries({ queryKey: ["dms"] }));
+      } else if (requestQ.data?.request.entity_type === "payroll.payrun") {
+        invalidations.push(qc.invalidateQueries({ queryKey: ["payroll"] }));
       }
       await Promise.all(invalidations);
       await requestQ.refetch();
@@ -119,10 +125,11 @@ export default function WorkflowRequestDeepLinkPage({
   });
 
   const canCancel =
-    granted.has("workflow:request:admin") ||
-    (requestQ.data?.request.created_by_user_id != null &&
-      user?.id &&
-      requestQ.data.request.created_by_user_id === user.id);
+    requestQ.data?.request.entity_type !== "payroll.payrun" &&
+    (granted.has("workflow:request:admin") ||
+      (requestQ.data?.request.created_by_user_id != null &&
+        user?.id &&
+        requestQ.data.request.created_by_user_id === user.id));
 
   if (!user) {
     return (

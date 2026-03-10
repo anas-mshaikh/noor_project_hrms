@@ -10,6 +10,14 @@ function prettyKey(key: string): string {
       return "Expiry";
     case "file_name":
       return "File name";
+    case "period_key":
+      return "Period";
+    case "payrun_id":
+      return "Payrun ID";
+    case "branch_id":
+      return "Branch ID";
+    case "totals":
+      return "Totals";
     default:
       return key.replace(/_/g, " ");
   }
