@@ -290,6 +290,96 @@ export function getErrorUx(err: unknown): ErrorUx {
       };
     }
 
+    // ----- Roster -----
+    if (err.code === "roster.shift.invalid_time_range") {
+      return {
+        title: "Invalid shift time range",
+        description: "End time cannot equal the start time. Adjust the shift times and try again.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "roster.shift.break_invalid") {
+      return {
+        title: "Invalid break duration",
+        description: "Break minutes must be smaller than the shift duration.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "roster.shift.not_found") {
+      return {
+        title: "Shift not found",
+        description: "The selected shift template does not exist or is not available in this branch.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "roster.default.not_found") {
+      return {
+        title: "No default shift set",
+        description: "This branch does not have a default shift yet.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "roster.assignment.invalid_dates") {
+      return {
+        title: "Invalid assignment dates",
+        description: "The assignment range is invalid. Check the start and end dates and try again.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "roster.assignment.overlap") {
+      return {
+        title: "Overlapping assignment",
+        description: "This employee already has a shift assignment that overlaps with the selected dates.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "roster.override.invalid") {
+      return {
+        title: "Invalid override",
+        description: "Check the override type and selected shift, then try again.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    // ----- Payables -----
+    if (err.code === "attendance.payable.invalid_range") {
+      return {
+        title: "Invalid date range",
+        description: "The selected range is too large or the start date is after the end date.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "attendance.payable.calendar_missing") {
+      return {
+        title: "Work calendar missing",
+        description: "A required work calendar is missing for one or more employees in this range. Configure the calendar, then recompute.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "attendance.payable.employee.not_found") {
+      return {
+        title: "Employee not found",
+        description: "The selected employee does not exist or is not visible in the current scope.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "attendance.payable.recompute.forbidden") {
+      return {
+        title: "Recompute requires a target",
+        description: "Select a branch or employee before recomputing payable days.",
+        suggestedActionKind: "none",
+      };
+    }
+
     // ----- Workflow backbone -----
     if (err.code === "workflow.step.not_assignee") {
       return {

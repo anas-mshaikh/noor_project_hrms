@@ -96,6 +96,8 @@ const attendanceModule: ModuleDef = {
       startsWithPath(pathname, "/dms") ||
       startsWithPath(pathname, "/attendance") ||
       startsWithPath(pathname, "/leave") ||
+      startsWithPath(pathname, "/roster") ||
+      startsWithPath(pathname, "/payables") ||
       startsWithPath(pathname, "/hr") ||
       startsWithPath(pathname, "/ess") ||
       startsWithPath(pathname, "/mss") ||
@@ -161,6 +163,8 @@ const hrModule: ModuleDef = {
   icon: Sparkles,
   isActive: (pathname) =>
     startsWithPath(pathname, "/hr") ||
+    startsWithPath(pathname, "/roster") ||
+    startsWithPath(pathname, "/payables/admin") ||
     startsWithPath(pathname, "/dms/employee-docs") ||
     startsWithPath(pathname, "/dms/expiry") ||
     startsWithPath(pathname, "/dms/documents"),
@@ -211,6 +215,51 @@ const hrModule: ModuleDef = {
       requiredPermissions: ["hr:employee:read"],
     },
     {
+      id: "hr-roster-shifts",
+      href: "/roster/shifts",
+      title: "Shift Templates",
+      description: "Branch shift catalog",
+      icon: Calendar,
+      match: "prefix",
+      requiredPermissions: ["roster:shift:read", "roster:shift:write"],
+    },
+    {
+      id: "hr-roster-default",
+      href: "/roster/default",
+      title: "Default Shift",
+      description: "Branch default roster",
+      icon: Calendar,
+      match: "prefix",
+      requiredPermissions: ["roster:shift:read", "roster:defaults:write"],
+    },
+    {
+      id: "hr-roster-assignments",
+      href: "/roster/assignments",
+      title: "Assignments",
+      description: "Employee shift assignments",
+      icon: Users,
+      match: "prefix",
+      requiredPermissions: ["roster:assignment:read", "roster:assignment:write"],
+    },
+    {
+      id: "hr-roster-overrides",
+      href: "/roster/overrides",
+      title: "Overrides",
+      description: "Per-day roster exceptions",
+      icon: Calendar,
+      match: "prefix",
+      requiredPermissions: ["roster:override:read", "roster:override:write"],
+    },
+    {
+      id: "hr-payables-admin",
+      href: "/payables/admin",
+      title: "Payables Admin",
+      description: "Payroll input summaries",
+      icon: BadgeCheck,
+      match: "prefix",
+      requiredPermissions: ["attendance:payable:admin:read", "attendance:payable:recompute"],
+    },
+    {
       id: "hr-dms-employee-docs",
       href: "/dms/employee-docs",
       title: "Employee Docs",
@@ -251,8 +300,10 @@ const essModule: ModuleDef = {
     (startsWithPath(pathname, "/ess") ||
       startsWithPath(pathname, "/attendance") ||
       startsWithPath(pathname, "/leave") ||
+      startsWithPath(pathname, "/payables/me") ||
       startsWithPath(pathname, "/dms/my-docs")) &&
-    !startsWithPath(pathname, "/leave/team-calendar"),
+    !startsWithPath(pathname, "/leave/team-calendar") &&
+    !startsWithPath(pathname, "/payables/team"),
   requiredPermissions: [
     "ess:profile:read",
     "attendance:punch:read",
@@ -316,6 +367,15 @@ const essModule: ModuleDef = {
       match: "prefix",
       requiredPermissions: ["dms:document:read"],
     },
+    {
+      id: "ess-payables-me",
+      href: "/payables/me",
+      title: "Payable Days",
+      description: "Your payable day summaries",
+      icon: BadgeCheck,
+      match: "prefix",
+      requiredPermissions: ["attendance:payable:read"],
+    },
   ],
 };
 
@@ -325,7 +385,9 @@ const mssModule: ModuleDef = {
   href: "/mss/team",
   icon: Users,
   isActive: (pathname) =>
-    startsWithPath(pathname, "/mss") || startsWithPath(pathname, "/leave/team-calendar"),
+    startsWithPath(pathname, "/mss") ||
+    startsWithPath(pathname, "/leave/team-calendar") ||
+    startsWithPath(pathname, "/payables/team"),
   requiredPermissions: ["hr:team:read", "leave:team:read"],
   sidebar: [
     {
@@ -345,6 +407,15 @@ const mssModule: ModuleDef = {
       icon: Calendar,
       match: "prefix",
       requiredPermissions: ["leave:team:read"],
+    },
+    {
+      id: "mss-payables-team",
+      href: "/payables/team",
+      title: "Team Payables",
+      description: "Payable summaries for your team",
+      icon: BadgeCheck,
+      match: "prefix",
+      requiredPermissions: ["attendance:payable:team:read"],
     },
   ],
 };

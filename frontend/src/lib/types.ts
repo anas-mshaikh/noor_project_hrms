@@ -799,6 +799,134 @@ export type DmsUpcomingExpiryOut = {
   items: DmsUpcomingExpiryItemOut[];
 };
 
+// ----- Roster (HR) -----
+export type ShiftTemplateCreateIn = {
+  code: string;
+  name: string;
+  start_time: string; // HH:MM[:SS]
+  end_time: string; // HH:MM[:SS]
+  break_minutes?: number;
+  grace_minutes?: number;
+  min_full_day_minutes?: number | null;
+  is_active?: boolean;
+};
+
+export type ShiftTemplatePatchIn = {
+  code?: string | null;
+  name?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  break_minutes?: number | null;
+  grace_minutes?: number | null;
+  min_full_day_minutes?: number | null;
+  is_active?: boolean | null;
+};
+
+export type ShiftTemplateOut = {
+  id: UUID;
+  tenant_id: UUID;
+  branch_id: UUID;
+  code: string;
+  name: string;
+  start_time: string;
+  end_time: string;
+  break_minutes: number;
+  grace_minutes: number;
+  min_full_day_minutes: number | null;
+  is_active: boolean;
+  expected_minutes: number;
+  created_by_user_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BranchDefaultShiftUpsertIn = {
+  shift_template_id: UUID;
+};
+
+export type BranchDefaultShiftOut = {
+  tenant_id: UUID;
+  branch_id: UUID;
+  default_shift_template_id: UUID;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ShiftAssignmentCreateIn = {
+  shift_template_id: UUID;
+  effective_from: string; // YYYY-MM-DD
+  effective_to?: string | null; // YYYY-MM-DD
+};
+
+export type ShiftAssignmentOut = {
+  id: UUID;
+  tenant_id: UUID;
+  employee_id: UUID;
+  branch_id: UUID;
+  shift_template_id: UUID;
+  effective_from: string;
+  effective_to: string | null;
+  created_by_user_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RosterOverrideUpsertIn = {
+  override_type: "SHIFT_CHANGE" | "WEEKOFF" | "WORKDAY" | string;
+  shift_template_id?: UUID | null;
+  notes?: string | null;
+};
+
+export type RosterOverrideOut = {
+  id: UUID;
+  tenant_id: UUID;
+  employee_id: UUID;
+  branch_id: UUID;
+  day: string; // YYYY-MM-DD
+  override_type: "SHIFT_CHANGE" | "WEEKOFF" | "WORKDAY" | string;
+  shift_template_id: UUID | null;
+  notes: string | null;
+  created_by_user_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ----- Payables (attendance summaries) -----
+export type PayableDaySummaryOut = {
+  day: string; // YYYY-MM-DD
+  employee_id: UUID;
+  branch_id: UUID;
+  shift_template_id: UUID | null;
+  day_type: "WORKDAY" | "WEEKOFF" | "HOLIDAY" | "ON_LEAVE" | "UNSCHEDULED" | string;
+  presence_status: "PRESENT" | "ABSENT" | "N_A" | string;
+  expected_minutes: number;
+  worked_minutes: number;
+  payable_minutes: number;
+  anomalies_json: Record<string, unknown> | null;
+  source_breakdown: Record<string, unknown> | null;
+  computed_at: string;
+};
+
+export type PayableDaysOut = {
+  items: PayableDaySummaryOut[];
+};
+
+export type PayableDaySummaryListOut = {
+  items: PayableDaySummaryOut[];
+  next_cursor: string | null;
+};
+
+export type PayableRecomputeIn = {
+  from: string; // YYYY-MM-DD
+  to: string; // YYYY-MM-DD
+  branch_id?: UUID | null;
+  employee_ids?: UUID[];
+};
+
+export type PayableRecomputeOut = {
+  computed_rows: number;
+};
+
 // Face system endpoints intentionally return file paths + ids only.
 export type FaceRegisterOut = {
   employee_id: UUID;

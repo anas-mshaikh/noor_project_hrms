@@ -93,4 +93,24 @@ describe("lib/errorUx", () => {
     });
     expect(getErrorUx(err)).toMatchObject({ suggestedActionKind: "retry" });
   });
+
+  it("maps roster overlap to friendly copy", () => {
+    const err = new ApiError({
+      status: 409,
+      code: "roster.assignment.overlap",
+      message: "Overlap",
+      correlationId: "cid",
+    });
+    expect(getErrorUx(err)).toMatchObject({ title: "Overlapping assignment" });
+  });
+
+  it("maps payables calendar missing to friendly copy", () => {
+    const err = new ApiError({
+      status: 409,
+      code: "attendance.payable.calendar_missing",
+      message: "Calendar missing",
+      correlationId: "cid",
+    });
+    expect(getErrorUx(err)).toMatchObject({ title: "Work calendar missing" });
+  });
 });

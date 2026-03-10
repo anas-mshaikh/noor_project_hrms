@@ -581,6 +581,289 @@ async function mockSessionForDms(page: import("@playwright/test").Page) {
   };
 }
 
+async function mockSessionForRosterPayables(page: import("@playwright/test").Page) {
+  const scope = { tenantId: "t-1", companyId: "c-1", branchId: "b-1" };
+  const employeeId = "30000000-0000-4000-8000-000000000001";
+  const shiftId = "40000000-0000-4000-8000-000000000001";
+
+  await seedScope(page, scope);
+
+  const session = {
+    ok: true,
+    data: {
+      user: { id: "u-rp-1", email: "hr@example.com", status: "ACTIVE" },
+      roles: ["HR"],
+      permissions: [
+        "hr:employee:read",
+        "roster:shift:read",
+        "roster:shift:write",
+        "roster:assignment:read",
+        "roster:assignment:write",
+        "attendance:payable:admin:read",
+        "attendance:payable:recompute",
+      ],
+      scope: {
+        tenant_id: scope.tenantId,
+        company_id: scope.companyId,
+        branch_id: scope.branchId,
+        allowed_tenant_ids: [scope.tenantId],
+        allowed_company_ids: [scope.companyId],
+        allowed_branch_ids: [scope.branchId],
+      },
+    },
+  };
+
+  let shiftCreated = false;
+  let assignmentCreated = false;
+  let recomputed = false;
+
+  await page.route("**/api/v1/auth/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(session),
+    });
+  });
+
+  await page.route("**/api/v1/tenancy/companies", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: [
+          {
+            id: scope.companyId,
+            tenant_id: scope.tenantId,
+            name: "Demo Company",
+            legal_name: "Demo Company LLC",
+            currency_code: "SAR",
+            timezone: "Asia/Riyadh",
+            status: "ACTIVE",
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route("**/api/v1/tenancy/branches**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, data: [] }),
+    });
+  });
+
+  await page.route("**/api/v1/hr/employees**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          items: [
+            {
+              employee_id: employeeId,
+              employee_code: "E0001",
+              status: "ACTIVE",
+              full_name: "Alice One",
+              email: "alice@example.com",
+              phone: null,
+              branch_id: scope.branchId,
+              org_unit_id: null,
+              manager_employee_id: null,
+              manager_name: null,
+            },
+          ],
+          paging: { limit: 12, offset: 0, total: 1 },
+        },
+      }),
+    });
+  });
+
+  await page.route(`**/api/v1/hr/employees/${employeeId}`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          employee: {
+            id: employeeId,
+            person_id: "person-1",
+            employee_code: "E0001",
+            status: "ACTIVE",
+            join_date: "2026-01-01",
+            termination_date: null,
+          },
+          person: {
+            id: "person-1",
+            first_name: "Alice",
+            last_name: "One",
+            email: "alice@example.com",
+            phone: null,
+          },
+          current_employment: null,
+          manager: null,
+          linked_user: null,
+        },
+      }),
+    });
+  });
+
+  await page.route(`**/api/v1/roster/branches/${scope.branchId}/shifts**`, async (route) => {
+    if (route.request().method() === "POST") {
+      shiftCreated = true;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          data: {
+            id: shiftId,
+            tenant_id: scope.tenantId,
+            branch_id: scope.branchId,
+            code: "DAY",
+            name: "Day Shift",
+            start_time: "09:00:00",
+            end_time: "18:00:00",
+            break_minutes: 60,
+            grace_minutes: 10,
+            min_full_day_minutes: 480,
+            is_active: true,
+            expected_minutes: 480,
+            created_by_user_id: session.data.user.id,
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+          },
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: shiftCreated
+          ? [
+              {
+                id: shiftId,
+                tenant_id: scope.tenantId,
+                branch_id: scope.branchId,
+                code: "DAY",
+                name: "Day Shift",
+                start_time: "09:00:00",
+                end_time: "18:00:00",
+                break_minutes: 60,
+                grace_minutes: 10,
+                min_full_day_minutes: 480,
+                is_active: true,
+                expected_minutes: 480,
+                created_by_user_id: session.data.user.id,
+                created_at: "2026-03-01T10:00:00Z",
+                updated_at: "2026-03-01T10:00:00Z",
+              },
+            ]
+          : [],
+      }),
+    });
+  });
+
+  await page.route(`**/api/v1/roster/employees/${employeeId}/assignments`, async (route) => {
+    if (route.request().method() === "POST") {
+      assignmentCreated = true;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          data: {
+            id: "50000000-0000-4000-8000-000000000001",
+            tenant_id: scope.tenantId,
+            employee_id: employeeId,
+            branch_id: scope.branchId,
+            shift_template_id: shiftId,
+            effective_from: "2026-01-01",
+            effective_to: null,
+            created_by_user_id: session.data.user.id,
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-01T10:00:00Z",
+          },
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: assignmentCreated
+          ? [
+              {
+                id: "50000000-0000-4000-8000-000000000001",
+                tenant_id: scope.tenantId,
+                employee_id: employeeId,
+                branch_id: scope.branchId,
+                shift_template_id: shiftId,
+                effective_from: "2026-01-01",
+                effective_to: null,
+                created_by_user_id: session.data.user.id,
+                created_at: "2026-03-01T10:00:00Z",
+                updated_at: "2026-03-01T10:00:00Z",
+              },
+            ]
+          : [],
+      }),
+    });
+  });
+
+  await page.route("**/api/v1/attendance/admin/payable-days**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          items: recomputed
+            ? [
+                {
+                  day: "2026-01-01",
+                  employee_id: employeeId,
+                  branch_id: scope.branchId,
+                  shift_template_id: shiftId,
+                  day_type: "WORKDAY",
+                  presence_status: "PRESENT",
+                  expected_minutes: 480,
+                  worked_minutes: 480,
+                  payable_minutes: 480,
+                  anomalies_json: null,
+                  source_breakdown: null,
+                  computed_at: "2026-03-02T10:00:00Z",
+                },
+              ]
+            : [],
+          next_cursor: null,
+        },
+      }),
+    });
+  });
+
+  await page.route("**/api/v1/attendance/payable/recompute", async (route) => {
+    recomputed = true;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, data: { computed_rows: 1 } }),
+    });
+  });
+
+  return { employeeId };
+}
+
 test("login page loads", async ({ page }) => {
   await page.goto("/login");
   // Login page has multiple headings (e.g. "Sign in" + section titles). Assert the primary H1.
@@ -655,5 +938,33 @@ test.describe("dms (mocked)", () => {
 
     await page.getByRole("button", { name: /download current document/i }).click();
     await expect.poll(() => dms.getDownloadCount()).toBe(1);
+  });
+});
+
+test.describe("roster + payables (mocked)", () => {
+  test.skip(({ browserName }) => browserName !== "chromium", "chromium-only");
+
+  test("create shift, assign employee, recompute payables", async ({ page }) => {
+    const roster = await mockSessionForRosterPayables(page);
+
+    await page.goto("/roster/shifts");
+    await expect(page.getByRole("heading", { name: /shift templates/i })).toBeVisible();
+    await page.getByRole("button", { name: /create shift/i }).click();
+    await page.locator("#create-shift-code").fill("DAY");
+    await page.locator("#create-shift-name").fill("Day Shift");
+    await page.getByRole("button", { name: /^create shift$/i }).last().click();
+    await expect(page.getByText("Day Shift")).toBeVisible();
+
+    await page.goto(`/roster/assignments?employeeId=${roster.employeeId}`);
+    await expect(page.getByRole("heading", { name: /shift assignments/i })).toBeVisible();
+    await page.getByRole("button", { name: /create assignment/i }).click();
+    await page.locator("#assignment-from").fill("2026-01-01");
+    await page.getByRole("button", { name: /^create assignment$/i }).last().click();
+    await expect(page.getByText("2026-01-01")).toBeVisible();
+
+    await page.goto("/payables/admin");
+    await expect(page.getByRole("heading", { name: /payables admin/i })).toBeVisible();
+    await page.getByRole("button", { name: /^recompute$/i }).click();
+    await expect(page.getByText("2026-01-01")).toBeVisible();
   });
 });
