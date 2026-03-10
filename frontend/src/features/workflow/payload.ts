@@ -1,5 +1,20 @@
 export type PayloadRow = { key: string; value: string };
 
+function prettyKey(key: string): string {
+  switch (key) {
+    case "document_type_code":
+      return "Document type";
+    case "document_id":
+      return "Document ID";
+    case "expires_at":
+      return "Expiry";
+    case "file_name":
+      return "File name";
+    default:
+      return key.replace(/_/g, " ");
+  }
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -21,7 +36,10 @@ export function stableStringify(value: unknown): string {
   }
 }
 
-export function payloadToRows(payload: unknown): PayloadRow[] {
+export function payloadToRows(
+  payload: unknown,
+  requestTypeCode?: string | null,
+): PayloadRow[] {
   if (!payload || typeof payload !== "object") return [];
 
   const obj = payload as Record<string, unknown>;
@@ -30,7 +48,7 @@ export function payloadToRows(payload: unknown): PayloadRow[] {
     const v = obj[k];
     if (v === undefined) continue;
     if (v === null) {
-      rows.push({ key: k, value: "null" });
+      rows.push({ key: prettyKey(k), value: "null" });
       continue;
     }
     if (
@@ -38,10 +56,13 @@ export function payloadToRows(payload: unknown): PayloadRow[] {
       typeof v === "number" ||
       typeof v === "boolean"
     ) {
-      rows.push({ key: k, value: String(v) });
+      rows.push({ key: prettyKey(k), value: String(v) });
       continue;
     }
-    rows.push({ key: k, value: stableStringify(v) });
+    rows.push({ key: prettyKey(k), value: stableStringify(v) });
+  }
+  if ((requestTypeCode ?? "").toUpperCase() === "DOCUMENT_VERIFICATION") {
+    rows.push({ key: "File name", value: "Available in document view" });
   }
   return rows;
 }

@@ -1,12 +1,16 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 
 import { payloadToRows } from "@/features/workflow/payload";
+import { workflowRequestTypeLabel } from "@/features/workflow/requestTypes";
 import { workflowStatusLabel } from "@/features/workflow/status";
 import type { WorkflowRequestDetailOut } from "@/lib/types";
+import { compatibilityDocHref } from "@/features/dms/routes";
 
 import { StatusChip } from "@/components/ds/StatusChip";
+import { Button } from "@/components/ui/button";
 
 function formatDateTime(value: string): string {
   try {
@@ -24,14 +28,21 @@ export function WorkflowRequestDetailCard({
   actions?: React.ReactNode;
 }) {
   const req = detail.request;
-  const rows = payloadToRows(req.payload ?? {});
+  const rows = payloadToRows(req.payload ?? {}, req.request_type_code);
+  const openDocHref =
+    req.entity_type === "dms.document" && req.entity_id
+      ? compatibilityDocHref({
+          docId: req.entity_id,
+          employeeId: req.subject_employee_id ?? null,
+        })
+      : null;
 
   return (
     <div className="space-y-6">
       <div className="space-y-1">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-base font-semibold tracking-tight text-text-1">
-            {req.request_type_code}
+            {workflowRequestTypeLabel(req.request_type_code)}
           </div>
           <StatusChip status={req.status} />
         </div>
@@ -67,6 +78,14 @@ export function WorkflowRequestDetailCard({
           </div>
         )}
       </div>
+
+      {openDocHref ? (
+        <div>
+          <Button asChild type="button" variant="secondary">
+            <Link href={openDocHref}>Open document</Link>
+          </Button>
+        </div>
+      ) : null}
 
       {actions ? <div>{actions}</div> : null}
     </div>

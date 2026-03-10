@@ -73,4 +73,24 @@ describe("lib/errorUx", () => {
     });
     expect(getErrorUx(err)).toMatchObject({ title: "Overlapping leave" });
   });
+
+  it("maps DMS document not found to neutral copy", () => {
+    const err = new ApiError({
+      status: 404,
+      code: "dms.document.not_found",
+      message: "Document not found",
+      correlationId: "cid",
+    });
+    expect(getErrorUx(err)).toMatchObject({ title: "Not found" });
+  });
+
+  it("maps DMS version conflicts to retry guidance", () => {
+    const err = new ApiError({
+      status: 409,
+      code: "dms.document.version.conflict",
+      message: "Conflict",
+      correlationId: "cid",
+    });
+    expect(getErrorUx(err)).toMatchObject({ suggestedActionKind: "retry" });
+  });
 });

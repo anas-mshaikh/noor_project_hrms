@@ -3,6 +3,7 @@ import { http, HttpResponse } from "msw";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 
 import * as api from "@/lib/api";
+import { createQueryClient } from "@/lib/queryClient";
 import type { MeResponse, WorkflowRequestDetailOut } from "@/lib/types";
 import { ok } from "@/test/msw/builders/response";
 import { server } from "@/test/msw/server";
@@ -136,5 +137,74 @@ describe("/workflow/requests/[requestId]", () => {
     await waitFor(() => expect(saveSpy).toHaveBeenCalled());
 
     saveSpy.mockRestore();
+  });
+
+  it("renders DMS open-document affordances and invalidates DMS queries after approve", async () => {
+    const requestId = "99999999-9999-4999-8999-999999999999";
+    let status = "PENDING";
+    const buildDetail = (): WorkflowRequestDetailOut => ({
+      request: {
+        id: requestId,
+        request_type_code: "DOCUMENT_VERIFICATION",
+        status,
+        current_step: 0,
+        subject: "Verify passport",
+        payload: {
+          document_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          document_type_code: "PASSPORT",
+          expires_at: "2026-12-31",
+        },
+        tenant_id: SESSION.scope.tenant_id,
+        company_id: SESSION.scope.company_id!,
+        branch_id: SESSION.scope.branch_id,
+        created_by_user_id: SESSION.user.id,
+        requester_employee_id: "33333333-3333-4333-8333-333333333333",
+        subject_employee_id: "44444444-4444-4444-8444-444444444444",
+        entity_type: "dms.document",
+        entity_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        created_at: new Date(0).toISOString(),
+        updated_at: new Date(0).toISOString(),
+      },
+      steps: [],
+      comments: [],
+      attachments: [],
+      events: [],
+    });
+
+    server.use(
+      http.get("*/api/v1/workflow/requests/:id", () => HttpResponse.json(ok(buildDetail()))),
+      http.post("*/api/v1/workflow/requests/:id/approve", () => {
+        status = "APPROVED";
+        return HttpResponse.json(ok({ id: requestId, status: "APPROVED", current_step: 0 }));
+      }),
+    );
+
+    const queryClient = createQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    seedSession(SESSION);
+    setPathname(`/workflow/requests/${requestId}`);
+    setSearchParams({});
+    setParams({ requestId });
+
+    renderWithProviders(<WorkflowRequestDeepLinkPage params={{ requestId }} />, {
+      queryClient,
+    });
+
+    const openLink = await screen.findByRole("link", { name: "Open document" });
+    expect(openLink).toHaveAttribute(
+      "href",
+      "/dms/documents/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa?employeeId=44444444-4444-4444-8444-444444444444",
+    );
+    expect(await screen.findByText("File name")).toBeVisible();
+    expect(await screen.findByText("Available in document view")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: ["dms"] }),
+      ),
+    );
   });
 });

@@ -360,6 +360,63 @@ export function getErrorUx(err: unknown): ErrorUx {
       };
     }
 
+    // ----- DMS -----
+    if (err.code === "dms.document.not_found") {
+      return {
+        title: "Not found",
+        description: "The requested document does not exist or is not accessible.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "dms.document_type.not_found") {
+      return {
+        title: "Document type not found",
+        description: "The selected document type is missing or inactive.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "dms.file.not_found") {
+      return {
+        title: "File not found",
+        description: "The selected file does not exist or is not accessible.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "dms.file.not_ready") {
+      return {
+        title: "File not ready",
+        description: "The uploaded file is still processing. Try again in a moment.",
+        suggestedActionKind: "retry",
+      };
+    }
+
+    if (err.code === "dms.document.verify.already_terminal") {
+      return {
+        title: "Verification already completed",
+        description: "This document is already verified, rejected, or expired.",
+        suggestedActionKind: "none",
+      };
+    }
+
+    if (err.code === "dms.document.version.conflict") {
+      return {
+        title: "Document update conflict",
+        description: "This document changed while you were editing it. Refresh and try again.",
+        suggestedActionKind: "retry",
+      };
+    }
+
+    if (err.code === "dms.expiry.rule.duplicate") {
+      return {
+        title: "Expiry rule already exists",
+        description: "This document type already has an expiry rule for the selected window.",
+        suggestedActionKind: "none",
+      };
+    }
+
     if (err.status === 404) {
       return {
         title: "Not found",

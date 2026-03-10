@@ -682,6 +682,123 @@ export type DmsFileOut = {
   meta: Record<string, unknown> | null;
 };
 
+export type DmsDocumentTypeCreateIn = {
+  code: string;
+  name: string;
+  requires_expiry?: boolean;
+  is_active?: boolean;
+};
+
+export type DmsDocumentTypePatchIn = {
+  name?: string | null;
+  requires_expiry?: boolean | null;
+  is_active?: boolean | null;
+};
+
+export type DmsDocumentTypeOut = {
+  id: UUID;
+  tenant_id: UUID;
+  code: string;
+  name: string;
+  requires_expiry: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DmsDocumentTypesOut = {
+  items: DmsDocumentTypeOut[];
+};
+
+export type DmsDocumentVersionOut = {
+  id: UUID;
+  tenant_id: UUID;
+  document_id: UUID;
+  file_id: UUID;
+  version: number;
+  notes: string | null;
+  created_by_user_id: UUID | null;
+  created_at: string;
+};
+
+export type DmsEmployeeDocumentCreateIn = {
+  document_type_code: string;
+  file_id: UUID;
+  expires_at?: string | null;
+  notes?: string | null;
+};
+
+export type DmsDocumentAddVersionIn = {
+  file_id: UUID;
+  notes?: string | null;
+};
+
+export type DmsDocumentOut = {
+  id: UUID;
+  tenant_id: UUID;
+  document_type_id: UUID;
+  document_type_code: string;
+  document_type_name: string;
+  owner_employee_id: UUID | null;
+  status: "DRAFT" | "SUBMITTED" | "VERIFIED" | "REJECTED" | "EXPIRED" | string;
+  expires_at: string | null;
+  current_version_id: UUID | null;
+  current_version: DmsDocumentVersionOut | null;
+  verified_at: string | null;
+  verified_by_user_id: UUID | null;
+  rejected_reason: string | null;
+  created_by_user_id: UUID | null;
+  verification_workflow_request_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+  meta: Record<string, unknown> | null;
+};
+
+export type DmsDocumentListOut = {
+  items: DmsDocumentOut[];
+  next_cursor: string | null;
+};
+
+export type DmsVerifyRequestOut = {
+  workflow_request_id: UUID;
+};
+
+export type DmsExpiryRuleCreateIn = {
+  document_type_code: string;
+  days_before: number;
+  is_active?: boolean;
+};
+
+export type DmsExpiryRuleOut = {
+  id: UUID;
+  tenant_id: UUID;
+  document_type_id: UUID | null;
+  document_type_code: string | null;
+  document_type_name: string | null;
+  days_before: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DmsExpiryRulesOut = {
+  items: DmsExpiryRuleOut[];
+};
+
+export type DmsUpcomingExpiryItemOut = {
+  document_id: UUID;
+  document_type_code: string;
+  document_type_name: string;
+  owner_employee_id: UUID | null;
+  expires_at: string;
+  days_left: number;
+  status: "DRAFT" | "SUBMITTED" | "VERIFIED" | "REJECTED" | "EXPIRED" | string;
+};
+
+export type DmsUpcomingExpiryOut = {
+  items: DmsUpcomingExpiryItemOut[];
+};
+
 // Face system endpoints intentionally return file paths + ids only.
 export type FaceRegisterOut = {
   employee_id: UUID;

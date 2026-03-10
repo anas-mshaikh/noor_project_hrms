@@ -29,4 +29,20 @@ describe("features/workflow/payload", () => {
       { key: "e", value: "null" },
     ]);
   });
+
+  it("adds DMS-specific payload hints for document verification requests", () => {
+    expect(
+      payloadToRows(
+        {
+          document_type_code: "PASSPORT",
+          expires_at: "2026-12-31",
+        },
+        "DOCUMENT_VERIFICATION",
+      ),
+    ).toEqual([
+      { key: "Document type", value: "PASSPORT" },
+      { key: "Expiry", value: "2026-12-31" },
+      { key: "File name", value: "Available in document view" },
+    ]);
+  });
 });

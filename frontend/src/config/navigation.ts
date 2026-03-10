@@ -93,6 +93,7 @@ const attendanceModule: ModuleDef = {
   icon: LayoutDashboard,
   isActive: (pathname) =>
     !(
+      startsWithPath(pathname, "/dms") ||
       startsWithPath(pathname, "/attendance") ||
       startsWithPath(pathname, "/leave") ||
       startsWithPath(pathname, "/hr") ||
@@ -158,7 +159,11 @@ const hrModule: ModuleDef = {
   label: "HR",
   href: "/hr",
   icon: Sparkles,
-  isActive: (pathname) => startsWithPath(pathname, "/hr"),
+  isActive: (pathname) =>
+    startsWithPath(pathname, "/hr") ||
+    startsWithPath(pathname, "/dms/employee-docs") ||
+    startsWithPath(pathname, "/dms/expiry") ||
+    startsWithPath(pathname, "/dms/documents"),
   sidebar: [
     {
       id: "hr-overview",
@@ -206,6 +211,24 @@ const hrModule: ModuleDef = {
       requiredPermissions: ["hr:employee:read"],
     },
     {
+      id: "hr-dms-employee-docs",
+      href: "/dms/employee-docs",
+      title: "Employee Docs",
+      description: "Employee document library",
+      icon: Library,
+      match: "prefix",
+      requiredPermissions: ["dms:document:read", "dms:document:write", "dms:document:verify"],
+    },
+    {
+      id: "hr-dms-expiry",
+      href: "/dms/expiry",
+      title: "Expiring Docs",
+      description: "Upcoming document expiries",
+      icon: Calendar,
+      match: "prefix",
+      requiredPermissions: ["dms:expiry:read", "dms:expiry:write"],
+    },
+    {
       id: "hr-onboarding",
       href: "/hr/onboarding",
       title: "Onboarding",
@@ -227,7 +250,8 @@ const essModule: ModuleDef = {
     // Team calendar is a manager view and is highlighted under MSS instead.
     (startsWithPath(pathname, "/ess") ||
       startsWithPath(pathname, "/attendance") ||
-      startsWithPath(pathname, "/leave")) &&
+      startsWithPath(pathname, "/leave") ||
+      startsWithPath(pathname, "/dms/my-docs")) &&
     !startsWithPath(pathname, "/leave/team-calendar"),
   requiredPermissions: [
     "ess:profile:read",
@@ -235,6 +259,7 @@ const essModule: ModuleDef = {
     "attendance:correction:read",
     "leave:balance:read",
     "leave:request:read",
+    "dms:document:read",
   ],
   sidebar: [
     {
@@ -281,6 +306,15 @@ const essModule: ModuleDef = {
       icon: Users,
       match: "exact",
       requiredPermissions: ["ess:profile:read"],
+    },
+    {
+      id: "ess-dms-my-docs",
+      href: "/dms/my-docs",
+      title: "My Documents",
+      description: "Your document library",
+      icon: Library,
+      match: "prefix",
+      requiredPermissions: ["dms:document:read"],
     },
   ],
 };
@@ -497,6 +531,15 @@ const settingsModule: ModuleDef = {
       icon: SlidersHorizontal,
       match: "prefix",
       requiredPermissions: ["workflow:definition:read", "workflow:definition:write"],
+    },
+    {
+      id: "settings-dms",
+      href: "/settings/dms",
+      title: "Document Types",
+      description: "DMS document catalog",
+      icon: Library,
+      match: "prefix",
+      requiredPermissions: ["dms:document-type:read", "dms:document-type:write"],
     },
   ],
 };

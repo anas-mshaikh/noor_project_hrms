@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -32,6 +32,7 @@ import {
   listEmploymentHistory,
 } from "@/features/hr-core/api/hrCore";
 import { hrCoreKeys } from "@/features/hr-core/queryKeys";
+import { employeeDocsHref } from "@/features/dms/routes";
 
 import { DSCard } from "@/components/ds/DSCard";
 import { EmptyState } from "@/components/ds/EmptyState";
@@ -81,6 +82,7 @@ function todayYmd(): string {
 }
 
 export default function HrEmployeeDetailPage({ params }: { params: { employeeId?: string } }) {
+  const router = useRouter();
   const routeParams = useParams() as { employeeId?: string | string[] };
   const employeeIdRaw =
     (Array.isArray(routeParams.employeeId) ? routeParams.employeeId[0] : routeParams.employeeId) ??
@@ -90,6 +92,7 @@ export default function HrEmployeeDetailPage({ params }: { params: { employeeId?
 
   const companyId = useSelection((s) => s.companyId);
   const branchId = useSelection((s) => s.branchId);
+  const companyUuid = parseUuidParam(companyId);
 
   const permissions = useAuth((s) => s.permissions);
   const permSet = React.useMemo(() => new Set(permissions ?? []), [permissions]);
@@ -105,71 +108,37 @@ export default function HrEmployeeDetailPage({ params }: { params: { employeeId?
     "disabled:cursor-not-allowed disabled:opacity-50"
   );
 
-  if (!companyId) {
-    return (
-      <EmptyState
-        title="Select a company"
-        description="Employee profiles are company-scoped. Select a company from the scope picker to continue."
-        primaryAction={
-          <Button asChild variant="secondary">
-            <Link href="/scope">Go to scope</Link>
-          </Button>
-        }
-      />
-    );
-  }
-
-  if (!employeeIdRaw) {
-    return (
-      <ErrorState
-        title="Missing employee id"
-        error={new Error("Open an employee from the directory.")}
-        details={
-          <Button asChild variant="outline">
-            <Link href="/hr/employees">Back to employees</Link>
-          </Button>
-        }
-      />
-    );
-  }
-
-  if (!employeeId) {
-    return (
-      <ErrorState
-        title="Invalid employee id"
-        error={new Error(`Got: ${String(employeeIdRaw)}`)}
-        details={
-          <Button asChild variant="outline">
-            <Link href="/hr/employees">Back to employees</Link>
-          </Button>
-        }
-      />
-    );
-  }
-
   const employeeQ = useQuery({
-    queryKey: hrCoreKeys.employee({ companyId: companyId as UUID, employeeId }),
-    queryFn: () => getEmployee({ employeeId, companyId: companyId as UUID }),
+    queryKey: hrCoreKeys.employee({ companyId: companyUuid, employeeId }),
+    enabled: Boolean(companyUuid && employeeId),
+    queryFn: () => getEmployee({ employeeId: employeeId as UUID, companyId: companyUuid }),
   });
 
   const employee = employeeQ.data as HrEmployee360Out | undefined;
 
   const [tab, setTab] = React.useState("overview");
+  function handleTabChange(nextTab: string) {
+    if (nextTab === "documents") {
+      if (employeeId) router.push(employeeDocsHref({ employeeId }));
+      return;
+    }
+    setTab(nextTab);
+  }
 
   // ------------------------------------------------------------
   // Employment tab: history + change
   // ------------------------------------------------------------
   const branchesQ = useQuery({
-    queryKey: tenancyKeys.branches(companyId as UUID),
-    enabled: Boolean(companyId && canReadTenancy),
-    queryFn: () => listBranches({ companyId: companyId as UUID }),
+    queryKey: tenancyKeys.branches(companyUuid),
+    enabled: Boolean(companyUuid && canReadTenancy),
+    queryFn: () => listBranches({ companyId: companyUuid }),
   });
   const branches = (branchesQ.data ?? []) as BranchOut[];
 
   const employmentQ = useQuery({
-    queryKey: hrCoreKeys.employmentHistory({ companyId: companyId as UUID, employeeId }),
-    enabled: tab === "employment",
-    queryFn: () => listEmploymentHistory({ employeeId, companyId: companyId as UUID }),
+    queryKey: hrCoreKeys.employmentHistory({ companyId: companyUuid, employeeId }),
+    enabled: Boolean(companyUuid && employeeId && tab === "employment"),
+    queryFn: () => listEmploymentHistory({ employeeId: employeeId as UUID, companyId: companyUuid }),
   });
   const employment = (employmentQ.data ?? []) as HrEmploymentOut[];
 
@@ -186,11 +155,11 @@ export default function HrEmployeeDetailPage({ params }: { params: { employeeId?
   }, [branchId, changeBranchId, changeOpen]);
 
   const changeOrgUnitsQ = useQuery({
-    queryKey: tenancyKeys.orgUnits({ companyId: companyId as UUID, branchId: changeBranchId || null }),
-    enabled: Boolean(companyId && canReadTenancy && changeOpen),
+    queryKey: tenancyKeys.orgUnits({ companyId: companyUuid, branchId: changeBranchId || null }),
+    enabled: Boolean(companyUuid && canReadTenancy && changeOpen),
     queryFn: () =>
       listOrgUnits({
-        companyId: companyId as UUID,
+        companyId: companyUuid as UUID,
         branchId: changeBranchId || null,
       }),
   });
@@ -198,6 +167,7 @@ export default function HrEmployeeDetailPage({ params }: { params: { employeeId?
 
   const changeM = useMutation({
     mutationFn: async () => {
+      if (!employeeId || !companyUuid) throw new Error("Employee context is required.");
       const bid = parseUuidParam(changeBranchId);
       if (!bid) throw new Error("Branch is required.");
       if (!changeStartDate.trim()) throw new Error("Start date is required.");
@@ -209,7 +179,7 @@ export default function HrEmployeeDetailPage({ params }: { params: { employeeId?
       };
       return changeEmployment({
         employeeId,
-        companyId: companyId as UUID,
+        companyId: companyUuid,
         payload,
       });
     },
@@ -253,13 +223,14 @@ export default function HrEmployeeDetailPage({ params }: { params: { employeeId?
 
   const linkM = useMutation({
     mutationFn: async () => {
+      if (!employeeId || !companyUuid) throw new Error("Employee context is required.");
       if (linkedUser) throw new Error("Employee is already linked.");
       const uid = parseUuidParam(selectedUserId);
       if (!uid) throw new Error("User id is required.");
       const payload: HrEmployeeLinkUserIn = { user_id: uid };
       return linkEmployeeUser({
         employeeId,
-        companyId: companyId as UUID,
+        companyId: companyUuid,
         payload,
       });
     },
@@ -275,6 +246,48 @@ export default function HrEmployeeDetailPage({ params }: { params: { employeeId?
   // ------------------------------------------------------------
   // Render
   // ------------------------------------------------------------
+  if (!companyUuid) {
+    return (
+      <EmptyState
+        title="Select a company"
+        description="Employee profiles are company-scoped. Select a company from the scope picker to continue."
+        primaryAction={
+          <Button asChild variant="secondary">
+            <Link href="/scope">Go to scope</Link>
+          </Button>
+        }
+      />
+    );
+  }
+
+  if (!employeeIdRaw) {
+    return (
+      <ErrorState
+        title="Missing employee id"
+        error={new Error("Open an employee from the directory.")}
+        details={
+          <Button asChild variant="outline">
+            <Link href="/hr/employees">Back to employees</Link>
+          </Button>
+        }
+      />
+    );
+  }
+
+  if (!employeeId) {
+    return (
+      <ErrorState
+        title="Invalid employee id"
+        error={new Error(`Got: ${String(employeeIdRaw)}`)}
+        details={
+          <Button asChild variant="outline">
+            <Link href="/hr/employees">Back to employees</Link>
+          </Button>
+        }
+      />
+    );
+  }
+
   return (
     <EntityProfileTemplate
       header={
@@ -305,12 +318,12 @@ export default function HrEmployeeDetailPage({ params }: { params: { employeeId?
         />
       }
       tabs={
-        <Tabs value={tab} onValueChange={setTab}>
+        <Tabs value={tab} onValueChange={handleTabChange}>
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="employment">Employment</TabsTrigger>
             <TabsTrigger value="link-user">Link user</TabsTrigger>
-            <TabsTrigger value="documents" disabled>
+            <TabsTrigger value="documents">
               Documents
             </TabsTrigger>
             <TabsTrigger value="payroll" disabled>
@@ -334,7 +347,7 @@ export default function HrEmployeeDetailPage({ params }: { params: { employeeId?
           ) : !employee ? (
             <EmptyState title="Employee not found" description="This employee does not exist or you do not have access." />
           ) : (
-            <Tabs value={tab} onValueChange={setTab}>
+            <Tabs value={tab} onValueChange={handleTabChange}>
               <TabsContent value="overview" className="mt-0">
                 <div className="space-y-6">
                   <DSCard surface="card" className="p-[var(--ds-space-20)]">

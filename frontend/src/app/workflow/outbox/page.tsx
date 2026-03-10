@@ -93,12 +93,17 @@ export default function WorkflowOutboxPage() {
   const cancelM = useMutation({
     mutationFn: async (id: UUID) => cancelRequest(id),
     onSuccess: async () => {
+      const isDms = cancelTarget?.entity_type === "dms.document";
       setCancelTarget(null);
-      await Promise.all([
+      const invalidations = [
         qc.invalidateQueries({ queryKey: ["workflow", "outbox"] }),
         qc.invalidateQueries({ queryKey: ["workflow", "inbox"] }),
         qc.invalidateQueries({ queryKey: ["workflow", "request"] }),
-      ]);
+      ];
+      if (isDms) {
+        invalidations.push(qc.invalidateQueries({ queryKey: ["dms"] }));
+      }
+      await Promise.all(invalidations);
     },
     onError: (err) => toastApiError(err),
   });

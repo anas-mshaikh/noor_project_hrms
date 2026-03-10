@@ -63,11 +63,15 @@ export default function WorkflowRequestDeepLinkPage({
   const approveM = useMutation({
     mutationFn: async () => approveRequest(requestId as UUID, { comment: null }),
     onSuccess: async () => {
-      await Promise.all([
+      const invalidations = [
         qc.invalidateQueries({ queryKey: ["workflow", "inbox"] }),
         qc.invalidateQueries({ queryKey: ["workflow", "outbox"] }),
         qc.invalidateQueries({ queryKey: workflowKeys.request(requestId) }),
-      ]);
+      ];
+      if (requestQ.data?.request.entity_type === "dms.document") {
+        invalidations.push(qc.invalidateQueries({ queryKey: ["dms"] }));
+      }
+      await Promise.all(invalidations);
       await requestQ.refetch();
     },
     onError: (err) => toastApiError(err),
@@ -81,11 +85,15 @@ export default function WorkflowRequestDeepLinkPage({
     onSuccess: async () => {
       setRejectOpen(false);
       setRejectComment("");
-      await Promise.all([
+      const invalidations = [
         qc.invalidateQueries({ queryKey: ["workflow", "inbox"] }),
         qc.invalidateQueries({ queryKey: ["workflow", "outbox"] }),
         qc.invalidateQueries({ queryKey: workflowKeys.request(requestId) }),
-      ]);
+      ];
+      if (requestQ.data?.request.entity_type === "dms.document") {
+        invalidations.push(qc.invalidateQueries({ queryKey: ["dms"] }));
+      }
+      await Promise.all(invalidations);
       await requestQ.refetch();
     },
     onError: (err) => toastApiError(err),
@@ -96,11 +104,15 @@ export default function WorkflowRequestDeepLinkPage({
     mutationFn: async () => cancelRequest(requestId as UUID),
     onSuccess: async () => {
       setCancelOpen(false);
-      await Promise.all([
+      const invalidations = [
         qc.invalidateQueries({ queryKey: ["workflow", "inbox"] }),
         qc.invalidateQueries({ queryKey: ["workflow", "outbox"] }),
         qc.invalidateQueries({ queryKey: workflowKeys.request(requestId) }),
-      ]);
+      ];
+      if (requestQ.data?.request.entity_type === "dms.document") {
+        invalidations.push(qc.invalidateQueries({ queryKey: ["dms"] }));
+      }
+      await Promise.all(invalidations);
       await requestQ.refetch();
     },
     onError: (err) => toastApiError(err),

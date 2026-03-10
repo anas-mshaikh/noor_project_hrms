@@ -152,11 +152,15 @@ export default function WorkflowInboxPage() {
   const approveM = useMutation({
     mutationFn: async () => approveRequest(selectedId as UUID, { comment: null }),
     onSuccess: async () => {
-      await Promise.all([
+      const invalidations = [
         qc.invalidateQueries({ queryKey: ["workflow", "inbox"] }),
         qc.invalidateQueries({ queryKey: ["workflow", "outbox"] }),
         qc.invalidateQueries({ queryKey: ["workflow", "request"] }),
-      ]);
+      ];
+      if (requestQ.data?.request.entity_type === "dms.document") {
+        invalidations.push(qc.invalidateQueries({ queryKey: ["dms"] }));
+      }
+      await Promise.all(invalidations);
       updateSelectedId(null);
     },
     onError: (err) => toastApiError(err),
@@ -171,11 +175,15 @@ export default function WorkflowInboxPage() {
     onSuccess: async () => {
       setRejectOpen(false);
       setRejectComment("");
-      await Promise.all([
+      const invalidations = [
         qc.invalidateQueries({ queryKey: ["workflow", "inbox"] }),
         qc.invalidateQueries({ queryKey: ["workflow", "outbox"] }),
         qc.invalidateQueries({ queryKey: ["workflow", "request"] }),
-      ]);
+      ];
+      if (requestQ.data?.request.entity_type === "dms.document") {
+        invalidations.push(qc.invalidateQueries({ queryKey: ["dms"] }));
+      }
+      await Promise.all(invalidations);
       updateSelectedId(null);
     },
     onError: (err) => toastApiError(err),
