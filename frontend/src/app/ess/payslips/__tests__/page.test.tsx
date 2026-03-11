@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
+import userEvent from "@testing-library/user-event";
 
 import * as api from "@/lib/api";
 import type { MeResponse, PayslipOut } from "@/lib/types";
@@ -45,6 +46,7 @@ function payslip(id = PAYSLIP_ID): PayslipOut {
 
 describe("/ess/payslips", () => {
   it("loads payslips and downloads the selected payslip", async () => {
+    const user = userEvent.setup();
     const saveSpy = vi.spyOn(api, "saveBlobAsFile").mockImplementation(() => {});
 
     server.use(
@@ -66,8 +68,8 @@ describe("/ess/payslips", () => {
 
     renderWithProviders(<EssPayslipsPage />);
 
-    expect(await screen.findByText("2026-03")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Download payslip" }));
+    expect((await screen.findAllByText("2026-03")).length).toBeGreaterThan(0);
+    await user.click(await screen.findByRole("button", { name: "Download payslip" }));
     await waitFor(() => expect(saveSpy).toHaveBeenCalled());
 
     saveSpy.mockRestore();

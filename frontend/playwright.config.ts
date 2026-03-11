@@ -1,4 +1,5 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices } from "@playwright/test";
+const frontendDir = process.cwd();
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000';
 
@@ -97,6 +98,7 @@ export default defineConfig({
    */
   webServer: shouldStartWebServer
     ? {
+        cwd: frontendDir,
         command: process.env.CI
           ? `npm run build && npm run start -- -p ${basePort} -H 127.0.0.1`
           : `npm run dev -- -p ${basePort} -H 127.0.0.1`,

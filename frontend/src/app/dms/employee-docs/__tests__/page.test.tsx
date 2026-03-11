@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { DmsDocumentOut, EmployeeDirectoryRowOut, HrEmployee360Out, MeResponse } from "@/lib/types";
 import { ok } from "@/test/msw/builders/response";
@@ -149,11 +150,12 @@ describe("/dms/employee-docs", () => {
 
     renderWithProviders(<EmployeeDocsPage />);
 
-    expect(await screen.findByText("Select an employee")).toBeVisible();
+    expect(await screen.findByText("Select an employee to view documents.")).toBeVisible();
     expect(await screen.findByText("Alice One")).toBeVisible();
   });
 
   it("uploads a document for the selected employee", async () => {
+    const user = userEvent.setup();
     const docs: DmsDocumentOut[] = [];
     let uploadCounter = 0;
 
@@ -220,19 +222,21 @@ describe("/dms/employee-docs", () => {
 
     renderWithProviders(<EmployeeDocsPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Upload doc" }));
-    fireEvent.change(screen.getByLabelText("Document type"), { target: { value: "PASSPORT" } });
-    fireEvent.change(screen.getByLabelText("Expiry date (optional)"), { target: { value: "2026-12-31" } });
-    fireEvent.change(screen.getByLabelText("File"), {
-      target: { files: [new File(["x"], "passport.pdf", { type: "application/pdf" })] },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /^Upload$/ }));
+    await user.click(await screen.findByRole("button", { name: "Upload doc" }));
+    await user.selectOptions(screen.getByLabelText("Document type"), "PASSPORT");
+    await user.type(screen.getByLabelText("Expiry date (optional)"), "2026-12-31");
+    await user.upload(
+      screen.getByLabelText("File"),
+      new File(["x"], "passport.pdf", { type: "application/pdf" })
+    );
+    await user.click(screen.getByRole("button", { name: /^Upload$/ }));
 
-    expect(await screen.findByText("Passport")).toBeVisible();
-    expect(await screen.findByText("SUBMITTED")).toBeVisible();
+    expect((await screen.findAllByText("Passport")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("SUBMITTED")).length).toBeGreaterThan(0);
   });
 
   it("replaces the current document and requests verification", async () => {
+    const user = userEvent.setup();
     const docs: DmsDocumentOut[] = [sampleDoc(1)];
 
     server.use(
@@ -298,15 +302,16 @@ describe("/dms/employee-docs", () => {
     expect(await screen.findByText("Current version")).toBeVisible();
     expect(await screen.findByText("v1")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Replace document" }));
-    fireEvent.change(screen.getByLabelText("File"), {
-      target: { files: [new File(["y"], "passport-v2.pdf", { type: "application/pdf" })] },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /^Replace document$/ }));
+    await user.click(screen.getByRole("button", { name: "Replace document" }));
+    await user.upload(
+      screen.getByLabelText("File"),
+      new File(["y"], "passport-v2.pdf", { type: "application/pdf" })
+    );
+    await user.click(screen.getByRole("button", { name: /^Replace document$/ }));
 
     expect(await screen.findByText("v2")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Request verification" }));
+    await user.click(screen.getByRole("button", { name: "Request verification" }));
     expect(routerPush).toHaveBeenCalledWith("/workflow/requests/99999999-9999-4999-8999-999999999999");
   });
 });

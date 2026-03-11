@@ -226,7 +226,7 @@ export default function RosterAssignmentsPage() {
                   </div>
                   <SheetFooter>
                     <Button type="button" variant="secondary" onClick={() => setSheetOpen(false)} disabled={createM.isPending}>Cancel</Button>
-                    <Button type="button" onClick={() => void createM.mutateAsync()} disabled={createM.isPending}>{createM.isPending ? "Saving..." : "Create assignment"}</Button>
+                    <Button type="button" onClick={() => createM.mutate()} disabled={createM.isPending}>{createM.isPending ? "Saving..." : "Create assignment"}</Button>
                   </SheetFooter>
                 </SheetContent>
               </Sheet>

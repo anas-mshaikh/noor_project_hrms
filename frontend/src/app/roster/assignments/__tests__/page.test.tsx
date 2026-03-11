@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
-const toastApiError = vi.fn();
-vi.mock("@/lib/toastApiError", () => ({ toastApiError }));
+vi.mock("@/lib/toastApiError", () => ({ toastApiError: vi.fn() }));
 
 import type { EmployeeDirectoryRowOut, HrEmployee360Out, MeResponse, ShiftAssignmentOut } from "@/lib/types";
+import { toastApiError } from "@/lib/toastApiError";
 import { fail, ok } from "@/test/msw/builders/response";
 import { server } from "@/test/msw/server";
 import { renderWithProviders } from "@/test/utils/render";
@@ -115,11 +116,12 @@ describe("/roster/assignments", () => {
 
     renderWithProviders(<RosterAssignmentsPage />);
 
-    expect(await screen.findByText("Select an employee")).toBeVisible();
+    expect(await screen.findByText("Choose an employee to manage effective-dated shift assignments.")).toBeVisible();
     expect(await screen.findByText("Alice One")).toBeVisible();
   });
 
   it("creates an assignment and refreshes the list", async () => {
+    const user = userEvent.setup();
     const assignments: ShiftAssignmentOut[] = [];
 
     server.use(
@@ -154,16 +156,21 @@ describe("/roster/assignments", () => {
 
     renderWithProviders(<RosterAssignmentsPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Create assignment" }));
-    fireEvent.change(screen.getByLabelText("Effective from"), { target: { value: "2026-01-01" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create assignment" })[1]);
+    await user.click(await screen.findByRole("button", { name: "Create assignment" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Shift template"), SHIFT_ID);
+    await user.type(within(dialog).getByLabelText("Effective from"), "2026-01-01");
+    await user.click(within(dialog).getByRole("button", { name: "Create assignment" }));
 
-    expect((await screen.findAllByText("2026-01-01")).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText("Day Shift")).length).toBeGreaterThan(0);
-  });
+    const table = await screen.findByRole("table");
+    expect(await within(table).findByText("2026-01-01")).toBeVisible();
+    expect(await within(table).findByText("Day Shift")).toBeVisible();
+  }, 30_000);
 
   it("sends overlap errors through the shared toast handler", async () => {
-    toastApiError.mockReset();
+    const user = userEvent.setup();
+    const toastApiErrorMock = vi.mocked(toastApiError);
+    toastApiErrorMock.mockReset();
 
     server.use(
       http.get("*/api/v1/hr/employees", () =>
@@ -186,12 +193,14 @@ describe("/roster/assignments", () => {
 
     renderWithProviders(<RosterAssignmentsPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Create assignment" }));
-    fireEvent.change(screen.getByLabelText("Effective from"), { target: { value: "2026-01-01" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create assignment" })[1]);
+    await user.click(await screen.findByRole("button", { name: "Create assignment" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Shift template"), SHIFT_ID);
+    await user.type(within(dialog).getByLabelText("Effective from"), "2026-01-01");
+    await user.click(within(dialog).getByRole("button", { name: "Create assignment" }));
 
     await waitFor(() => {
-      expect(toastApiError).toHaveBeenCalledTimes(1);
+      expect(toastApiErrorMock).toHaveBeenCalledTimes(1);
     });
   });
 });

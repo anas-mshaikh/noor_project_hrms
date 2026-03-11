@@ -83,7 +83,10 @@ export default function MyDocumentsPage() {
   });
 
   const items = React.useMemo(() => docsQ.data?.pages.flatMap((page) => page.items) ?? [], [docsQ.data]);
-  const selected = React.useMemo(() => items.find((item) => item.id === docId) ?? detailQ.data ?? null, [docId, items, detailQ.data]);
+  const selected = React.useMemo(
+    () => items.find((item) => item.id === docId) ?? (!docId ? items[0] ?? null : detailQ.data ?? null),
+    [detailQ.data, docId, items],
+  );
 
   React.useEffect(() => {
     if (!docId && items.length > 0) {

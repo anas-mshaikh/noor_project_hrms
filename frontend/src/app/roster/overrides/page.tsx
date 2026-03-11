@@ -142,17 +142,19 @@ export default function RosterOverridesPage() {
   }, [sheetOpen, shiftTemplateId, shifts]);
 
   const upsertM = useMutation({
-    mutationFn: async () => {
-      if (!employeeId) throw new Error("Select an employee first.");
-      if (!day) throw new Error("Select a day first.");
+    mutationFn: async ({
+      nextEmployeeId,
+      nextDay,
+      payload,
+    }: {
+      nextEmployeeId: UUID;
+      nextDay: string;
+      payload: ReturnType<typeof buildOverridePayload>;
+    }) => {
       return upsertEmployeeOverride({
-        employeeId,
-        day,
-        payload: buildOverridePayload({
-          overrideType,
-          shiftTemplateId: parseUuidParam(shiftTemplateId),
-          notes,
-        }),
+        employeeId: nextEmployeeId,
+        day: nextDay,
+        payload,
       });
     },
     onSuccess: async () => {
@@ -166,6 +168,32 @@ export default function RosterOverridesPage() {
     },
     onError: (err) => toastApiError(err),
   });
+
+  function onSaveOverride() {
+    if (!employeeId) {
+      toastApiError(new Error("Select an employee first."));
+      return;
+    }
+    if (!day) {
+      toastApiError(new Error("Select a day first."));
+      return;
+    }
+
+    try {
+      const payload = buildOverridePayload({
+        overrideType,
+        shiftTemplateId: parseUuidParam(shiftTemplateId),
+        notes,
+      });
+      upsertM.mutate({
+        nextEmployeeId: employeeId,
+        nextDay: day,
+        payload,
+      });
+    } catch (err) {
+      toastApiError(err);
+    }
+  }
 
   if (!canRead) {
     return <ErrorState title="Access denied" error={new Error("Your account does not have access to roster overrides.")} />;
@@ -259,7 +287,7 @@ export default function RosterOverridesPage() {
                   </div>
                   <SheetFooter>
                     <Button type="button" variant="secondary" onClick={() => setSheetOpen(false)} disabled={upsertM.isPending}>Cancel</Button>
-                    <Button type="button" onClick={() => void upsertM.mutateAsync()} disabled={upsertM.isPending}>{upsertM.isPending ? "Saving..." : "Save override"}</Button>
+                    <Button type="button" onClick={onSaveOverride} disabled={upsertM.isPending}>{upsertM.isPending ? "Saving..." : "Save override"}</Button>
                   </SheetFooter>
                 </SheetContent>
               </Sheet>

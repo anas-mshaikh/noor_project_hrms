@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { MeResponse } from "@/lib/types";
 import { fail, ok } from "@/test/msw/builders/response";
@@ -62,6 +63,7 @@ describe("/roster/default", () => {
   });
 
   it("sets the branch default shift", async () => {
+    const user = userEvent.setup();
     let currentDefaultId: string | null = null;
 
     server.use(
@@ -103,8 +105,11 @@ describe("/roster/default", () => {
 
     renderWithProviders(<RosterDefaultPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Set default shift" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save default" }));
+    const triggers = await screen.findAllByRole("button", { name: "Set default shift" });
+    await user.click(triggers[0]);
+    const dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Shift template"), SHIFT_ID);
+    await user.click(within(dialog).getByRole("button", { name: "Save default" }));
 
     expect(await screen.findByText("Day Shift")).toBeVisible();
   });

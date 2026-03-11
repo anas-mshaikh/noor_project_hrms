@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { fireEvent, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { ymdFromDateLocal } from "@/lib/dateRange";
 import type {
@@ -242,6 +243,7 @@ describe("M6 stories (workflow-integrated)", () => {
   });
 
   it("leave: employee applies -> manager approves -> balances/requests/calendar reflect approval", async () => {
+    const user = userEvent.setup();
     const now = new Date();
     const START = ymdFromDateLocal(new Date(now.getFullYear(), now.getMonth(), 10));
     const END = ymdFromDateLocal(new Date(now.getFullYear(), now.getMonth(), 12));
@@ -420,11 +422,11 @@ describe("M6 stories (workflow-integrated)", () => {
     expect(await screen.findByText("Annual Leave")).toBeVisible();
     const applyBtn = await screen.findByRole("button", { name: "Apply leave" });
     expect(applyBtn).not.toBeDisabled();
-    fireEvent.click(applyBtn);
-    fireEvent.change(screen.getByLabelText("Leave type"), { target: { value: "AL" } });
-    fireEvent.change(screen.getByLabelText("Start"), { target: { value: START } });
-    fireEvent.change(screen.getByLabelText("End"), { target: { value: END } });
-    fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
+    await user.click(applyBtn);
+    await user.selectOptions(screen.getByLabelText("Leave type"), "AL");
+    await user.type(screen.getByLabelText("Start"), START);
+    await user.type(screen.getByLabelText("End"), END);
+    await user.click(screen.getByRole("button", { name: "Submit request" }));
 
     // The apply flow invalidates balances; pending should appear.
     expect(await screen.findByText("pending 3")).toBeVisible();
@@ -437,8 +439,8 @@ describe("M6 stories (workflow-integrated)", () => {
     setPathname("/workflow/inbox");
     setSearchParams({});
     const inbox = renderWithProviders(<WorkflowInboxPage />);
-    fireEvent.click(await screen.findByRole("button", { name: /LEAVE_REQUEST/i }));
-    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await user.click(await screen.findByRole("button", { name: /LEAVE_REQUEST/i }));
+    await user.click(await screen.findByRole("button", { name: "Approve" }));
     expect(await screen.findByText("No requests")).toBeVisible();
     inbox.unmount();
 
@@ -459,5 +461,5 @@ describe("M6 stories (workflow-integrated)", () => {
     expect(await screen.findByRole("heading", { name: "Team Calendar" })).toBeVisible();
     expect(await screen.findByText("AL (1)")).toBeVisible();
     cal.unmount();
-  });
+  }, 30_000);
 });

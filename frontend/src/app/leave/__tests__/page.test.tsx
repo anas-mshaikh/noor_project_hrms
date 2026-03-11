@@ -1,12 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { LeaveBalancesOut, LeaveRequestListOut, LeaveRequestOut, MeResponse } from "@/lib/types";
+import { toastApiError } from "@/lib/toastApiError";
 import { ok } from "@/test/msw/builders/response";
 import { server } from "@/test/msw/server";
 import { renderWithProviders } from "@/test/utils/render";
 import { seedScope, seedSession } from "@/test/utils/selection";
+
+vi.mock("@/lib/toastApiError", () => ({ toastApiError: vi.fn() }));
 
 import LeavePage from "../page";
 
@@ -26,6 +30,7 @@ const SESSION: MeResponse = {
 
 describe("/leave", () => {
   it("loads balances and submits a leave request", async () => {
+    const user = userEvent.setup();
     const WORKFLOW_ID = "22222222-2222-4222-8222-222222222222";
     const items: LeaveRequestOut[] = [];
 
@@ -96,17 +101,79 @@ describe("/leave", () => {
     expect(await screen.findByText("Annual Leave")).toBeVisible();
 
     // Open apply sheet
-    fireEvent.click(screen.getByRole("button", { name: "Apply leave" }));
-    expect(await screen.findByText("Submit a leave request for approval.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Apply leave" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Submit a leave request for approval.")).toBeVisible();
 
     // Fill fields
-    fireEvent.change(screen.getByLabelText("Leave type"), { target: { value: "AL" } });
-    fireEvent.change(screen.getByLabelText("Start"), { target: { value: "2026-03-10" } });
-    fireEvent.change(screen.getByLabelText("End"), { target: { value: "2026-03-12" } });
+    await user.selectOptions(within(dialog).getByLabelText("Leave type"), "AL");
+    await user.type(within(dialog).getByLabelText("Start"), "2026-03-10");
+    await user.type(within(dialog).getByLabelText("End"), "2026-03-12");
 
-    fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
+    await user.click(within(dialog).getByRole("button", { name: "Submit request" }));
 
     // Request should appear in the table after invalidation/refetch.
+    expect(await screen.findByRole("link", { name: "View workflow" })).toBeVisible();
     expect(await screen.findByRole("button", { name: "AL" })).toBeVisible();
-  });
+  }, 30_000);
+
+  it("routes overlap errors through the shared toast handler", async () => {
+    const user = userEvent.setup();
+    const toastApiErrorMock = vi.mocked(toastApiError);
+    toastApiErrorMock.mockReset();
+
+    server.use(
+      http.get("*/api/v1/leave/me/balances", () => {
+        const out: LeaveBalancesOut = {
+          items: [
+            {
+              leave_type_code: "AL",
+              leave_type_name: "Annual Leave",
+              period_year: 2026,
+              balance_days: 10,
+              used_days: 0,
+              pending_days: 0,
+            },
+          ],
+        };
+        return HttpResponse.json(ok(out));
+      }),
+      http.get("*/api/v1/leave/me/requests", () =>
+        HttpResponse.json(ok<LeaveRequestListOut>({ items: [], next_cursor: null }))
+      ),
+      http.post("*/api/v1/leave/me/requests", () =>
+        HttpResponse.json(
+          {
+            ok: false,
+            error: {
+              code: "leave.overlap",
+              message: "Overlap",
+              correlation_id: "cid-leave-overlap",
+            },
+          },
+          { status: 409 }
+        )
+      )
+    );
+
+    seedSession(SESSION);
+    seedScope({
+      tenantId: SESSION.scope.tenant_id,
+      companyId: SESSION.scope.company_id,
+      branchId: SESSION.scope.branch_id,
+    });
+
+    renderWithProviders(<LeavePage />);
+
+    await user.click(await screen.findByRole("button", { name: "Apply leave" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Leave type"), "AL");
+    await user.type(within(dialog).getByLabelText("Start"), "2026-03-10");
+    await user.type(within(dialog).getByLabelText("End"), "2026-03-12");
+    await user.click(within(dialog).getByRole("button", { name: "Submit request" }));
+
+    await waitFor(() => {
+      expect(toastApiErrorMock).toHaveBeenCalledTimes(1);
+    });
+  }, 30_000);
 });

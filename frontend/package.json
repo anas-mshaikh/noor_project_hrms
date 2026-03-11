@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "npm run test:unit",
+    "test:ci": "CI=1 vitest run",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
     "test:all": "npm run test:unit && npm run test:e2e"
@@ -40,6 +41,7 @@
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^20.19.35",
     "@types/react": "^19",
     "@types/react-dom": "^19",

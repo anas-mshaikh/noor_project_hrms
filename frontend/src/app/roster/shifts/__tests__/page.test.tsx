@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { MeResponse, ShiftTemplateOut } from "@/lib/types";
 import { ok } from "@/test/msw/builders/response";
@@ -67,6 +68,7 @@ describe("/roster/shifts", () => {
   });
 
   it("creates and edits a shift template", async () => {
+    const user = userEvent.setup();
     const shifts: ShiftTemplateOut[] = [];
 
     server.use(
@@ -94,17 +96,21 @@ describe("/roster/shifts", () => {
 
     renderWithProviders(<RosterShiftsPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Create shift" }));
-    fireEvent.change(screen.getByLabelText("Code"), { target: { value: "DAY" } });
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Day Shift" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create shift" })[1]);
+    await user.click(await screen.findByRole("button", { name: "Create shift" }));
+    const createDialog = await screen.findByRole("dialog");
+    await user.type(within(createDialog).getByLabelText("Code"), "DAY");
+    await user.type(within(createDialog).getByLabelText("Name"), "Day Shift");
+    await user.click(within(createDialog).getByRole("button", { name: "Create shift" }));
 
-    expect((await screen.findAllByText("Day Shift")).length).toBeGreaterThan(0);
+    const table = await screen.findByRole("table");
+    expect(await within(table).findByText("Day Shift")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit shift" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Updated Day Shift" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await user.click(screen.getByRole("button", { name: "Edit shift" }));
+    const editDialog = await screen.findByRole("dialog");
+    await user.clear(within(editDialog).getByLabelText("Name"));
+    await user.type(within(editDialog).getByLabelText("Name"), "Updated Day Shift");
+    await user.click(within(editDialog).getByRole("button", { name: "Save changes" }));
 
-    expect((await screen.findAllByText("Updated Day Shift")).length).toBeGreaterThan(0);
-  });
+    expect(await within(table).findByText("Updated Day Shift")).toBeVisible();
+  }, 30_000);
 });

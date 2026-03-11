@@ -6,7 +6,7 @@ import type { EmployeeDirectoryRowOut, MeResponse, PayableDaySummaryListOut } fr
 import { ok } from "@/test/msw/builders/response";
 import { server } from "@/test/msw/server";
 import { renderWithProviders } from "@/test/utils/render";
-import { clearScope, seedScope, seedSession } from "@/test/utils/selection";
+import { seedScope, seedSession } from "@/test/utils/selection";
 
 import PayablesAdminPage from "../page";
 
@@ -46,12 +46,21 @@ function employeeRow(): EmployeeDirectoryRowOut {
 
 describe("/payables/admin", () => {
   it("fails closed without branch scope", async () => {
-    seedSession(SESSION);
-    clearScope();
+    seedSession({
+      ...SESSION,
+      scope: {
+        ...SESSION.scope,
+        company_id: null,
+        branch_id: null,
+        allowed_company_ids: [],
+        allowed_branch_ids: [],
+      },
+    });
+    seedScope({ tenantId: TENANT_ID });
 
     renderWithProviders(<PayablesAdminPage />);
 
-    expect(await screen.findByText("Select company and branch")).toBeVisible();
+    expect(await screen.findByText("Admin payable summaries are limited to the active branch scope.")).toBeVisible();
   });
 
   it("supports load more and recompute", async () => {

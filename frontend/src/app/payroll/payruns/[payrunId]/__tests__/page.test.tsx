@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 
 import * as api from "@/lib/api";
@@ -130,6 +131,7 @@ describe("/payroll/payruns/[payrunId]", () => {
   });
 
   it("renders employees and exceptions, exports, and submits approval", async () => {
+    const user = userEvent.setup();
     let status = "DRAFT";
 
     server.use(
@@ -189,16 +191,16 @@ describe("/payroll/payruns/[payrunId]", () => {
 
     renderWithProviders(<PayrollPayrunDetailPage params={{ payrunId: PAYRUN_ID }} />);
 
-    expect(await screen.findByText("employee-1")).toBeVisible();
+    expect((await screen.findAllByText("employee-1")).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Publish" })).toBeDisabled();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Exceptions" }));
+    await user.click(screen.getByRole("tab", { name: "Exceptions" }));
     expect(await screen.findByText("No compensation record")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+    await user.click(screen.getByRole("button", { name: "Export CSV" }));
     await waitFor(() => expect(saveSpy).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole("button", { name: "Submit for approval" }));
+    await user.click(screen.getByRole("button", { name: "Submit for approval" }));
     expect(await screen.findByRole("link", { name: "Open approval request" })).toHaveAttribute(
       "href",
       `/workflow/requests/${WORKFLOW_REQUEST_ID}`,
@@ -209,6 +211,7 @@ describe("/payroll/payruns/[payrunId]", () => {
   });
 
   it("publishes an approved payrun", async () => {
+    const user = userEvent.setup();
     let status = "APPROVED";
 
     server.use(
@@ -255,11 +258,12 @@ describe("/payroll/payruns/[payrunId]", () => {
 
     renderWithProviders(<PayrollPayrunDetailPage params={{ payrunId: PAYRUN_ID }} />);
 
-    const publishButton = await screen.findByRole("button", { name: "Publish" });
-    expect(publishButton).toBeEnabled();
+    expect(await screen.findByText("Status Approved")).toBeVisible();
+    const publishButton = screen.getByRole("button", { name: "Publish" });
+    await waitFor(() => expect(publishButton).toBeEnabled());
 
-    fireEvent.click(publishButton);
+    await user.click(publishButton);
 
-    expect(await screen.findByText("Status Published")).toBeVisible();
+    expect(await screen.findByText(/Status published/i)).toBeVisible();
   });
 });

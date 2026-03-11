@@ -16,6 +16,7 @@ import { render, type RenderOptions } from "@testing-library/react";
 
 import { I18nProvider } from "@/lib/i18n";
 import { createQueryClient } from "@/lib/queryClient";
+import { ScopeQueryReset } from "@/components/ScopeQueryReset";
 
 export function renderWithProviders(
   ui: React.ReactElement,
@@ -24,6 +25,7 @@ export function renderWithProviders(
   const queryClient = opts?.queryClient ?? createQueryClient();
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
+      <ScopeQueryReset />
       <I18nProvider>{children}</I18nProvider>
     </QueryClientProvider>
   );

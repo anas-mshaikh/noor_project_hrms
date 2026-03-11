@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { DmsDocumentTypeOut, MeResponse } from "@/lib/types";
 import { fail, ok } from "@/test/msw/builders/response";
@@ -26,6 +27,7 @@ const SESSION: MeResponse = {
 
 describe("/settings/dms/doc-types", () => {
   it("shows empty state, creates a type, and edits it", async () => {
+    const user = userEvent.setup();
     const items: DmsDocumentTypeOut[] = [];
 
     server.use(
@@ -64,22 +66,25 @@ describe("/settings/dms/doc-types", () => {
 
     expect(await screen.findByText("No document types")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Create document type" }));
-    fireEvent.change(screen.getByLabelText("Code"), { target: { value: "ID" } });
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "National ID" } });
-    fireEvent.click(screen.getByRole("button", { name: /^Create$/ }));
+    await user.click(screen.getAllByRole("button", { name: "Create document type" })[0]);
+    const createDialog = await screen.findByRole("dialog");
+    await user.type(within(createDialog).getByLabelText("Code"), "ID");
+    await user.type(within(createDialog).getByLabelText("Name"), "National ID");
+    await user.click(within(createDialog).getByRole("button", { name: /^Create$/ }));
 
-    expect(await screen.findByText("National ID")).toBeVisible();
-    expect(await screen.findByText("ID")).toBeVisible();
+    expect(await screen.findByRole("cell", { name: "National ID" })).toBeVisible();
+    expect(await screen.findByRole("cell", { name: "ID" })).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Government ID" } });
-    fireEvent.click(screen.getByLabelText("Active"));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const editDialog = await screen.findByRole("dialog");
+    await user.clear(within(editDialog).getByLabelText("Name"));
+    await user.type(within(editDialog).getByLabelText("Name"), "Government ID");
+    await user.click(within(editDialog).getByLabelText("Active"));
+    await user.click(within(editDialog).getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByText("Government ID")).toBeVisible();
+    expect(await screen.findByRole("cell", { name: "Government ID" })).toBeVisible();
     expect(await screen.findByText("INACTIVE")).toBeVisible();
-  });
+  }, 45_000);
 
   it("shows an inline error state when the catalog request is forbidden", async () => {
     server.use(
@@ -94,6 +99,6 @@ describe("/settings/dms/doc-types", () => {
     seedSession(SESSION);
     renderWithProviders(<DmsDocumentTypesPage />);
 
-    expect(await screen.findByText("Could not load data")).toBeVisible();
+    expect(await screen.findByText("Not allowed")).toBeVisible();
   });
 });

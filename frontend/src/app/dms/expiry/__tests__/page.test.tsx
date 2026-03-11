@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { MeResponse } from "@/lib/types";
 import { ok } from "@/test/msw/builders/response";
@@ -26,6 +27,7 @@ const SESSION: MeResponse = {
 
 describe("/dms/expiry", () => {
   it("renders expiry buckets, rules, and updates the horizon request", async () => {
+    const user = userEvent.setup();
     const requestedDays: string[] = [];
 
     server.use(
@@ -72,11 +74,11 @@ describe("/dms/expiry", () => {
     seedSession(SESSION);
     renderWithProviders(<DmsExpiryPage />);
 
-    expect(await screen.findByText("Passport")).toBeVisible();
+    expect((await screen.findAllByText("Passport")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Notify 30 days before expiry")).toBeVisible();
     expect(requestedDays[0]).toBe("30");
 
-    fireEvent.click(screen.getByRole("button", { name: "7 days" }));
+    await user.click(screen.getByRole("button", { name: "7 days" }));
 
     expect(await screen.findByText("Expiring in 6 days")).toBeVisible();
     expect(requestedDays).toContain("7");

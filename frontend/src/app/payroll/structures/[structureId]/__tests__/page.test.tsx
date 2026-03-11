@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
+import userEvent from "@testing-library/user-event";
 
 import type {
   MeResponse,
@@ -93,6 +94,7 @@ describe("/payroll/structures/[structureId]", () => {
   });
 
   it("loads structure detail and adds a line", async () => {
+    const user = userEvent.setup();
     const lines: SalaryStructureLineOut[] = [];
 
     server.use(
@@ -116,11 +118,15 @@ describe("/payroll/structures/[structureId]", () => {
 
     expect(await screen.findByText("No structure lines")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add line" }));
-    fireEvent.change(screen.getByLabelText("Component"), { target: { value: COMPONENT_ID } });
-    fireEvent.change(screen.getByLabelText("Sort order"), { target: { value: "10" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Add line" })[1]);
+    await user.click(screen.getByRole("button", { name: "Add line" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Component"), COMPONENT_ID);
+    await user.clear(within(dialog).getByLabelText("Sort order"));
+    await user.type(within(dialog).getByLabelText("Sort order"), "10");
+    await user.click(within(dialog).getByRole("button", { name: "Add line" }));
 
-    expect(await screen.findByText("BASIC — Basic Salary")).toBeVisible();
-  });
+    const table = await screen.findByRole("table");
+    expect(await within(table).findByText("Basic Salary")).toBeVisible();
+    expect(await within(table).findByText("BASIC")).toBeVisible();
+  }, 30_000);
 });

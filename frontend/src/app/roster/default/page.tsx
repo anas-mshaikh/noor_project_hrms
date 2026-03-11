@@ -158,7 +158,7 @@ export default function RosterDefaultPage() {
                   </div>
                   <SheetFooter>
                     <Button type="button" variant="secondary" onClick={() => setSheetOpen(false)} disabled={updateM.isPending}>Cancel</Button>
-                    <Button type="button" onClick={() => void updateM.mutateAsync()} disabled={updateM.isPending}>{updateM.isPending ? "Saving..." : "Save default"}</Button>
+                    <Button type="button" onClick={() => updateM.mutate()} disabled={updateM.isPending}>{updateM.isPending ? "Saving..." : "Save default"}</Button>
                   </SheetFooter>
                 </SheetContent>
               </Sheet>

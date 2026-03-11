@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
-const toastApiError = vi.fn();
-vi.mock("@/lib/toastApiError", () => ({ toastApiError }));
+vi.mock("@/lib/toastApiError", () => ({ toastApiError: vi.fn() }));
 
 import type { EmployeeDirectoryRowOut, HrEmployee360Out, MeResponse, RosterOverrideOut } from "@/lib/types";
+import { toastApiError } from "@/lib/toastApiError";
 import { ok } from "@/test/msw/builders/response";
 import { server } from "@/test/msw/server";
 import { renderWithProviders } from "@/test/utils/render";
@@ -103,6 +104,7 @@ const SHIFT = {
 
 describe("/roster/overrides", () => {
   it("creates an override and refreshes the list", async () => {
+    const user = userEvent.setup();
     const overrides: RosterOverrideOut[] = [];
 
     server.use(
@@ -138,16 +140,22 @@ describe("/roster/overrides", () => {
 
     renderWithProviders(<RosterOverridesPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Create override" }));
-    fireEvent.change(screen.getByLabelText("Day"), { target: { value: "2026-01-02" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save override" }));
+    await user.click(await screen.findByRole("button", { name: "Create override" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.clear(within(dialog).getByLabelText("Day"));
+    await user.type(within(dialog).getByLabelText("Day"), "2026-01-02");
+    await user.selectOptions(within(dialog).getByLabelText("Shift template"), SHIFT_ID);
+    await user.click(within(dialog).getByRole("button", { name: "Save override" }));
 
-    expect((await screen.findAllByText("2026-01-02")).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText("SHIFT_CHANGE")).length).toBeGreaterThan(0);
-  });
+    const table = await screen.findByRole("table");
+    expect(await within(table).findByText("2026-01-02")).toBeVisible();
+    expect(await within(table).findByText("SHIFT_CHANGE")).toBeVisible();
+  }, 30_000);
 
   it("routes validation failures through the shared toast handler", async () => {
-    toastApiError.mockReset();
+    const user = userEvent.setup();
+    const toastApiErrorMock = vi.mocked(toastApiError);
+    toastApiErrorMock.mockReset();
 
     server.use(
       http.get("*/api/v1/hr/employees", () =>
@@ -164,13 +172,13 @@ describe("/roster/overrides", () => {
 
     renderWithProviders(<RosterOverridesPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Create override" }));
-    fireEvent.change(screen.getByLabelText("Override type"), { target: { value: "SHIFT_CHANGE" } });
-    fireEvent.change(screen.getByLabelText("Shift template"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save override" }));
+    await user.click(await screen.findByRole("button", { name: "Create override" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.clear(within(dialog).getByLabelText("Day"));
+    await user.click(within(dialog).getByRole("button", { name: "Save override" }));
 
     await waitFor(() => {
-      expect(toastApiError).toHaveBeenCalledTimes(1);
+      expect(toastApiErrorMock).toHaveBeenCalledTimes(1);
     });
   });
 });

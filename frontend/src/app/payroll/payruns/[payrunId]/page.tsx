@@ -287,7 +287,7 @@ export default function PayrollPayrunDetailPage({
                   type="button"
                   variant="secondary"
                   disabled={exportM.isPending || !payrun}
-                  onClick={() => void exportM.mutateAsync()}
+                  onClick={() => exportM.mutate()}
                 >
                   {exportM.isPending ? "Exporting..." : "Export CSV"}
                 </Button>

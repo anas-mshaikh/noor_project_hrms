@@ -1,0 +1,111 @@
+name: Release Bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release label (for example v0.11.0-rc1)
+        required: true
+        type: string
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CI: "1"
+  NODE_VERSION: "20"
+
+jobs:
+  release_bundle:
+    name: Build release bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: npx tsc --noEmit --pretty false
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm run test
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Create release notes skeleton
+        run: |
+          mkdir -p release-artifacts
+          cat > release-artifacts/RELEASE_NOTES.md <<EOF
+          # Release ${{ inputs.version }}
+
+          ## Summary
+          - 
+
+          ## Required checks
+          - PR CI
+          - Integration CI
+          - E2E Smoke (if applicable)
+
+          ## Manual validation
+          - Follow docs/PROD_RELEASE_CHECKLIST.md
+
+          ## Rollback
+          - Follow docs/ROLLBACK.md
+          EOF
+          cp docs/PROD_RELEASE_CHECKLIST.md release-artifacts/
+          cp docs/ROLLBACK.md release-artifacts/
+          cp docs/DEPLOYMENT.md release-artifacts/
+          tar -czf release-artifacts/noor-${{ inputs.version }}.tar.gz release-artifacts/RELEASE_NOTES.md release-artifacts/PROD_RELEASE_CHECKLIST.md release-artifacts/ROLLBACK.md release-artifacts/DEPLOYMENT.md
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle-${{ inputs.version }}
+          path: release-artifacts/
+          retention-days: 30
+
+  draft_release:
+    name: Draft GitHub release
+    needs: release_bundle
+    if: ${{ github.server_url == 'https://github.com' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle-${{ inputs.version }}
+          path: release-artifacts
+      - name: Skip draft release when token is unavailable
+        id: token_check
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
+        if: steps.token_check.outputs.skip != 'true'
+        with:
+          tag_name: ${{ inputs.version }}
+          name: ${{ inputs.version }}
+          draft: true
+          generate_release_notes: false
+          body_path: release-artifacts/RELEASE_NOTES.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

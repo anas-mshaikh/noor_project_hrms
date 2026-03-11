@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { MeResponse, PayableDaysOut } from "@/lib/types";
 import { ok } from "@/test/msw/builders/response";
@@ -26,6 +27,7 @@ const SESSION: MeResponse = {
 
 describe("/payables/team", () => {
   it("re-queries on depth changes and shows aggregated rows", async () => {
+    const user = userEvent.setup();
     const depths: string[] = [];
 
     server.use(
@@ -90,12 +92,12 @@ describe("/payables/team", () => {
     seedSession(SESSION);
     renderWithProviders(<PayablesTeamPage />);
 
-    expect(await screen.findByText("11111111-1111-4111-8111-111111111111")).toBeVisible();
+    expect((await screen.findAllByText("11111111-1111-4111-8111-111111111111")).length).toBeGreaterThan(0);
     expect(screen.queryByText("33333333-3333-4333-8333-333333333333")).toBeNull();
 
-    fireEvent.change(screen.getByLabelText("Depth"), { target: { value: "all" } });
+    await user.selectOptions(screen.getByLabelText("Depth"), "all");
 
-    expect(await screen.findByText("33333333-3333-4333-8333-333333333333")).toBeVisible();
+    expect((await screen.findAllByText("33333333-3333-4333-8333-333333333333")).length).toBeGreaterThan(0);
     await waitFor(() => {
       expect(depths).toEqual(["1", "all"]);
     });

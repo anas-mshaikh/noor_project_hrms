@@ -14,6 +14,7 @@ import { Toaster } from "sonner";
 
 import { I18nProvider } from "@/lib/i18n";
 import { AuthBootstrap } from "@/components/AuthBootstrap";
+import { ScopeQueryReset } from "@/components/ScopeQueryReset";
 import { createQueryClient } from "@/lib/queryClient";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -22,6 +23,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <I18nProvider>
       <QueryClientProvider client={client}>
+        <ScopeQueryReset />
         <AuthBootstrap />
         {children}
         <Toaster

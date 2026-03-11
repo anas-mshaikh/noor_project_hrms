@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { DmsDocumentOut, MeResponse } from "@/lib/types";
 import { fail, ok } from "@/test/msw/builders/response";
@@ -61,6 +62,7 @@ function sampleDoc(): DmsDocumentOut {
 
 describe("/dms/my-docs", () => {
   it("loads my documents and renders the selected detail", async () => {
+    const user = userEvent.setup();
     server.use(
       http.get("*/api/v1/ess/me/documents", () =>
         HttpResponse.json(ok({ items: [sampleDoc()], next_cursor: null })),
@@ -90,8 +92,9 @@ describe("/dms/my-docs", () => {
 
     renderWithProviders(<MyDocumentsPage />);
 
-    expect(await screen.findByText("National ID")).toBeVisible();
-    expect(await screen.findByText("Download current document")).toBeVisible();
+    expect((await screen.findAllByText("National ID")).length).toBeGreaterThan(0);
+    await user.click((await screen.findAllByText("National ID"))[0]);
+    expect(await screen.findByRole("button", { name: "Download current document" })).toBeVisible();
   });
 
   it("shows neutral copy for a direct document id that is not accessible", async () => {

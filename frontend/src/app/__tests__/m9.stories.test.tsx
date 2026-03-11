@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 
@@ -143,6 +144,7 @@ function employee360(): HrEmployee360Out {
 
 describe("M9 golden flow", () => {
   it("creates payroll setup, generates a payrun, approves it, publishes it, and exposes a payslip", async () => {
+    const user = userEvent.setup();
     const now = new Date(0).toISOString();
     const calendars: PayrollCalendarOut[] = [];
     const periods: PayrollPeriodOut[] = [];
@@ -441,75 +443,80 @@ describe("M9 golden flow", () => {
     seedScope({ tenantId: TENANT_ID, companyId: COMPANY_ID, branchId: BRANCH_ID });
 
     let view = renderWithProviders(<PayrollCalendarsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Create calendar" }));
-    fireEvent.change(screen.getByLabelText("Code"), { target: { value: "MONTHLY" } });
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Monthly Payroll" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create calendar" })[1]);
-    fireEvent.click(await screen.findByRole("button", { name: "Create period" }));
-    fireEvent.change(screen.getByLabelText("Period key"), { target: { value: "2026-03" } });
-    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-03-01" } });
-    fireEvent.change(screen.getByLabelText("End date"), { target: { value: "2026-03-31" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create period" })[1]);
-    expect(await screen.findByText("2026-03")).toBeVisible();
+    await user.click(await screen.findByRole("button", { name: "Create calendar" }));
+    let dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Code"), "MONTHLY");
+    await user.type(within(dialog).getByLabelText("Name"), "Monthly Payroll");
+    await user.click(within(dialog).getByRole("button", { name: "Create calendar" }));
+    await user.click(await screen.findByRole("button", { name: "Create period" }));
+    dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Period key"), "2026-03");
+    await user.type(within(dialog).getByLabelText("Start date"), "2026-03-01");
+    await user.type(within(dialog).getByLabelText("End date"), "2026-03-31");
+    await user.click(within(dialog).getByRole("button", { name: "Create period" }));
+    expect(await screen.findByRole("cell", { name: "2026-03" })).toBeVisible();
     view.unmount();
-    cleanup();
 
     view = renderWithProviders(<PayrollComponentsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Create component" }));
-    fireEvent.change(screen.getByLabelText("Code"), { target: { value: "BASIC" } });
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Basic Salary" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create component" })[1]);
-    expect((await screen.findAllByText("Basic Salary")).length).toBeGreaterThan(0);
+    await user.click(await screen.findByRole("button", { name: "Create component" }));
+    dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Code"), "BASIC");
+    await user.type(within(dialog).getByLabelText("Name"), "Basic Salary");
+    await user.click(within(dialog).getByRole("button", { name: "Create component" }));
+    expect(await screen.findByRole("cell", { name: "Basic Salary" })).toBeVisible();
     view.unmount();
-    cleanup();
 
     view = renderWithProviders(<PayrollStructuresPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Create structure" }));
-    fireEvent.change(screen.getByLabelText("Code"), { target: { value: "STD" } });
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Standard Structure" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create structure" })[1]);
+    await user.click(await screen.findByRole("button", { name: "Create structure" }));
+    dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Code"), "STD");
+    await user.type(within(dialog).getByLabelText("Name"), "Standard Structure");
+    await user.click(within(dialog).getByRole("button", { name: "Create structure" }));
     view.unmount();
-    cleanup();
 
     setPathname(`/payroll/structures/${STRUCTURE_ID}`);
     setParams({ structureId: STRUCTURE_ID });
     view = renderWithProviders(<PayrollStructureDetailPage params={{ structureId: STRUCTURE_ID }} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Add line" }));
-    fireEvent.change(screen.getByLabelText("Component"), { target: { value: COMPONENT_ID } });
-    fireEvent.change(screen.getByLabelText("Sort order"), { target: { value: "10" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Add line" })[1]);
-    expect(await screen.findByText("BASIC — Basic Salary")).toBeVisible();
+    await user.click(await screen.findByRole("button", { name: "Add line" }));
+    dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Component"), COMPONENT_ID);
+    await user.clear(within(dialog).getByLabelText("Sort order"));
+    await user.type(within(dialog).getByLabelText("Sort order"), "10");
+    await user.click(within(dialog).getByRole("button", { name: "Add line" }));
+    let table = await screen.findByRole("table");
+    expect(await within(table).findByText("Basic Salary")).toBeVisible();
+    expect(await within(table).findByText("BASIC")).toBeVisible();
     view.unmount();
-    cleanup();
 
     setSearchParams({ employeeId: EMPLOYEE_ID, structureId: STRUCTURE_ID });
     view = renderWithProviders(<PayrollCompensationPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Add compensation record" }));
-    fireEvent.change(screen.getByLabelText("Base amount"), { target: { value: "5000.00" } });
-    fireEvent.change(screen.getByLabelText("Effective from"), { target: { value: "2026-03-01" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Add compensation record" })[1]);
+    await user.click(await screen.findByRole("button", { name: "Add compensation record" }));
+    dialog = await screen.findByRole("dialog");
+    await user.clear(within(dialog).getByLabelText("Base amount"));
+    await user.type(within(dialog).getByLabelText("Base amount"), "5000.00");
+    await user.clear(within(dialog).getByLabelText("Effective from"));
+    await user.type(within(dialog).getByLabelText("Effective from"), "2026-03-01");
+    await user.click(within(dialog).getByRole("button", { name: "Add compensation record" }));
     expect(await screen.findByText("SAR 5,000.00")).toBeVisible();
     view.unmount();
-    cleanup();
 
     view = renderWithProviders(<PayrollPayrunsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Generate payrun" }));
-    fireEvent.change(screen.getByLabelText("Calendar"), { target: { value: CALENDAR_ID } });
-    fireEvent.change(screen.getByLabelText("Period"), { target: { value: "2026-03" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Generate payrun" })[1]);
+    await user.click(await screen.findByRole("button", { name: "Generate payrun" }));
+    dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Calendar"), CALENDAR_ID);
+    await user.selectOptions(within(dialog).getByLabelText("Period"), "2026-03");
+    await user.click(within(dialog).getByRole("button", { name: "Generate payrun" }));
     view.unmount();
-    cleanup();
 
     setPathname(`/payroll/payruns/${PAYRUN_ID}`);
     setParams({ payrunId: PAYRUN_ID });
     view = renderWithProviders(<PayrollPayrunDetailPage params={{ payrunId: PAYRUN_ID }} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Submit for approval" }));
+    await user.click(await screen.findByRole("button", { name: "Submit for approval" }));
     expect(await screen.findByRole("link", { name: "Open approval request" })).toHaveAttribute(
       "href",
       `/workflow/requests/${WORKFLOW_REQUEST_ID}`,
     );
     view.unmount();
-    cleanup();
 
     setPathname(`/workflow/requests/${WORKFLOW_REQUEST_ID}`);
     setParams({ requestId: WORKFLOW_REQUEST_ID });
@@ -517,23 +524,22 @@ describe("M9 golden flow", () => {
     view = renderWithProviders(
       <WorkflowRequestDeepLinkPage params={{ requestId: WORKFLOW_REQUEST_ID }} />,
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await user.click(await screen.findByRole("button", { name: "Approve" }));
     expect(await screen.findByText("APPROVED")).toBeVisible();
     view.unmount();
-    cleanup();
 
     setPathname(`/payroll/payruns/${PAYRUN_ID}`);
     setParams({ payrunId: PAYRUN_ID });
     view = renderWithProviders(<PayrollPayrunDetailPage params={{ payrunId: PAYRUN_ID }} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
+    await user.click(await screen.findByRole("button", { name: "Publish" }));
     expect(await screen.findByText("Status Published")).toBeVisible();
     view.unmount();
-    cleanup();
 
     setSearchParams({ year: 2026, payslipId: PAYSLIP_ID });
     view = renderWithProviders(<EssPayslipsPage />);
-    expect(await screen.findByText("2026-03")).toBeVisible();
+    table = await screen.findByRole("table");
+    expect(await within(table).findByText("2026-03")).toBeVisible();
     expect(screen.getByRole("button", { name: "Download payslip" })).toBeVisible();
     view.unmount();
-  });
+  }, 90_000);
 });

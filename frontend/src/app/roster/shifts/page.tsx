@@ -270,7 +270,7 @@ export default function RosterShiftsPage() {
               </div>
               <SheetFooter>
                 <Button type="button" variant="secondary" onClick={() => setEditOpen(false)} disabled={editM.isPending}>Cancel</Button>
-                <Button type="button" onClick={() => void editM.mutateAsync()} disabled={editM.isPending}>{editM.isPending ? "Saving..." : "Save changes"}</Button>
+                <Button type="button" onClick={() => editM.mutate()} disabled={editM.isPending}>{editM.isPending ? "Saving..." : "Save changes"}</Button>
               </SheetFooter>
             </SheetContent>
           </Sheet>
@@ -319,7 +319,7 @@ export default function RosterShiftsPage() {
                   </div>
                   <SheetFooter>
                     <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} disabled={createM.isPending}>Cancel</Button>
-                    <Button type="button" onClick={() => void createM.mutateAsync()} disabled={createM.isPending}>{createM.isPending ? "Saving..." : "Create shift"}</Button>
+                    <Button type="button" onClick={() => createM.mutate()} disabled={createM.isPending}>{createM.isPending ? "Saving..." : "Create shift"}</Button>
                   </SheetFooter>
                 </SheetContent>
               </Sheet>

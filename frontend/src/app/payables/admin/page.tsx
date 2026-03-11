@@ -126,7 +126,7 @@ export default function PayablesAdminPage() {
           subtitle="Branch-scoped payroll input summaries and recompute controls."
           actions={
             canRecompute ? (
-              <Button type="button" onClick={() => void recomputeM.mutateAsync()} disabled={recomputeM.isPending || Boolean(rangeError)}>
+              <Button type="button" onClick={() => recomputeM.mutate()} disabled={recomputeM.isPending || Boolean(rangeError)}>
                 {recomputeM.isPending ? "Recomputing..." : "Recompute"}
               </Button>
             ) : null

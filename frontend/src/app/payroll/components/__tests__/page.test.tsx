@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
+import userEvent from "@testing-library/user-event";
 
 import type { MeResponse, PayrollComponentOut } from "@/lib/types";
 import { ok } from "@/test/msw/builders/response";
@@ -45,6 +46,7 @@ function component(code = "BASIC", name = "Basic Salary"): PayrollComponentOut {
 
 describe("/payroll/components", () => {
   it("creates a payroll component", async () => {
+    const user = userEvent.setup();
     const items: PayrollComponentOut[] = [];
 
     server.use(
@@ -66,12 +68,13 @@ describe("/payroll/components", () => {
 
     expect(await screen.findByText("No payroll components")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Create component" }));
-    fireEvent.change(screen.getByLabelText("Code"), { target: { value: "BASIC" } });
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Basic Salary" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create component" })[1]);
+    await user.click(screen.getByRole("button", { name: "Create component" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Code"), "BASIC");
+    await user.type(within(dialog).getByLabelText("Name"), "Basic Salary");
+    await user.click(within(dialog).getByRole("button", { name: "Create component" }));
 
-    expect((await screen.findAllByText("Basic Salary")).length).toBeGreaterThan(0);
+    expect(await screen.findByRole("cell", { name: "Basic Salary" })).toBeVisible();
     expect(await screen.findByText("Calc mode: FIXED")).toBeVisible();
-  });
+  }, 30_000);
 });

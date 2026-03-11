@@ -132,7 +132,7 @@ describe("lib/errorUx", () => {
       correlationId: "cid",
     });
     expect(getErrorUx(err)).toMatchObject({
-      title: "Approval workflow not configured",
+      title: "Approval workflow missing",
     });
   });
 });

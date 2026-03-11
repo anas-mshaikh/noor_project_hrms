@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { WorkflowDefinitionOut } from "@/lib/types";
 import { ok } from "@/test/msw/builders/response";
@@ -12,6 +13,7 @@ import WorkflowDefinitionsPage from "../page";
 
 describe("/settings/workflow/definitions", () => {
   it("loads definitions list and supports creating a definition", async () => {
+    const user = userEvent.setup();
     let defs: WorkflowDefinitionOut[] = [
       {
         id: "11111111-1111-4111-8111-111111111111",
@@ -65,14 +67,15 @@ describe("/settings/workflow/definitions", () => {
     expect(screen.getByText("ACTIVE")).toBeVisible();
 
     // Create new definition
-    fireEvent.click(screen.getByRole("button", { name: /create definition/i }));
-    fireEvent.change(screen.getByLabelText(/request type code/i), { target: { value: "profile.change" } });
-    fireEvent.change(screen.getByLabelText(/^code$/i), { target: { value: "PROFILE_DEFAULT" } });
-    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: "Profile approvals" } });
-    fireEvent.change(screen.getByLabelText(/version/i), { target: { value: "1" } });
-    fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    await user.click(screen.getByRole("button", { name: /create definition/i }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText(/request type code/i), "profile.change");
+    await user.type(within(dialog).getByLabelText(/^code$/i), "PROFILE_DEFAULT");
+    await user.type(within(dialog).getByLabelText(/^name$/i), "Profile approvals");
+    await user.clear(within(dialog).getByLabelText(/version/i));
+    await user.type(within(dialog).getByLabelText(/version/i), "1");
+    await user.click(within(dialog).getByRole("button", { name: /^create$/i }));
 
     expect(await screen.findByText("Profile approvals")).toBeVisible();
-  });
+  }, 30_000);
 });
-

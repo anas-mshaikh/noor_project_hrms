@@ -57,6 +57,44 @@ describe("lib/api", () => {
     });
   });
 
+  it("clears stale scope selection and redirects to /scope on scope errors", async () => {
+    window.localStorage.setItem(
+      "attendance-admin-selection",
+      JSON.stringify({
+        state: {
+          tenantId: "tenant-a",
+          companyId: "company-a",
+          branchId: "branch-a",
+          cameraId: "camera-a",
+        },
+        version: 0,
+      })
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          fail("iam.scope.forbidden", "Scope not allowed", { correlation_id: "cid-scope" }),
+          { status: 403 }
+        )
+      )
+    );
+
+    await expect(apiJson("/api/v1/test")).rejects.toMatchObject({
+      code: "iam.scope.forbidden",
+      correlationId: "cid-scope",
+    });
+
+    expect(JSON.parse(window.localStorage.getItem("attendance-admin-selection") ?? "{}")).toMatchObject(
+      {
+        state: {
+          tenantId: "tenant-a",
+        },
+      }
+    );
+  });
+
   it("treats ok:false on 2xx responses as an error with a sensible status", async () => {
     vi.stubGlobal(
       "fetch",

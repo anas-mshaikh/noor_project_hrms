@@ -52,9 +52,26 @@ const originalLocationReplace =
     ? window.location.replace.bind(window.location)
     : null;
 
+const isCi = process.env.CI === "1" || process.env.CI === "true";
+const isAct = process.env.ACT === "true";
+
 beforeAll(() => {
+  if (typeof globalThis.MutationObserver !== "function") {
+    class NoopMutationObserver implements MutationObserver {
+      disconnect(): void {}
+
+      observe(): void {}
+
+      takeRecords(): MutationRecord[] {
+        return [];
+      }
+    }
+
+    globalThis.MutationObserver = NoopMutationObserver as typeof MutationObserver;
+  }
+
   // Docker/CI can be noticeably slower than local runs; keep `findBy*` resilient.
-  configure({ asyncUtilTimeout: 5_000 });
+  configure({ asyncUtilTimeout: isAct ? 20_000 : isCi ? 10_000 : 5_000 });
 
   server.listen({ onUnhandledRequest: "error" });
 

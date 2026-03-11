@@ -1,0 +1,34 @@
+name: Integration CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CI: "1"
+
+jobs:
+  docker_compose_tests:
+    name: Docker compose tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run compose test gate
+        run: docker compose up --build --abort-on-container-exit --exit-code-from tests tests
+      - name: Dump compose logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Tear down compose stack
+        if: always()
+        run: docker compose down -v --remove-orphans

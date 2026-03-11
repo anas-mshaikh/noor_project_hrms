@@ -67,7 +67,10 @@ describe("/ess/me", () => {
             ...profile.person,
             email: body.email ?? null,
             phone: body.phone ?? null,
-            address: (body.address as any) ?? {},
+            address:
+              body.address && typeof body.address === "object"
+                ? (body.address as Record<string, unknown>)
+                : {},
           },
         };
         return HttpResponse.json(ok(profile));
@@ -106,4 +109,3 @@ describe("/ess/me", () => {
     expect(screen.getByRole("button", { name: /copy ref/i })).toBeVisible();
   });
 });
-

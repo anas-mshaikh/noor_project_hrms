@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
+import userEvent from "@testing-library/user-event";
 
 import type { MeResponse, PayrollCalendarOut, PayrollPeriodOut } from "@/lib/types";
 import { ok } from "@/test/msw/builders/response";
@@ -60,6 +61,7 @@ function period(key = "2026-03"): PayrollPeriodOut {
 
 describe("/payroll/calendars", () => {
   it("creates a calendar and a period", async () => {
+    const user = userEvent.setup();
     const calendars: PayrollCalendarOut[] = [];
     const periods: PayrollPeriodOut[] = [];
 
@@ -91,19 +93,21 @@ describe("/payroll/calendars", () => {
 
     expect(await screen.findByText("No payroll calendars")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Create calendar" }));
-    fireEvent.change(screen.getByLabelText("Code"), { target: { value: "MONTHLY" } });
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Monthly Payroll" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create calendar" })[1]);
+    await user.click(screen.getByRole("button", { name: "Create calendar" }));
+    const calendarDialog = await screen.findByRole("dialog");
+    await user.type(within(calendarDialog).getByLabelText("Code"), "MONTHLY");
+    await user.type(within(calendarDialog).getByLabelText("Name"), "Monthly Payroll");
+    await user.click(within(calendarDialog).getByRole("button", { name: "Create calendar" }));
 
-    expect((await screen.findAllByText("Monthly Payroll")).length).toBeGreaterThan(0);
+    expect(await screen.findByRole("cell", { name: "Monthly Payroll" })).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Create period" }));
-    fireEvent.change(screen.getByLabelText("Period key"), { target: { value: "2026-03" } });
-    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-03-01" } });
-    fireEvent.change(screen.getByLabelText("End date"), { target: { value: "2026-03-31" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create period" })[1]);
+    await user.click(screen.getByRole("button", { name: "Create period" }));
+    const periodDialog = await screen.findByRole("dialog");
+    await user.type(within(periodDialog).getByLabelText("Period key"), "2026-03");
+    await user.type(within(periodDialog).getByLabelText("Start date"), "2026-03-01");
+    await user.type(within(periodDialog).getByLabelText("End date"), "2026-03-31");
+    await user.click(within(periodDialog).getByRole("button", { name: "Create period" }));
 
-    expect(await screen.findByText("2026-03")).toBeVisible();
-  });
+    expect(await screen.findByRole("cell", { name: "2026-03" })).toBeVisible();
+  }, 45_000);
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { MeResponse } from "@/lib/types";
 import { renderWithProviders } from "@/test/utils/render";
@@ -26,13 +27,15 @@ const SESSION: MeResponse = {
 
 describe("/payroll/structures", () => {
   it("creates a structure and navigates to detail", async () => {
+    const user = userEvent.setup();
     seedSession(SESSION);
     renderWithProviders(<PayrollStructuresPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Create structure" }));
-    fireEvent.change(screen.getByLabelText("Code"), { target: { value: "STD" } });
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Standard Structure" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create structure" })[1]);
+    await user.click(screen.getByRole("button", { name: "Create structure" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Code"), "STD");
+    await user.type(within(dialog).getByLabelText("Name"), "Standard Structure");
+    await user.click(within(dialog).getByRole("button", { name: "Create structure" }));
 
     expect(routerPush).toHaveBeenCalledWith(`/payroll/structures/${STRUCTURE_ID}`);
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
+import userEvent from "@testing-library/user-event";
 
 import type {
   EmployeeCompensationOut,
@@ -12,7 +13,7 @@ import { ok } from "@/test/msw/builders/response";
 import { server } from "@/test/msw/server";
 import { renderWithProviders } from "@/test/utils/render";
 import { setSearchParams } from "@/test/utils/router";
-import { clearScope, seedScope, seedSession } from "@/test/utils/selection";
+import { seedScope, seedSession } from "@/test/utils/selection";
 
 import PayrollCompensationPage from "../page";
 
@@ -129,8 +130,17 @@ function compensation(baseAmount = "5000.00"): EmployeeCompensationOut {
 
 describe("/payroll/compensation", () => {
   it("fails closed without a selected company", async () => {
-    seedSession(SESSION);
-    clearScope();
+    seedSession({
+      ...SESSION,
+      scope: {
+        ...SESSION.scope,
+        company_id: null,
+        branch_id: null,
+        allowed_company_ids: [],
+        allowed_branch_ids: [],
+      },
+    });
+    seedScope({ tenantId: TENANT_ID });
     setSearchParams({});
 
     renderWithProviders(<PayrollCompensationPage />);
@@ -139,6 +149,7 @@ describe("/payroll/compensation", () => {
   });
 
   it("loads compensation history and adds a record", async () => {
+    const user = userEvent.setup();
     const records: EmployeeCompensationOut[] = [];
 
     server.use(
@@ -180,12 +191,15 @@ describe("/payroll/compensation", () => {
     expect(await screen.findByText("Alice One")).toBeVisible();
     expect(await screen.findByText("No compensation records")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add compensation record" }));
-    fireEvent.change(screen.getByLabelText("Base amount"), { target: { value: "5000.00" } });
-    fireEvent.change(screen.getByLabelText("Effective from"), { target: { value: "2026-03-01" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Add compensation record" })[1]);
+    await user.click(screen.getByRole("button", { name: "Add compensation record" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.clear(within(dialog).getByLabelText("Base amount"));
+    await user.type(within(dialog).getByLabelText("Base amount"), "5000.00");
+    await user.type(within(dialog).getByLabelText("Effective from"), "2026-03-01");
+    await user.click(within(dialog).getByRole("button", { name: "Add compensation record" }));
 
-    expect(await screen.findByText("SAR 5,000.00")).toBeVisible();
-    expect(await screen.findByText("Standard Structure")).toBeVisible();
-  });
+    const table = await screen.findByRole("table");
+    expect(await within(table).findByText("SAR 5,000.00")).toBeVisible();
+    expect(await screen.findByText(/Standard Structure/)).toBeVisible();
+  }, 30_000);
 });

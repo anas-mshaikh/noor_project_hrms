@@ -1,13 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { AttendanceCorrectionOut, MeResponse } from "@/lib/types";
+import { toastApiError } from "@/lib/toastApiError";
 import { ok } from "@/test/msw/builders/response";
 import { server } from "@/test/msw/server";
 import { renderWithProviders } from "@/test/utils/render";
 import { seedSession } from "@/test/utils/selection";
 import { setSearchParams } from "@/test/utils/router";
+
+vi.mock("@/lib/toastApiError", () => ({ toastApiError: vi.fn() }));
 
 import AttendanceCorrectionNewPage from "../page";
 
@@ -27,6 +31,7 @@ const SESSION: MeResponse = {
 
 describe("/attendance/corrections/new", () => {
   it("submits a correction and shows a workflow link", async () => {
+    const user = userEvent.setup();
     const WORKFLOW_ID = "22222222-2222-4222-8222-222222222222";
 
     server.use(
@@ -62,11 +67,44 @@ describe("/attendance/corrections/new", () => {
     renderWithProviders(<AttendanceCorrectionNewPage />);
 
     // Reason is required in v1 UI.
-    fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "missed punch" } });
-    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    await user.type(screen.getByLabelText("Reason"), "missed punch");
+    await user.click(screen.getByRole("button", { name: "Submit" }));
 
     const link = await screen.findByRole("link", { name: "View request" });
     expect(link).toHaveAttribute("href", `/workflow/requests/${WORKFLOW_ID}`);
+  }, 30_000);
+
+  it("routes pending-request conflicts through the shared toast handler", async () => {
+    const user = userEvent.setup();
+    const toastApiErrorMock = vi.mocked(toastApiError);
+    toastApiErrorMock.mockReset();
+
+    server.use(
+      http.post("*/api/v1/attendance/me/corrections", () =>
+        HttpResponse.json(
+          {
+            ok: false,
+            error: {
+              code: "attendance.correction.pending_exists",
+              message: "Pending request exists",
+              correlation_id: "cid-correction-overlap",
+            },
+          },
+          { status: 409 }
+        )
+      )
+    );
+
+    seedSession(SESSION);
+    setSearchParams({ day: "2026-03-01" });
+
+    renderWithProviders(<AttendanceCorrectionNewPage />);
+
+    await user.type(screen.getByLabelText("Reason"), "missed punch");
+    await user.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => {
+      expect(toastApiErrorMock).toHaveBeenCalledTimes(1);
+    });
   });
 });
-

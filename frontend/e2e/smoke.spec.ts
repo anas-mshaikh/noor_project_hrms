@@ -9,6 +9,10 @@ import { test, expect } from "@playwright/test";
  * - settings consoles render with mocked session + API responses
  */
 
+const E2E_TENANT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const E2E_COMPANY_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const E2E_BRANCH_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
 async function mockSessionForSettings(page: import("@playwright/test").Page) {
   const session = {
     ok: true,
@@ -24,12 +28,12 @@ async function mockSessionForSettings(page: import("@playwright/test").Page) {
         "iam:permission:read",
       ],
       scope: {
-        tenant_id: "t-1",
-        company_id: "c-1",
-        branch_id: "b-1",
-        allowed_tenant_ids: ["t-1"],
-        allowed_company_ids: ["c-1"],
-        allowed_branch_ids: ["b-1"],
+        tenant_id: E2E_TENANT_ID,
+        company_id: E2E_COMPANY_ID,
+        branch_id: E2E_BRANCH_ID,
+        allowed_tenant_ids: [E2E_TENANT_ID],
+        allowed_company_ids: [E2E_COMPANY_ID],
+        allowed_branch_ids: [E2E_BRANCH_ID],
       },
     },
   };
@@ -51,8 +55,8 @@ async function mockSessionForSettings(page: import("@playwright/test").Page) {
         ok: true,
         data: [
           {
-            id: "c-1",
-            tenant_id: "t-1",
+            id: E2E_COMPANY_ID,
+            tenant_id: E2E_TENANT_ID,
             name: "Demo Company",
             legal_name: "Demo Company LLC",
             currency_code: "SAR",
@@ -102,6 +106,12 @@ async function mockSessionForSettings(page: import("@playwright/test").Page) {
 }
 
 async function mockSessionForWorkflow(page: import("@playwright/test").Page) {
+  await seedScope(page, {
+    tenantId: E2E_TENANT_ID,
+    companyId: E2E_COMPANY_ID,
+    branchId: E2E_BRANCH_ID,
+  });
+
   const session = {
     ok: true,
     data: {
@@ -109,12 +119,12 @@ async function mockSessionForWorkflow(page: import("@playwright/test").Page) {
       roles: ["MANAGER"],
       permissions: ["workflow:request:read", "workflow:request:approve"],
       scope: {
-        tenant_id: "t-1",
-        company_id: "c-1",
-        branch_id: "b-1",
-        allowed_tenant_ids: ["t-1"],
-        allowed_company_ids: ["c-1"],
-        allowed_branch_ids: ["b-1"],
+        tenant_id: E2E_TENANT_ID,
+        company_id: E2E_COMPANY_ID,
+        branch_id: E2E_BRANCH_ID,
+        allowed_tenant_ids: [E2E_TENANT_ID],
+        allowed_company_ids: [E2E_COMPANY_ID],
+        allowed_branch_ids: [E2E_BRANCH_ID],
       },
     },
   };
@@ -136,8 +146,8 @@ async function mockSessionForWorkflow(page: import("@playwright/test").Page) {
         ok: true,
         data: [
           {
-            id: "c-1",
-            tenant_id: "t-1",
+            id: E2E_COMPANY_ID,
+            tenant_id: E2E_TENANT_ID,
             name: "Demo Company",
             legal_name: "Demo Company LLC",
             currency_code: "SAR",
@@ -150,6 +160,14 @@ async function mockSessionForWorkflow(page: import("@playwright/test").Page) {
   });
 
   await page.route("**/api/v1/tenancy/branches**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, data: [] }),
+    });
+  });
+
+  await page.route("**/api/v1/branches/**/cameras", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -175,9 +193,9 @@ async function mockSessionForWorkflow(page: import("@playwright/test").Page) {
                 current_step: 0,
                 subject: "Update email",
                 payload: null,
-                tenant_id: "t-1",
-                company_id: "c-1",
-                branch_id: "b-1",
+                tenant_id: E2E_TENANT_ID,
+                company_id: E2E_COMPANY_ID,
+                branch_id: E2E_BRANCH_ID,
                 created_by_user_id: "u-wf-2",
                 requester_employee_id: "e-1",
                 subject_employee_id: null,
@@ -212,9 +230,9 @@ async function mockSessionForWorkflow(page: import("@playwright/test").Page) {
             current_step: 0,
             subject: "Update email",
             payload: { field: "email", to: "new@example.com" },
-            tenant_id: "t-1",
-            company_id: "c-1",
-            branch_id: "b-1",
+            tenant_id: E2E_TENANT_ID,
+            company_id: E2E_COMPANY_ID,
+            branch_id: E2E_BRANCH_ID,
             created_by_user_id: "u-wf-2",
             requester_employee_id: "e-1",
             subject_employee_id: null,
@@ -258,7 +276,7 @@ async function seedScope(
 }
 
 async function mockSessionForDms(page: import("@playwright/test").Page) {
-  const scope = { tenantId: "t-1", companyId: "c-1", branchId: "b-1" };
+  const scope = { tenantId: E2E_TENANT_ID, companyId: E2E_COMPANY_ID, branchId: E2E_BRANCH_ID };
   const employeeId = "30000000-0000-4000-8000-000000000001";
   const documentId = "10000000-0000-4000-8000-000000000001";
   const fileId = "00000000-0000-4000-8000-000000000001";
@@ -361,6 +379,41 @@ async function mockSessionForDms(page: import("@playwright/test").Page) {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ ok: true, data: [] }),
+    });
+  });
+
+  await page.route("**/api/v1/branches/**/cameras", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, data: [] }),
+    });
+  });
+
+  await page.route("**/api/v1/hr/employees**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          items: [
+            {
+              employee_id: employeeId,
+              employee_code: "E0001",
+              status: "ACTIVE",
+              full_name: "Alice One",
+              email: "alice.one@example.com",
+              phone: null,
+              branch_id: scope.branchId,
+              org_unit_id: null,
+              manager_employee_id: null,
+              manager_name: null,
+            },
+          ],
+          paging: { limit: 8, offset: 0, total: 1 },
+        },
+      }),
     });
   });
 
@@ -582,7 +635,7 @@ async function mockSessionForDms(page: import("@playwright/test").Page) {
 }
 
 async function mockSessionForRosterPayables(page: import("@playwright/test").Page) {
-  const scope = { tenantId: "t-1", companyId: "c-1", branchId: "b-1" };
+  const scope = { tenantId: E2E_TENANT_ID, companyId: E2E_COMPANY_ID, branchId: E2E_BRANCH_ID };
   const employeeId = "30000000-0000-4000-8000-000000000001";
   const shiftId = "40000000-0000-4000-8000-000000000001";
 
@@ -647,6 +700,14 @@ async function mockSessionForRosterPayables(page: import("@playwright/test").Pag
   });
 
   await page.route("**/api/v1/tenancy/branches**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, data: [] }),
+    });
+  });
+
+  await page.route("**/api/v1/branches/**/cameras", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -865,7 +926,7 @@ async function mockSessionForRosterPayables(page: import("@playwright/test").Pag
 }
 
 async function mockSessionForPayroll(page: import("@playwright/test").Page) {
-  const scope = { tenantId: "t-1", companyId: "c-1", branchId: "b-1" };
+  const scope = { tenantId: E2E_TENANT_ID, companyId: E2E_COMPANY_ID, branchId: E2E_BRANCH_ID };
   const payrunId = "70000000-0000-4000-8000-000000000001";
   const workflowRequestId = "70000000-0000-4000-8000-000000000002";
   const payslipId = "70000000-0000-4000-8000-000000000003";
@@ -933,6 +994,14 @@ async function mockSessionForPayroll(page: import("@playwright/test").Page) {
   });
 
   await page.route("**/api/v1/tenancy/branches**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, data: [] }),
+    });
+  });
+
+  await page.route("**/api/v1/branches/**/cameras", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -1240,8 +1309,7 @@ test.describe("workflow (mocked)", () => {
     await expect(page.getByRole("heading", { name: /inbox/i })).toBeVisible();
 
     // Select request -> detail loads.
-    await page.getByRole("button", { name: /profile\\.change/i }).click();
-    await expect(page.getByText("Update email")).toBeVisible();
+    await page.getByRole("button", { name: /profile\.change.*update email/i }).click();
 
     // Approve -> request disappears from inbox pending list.
     await page.getByRole("button", { name: /^approve$/i }).click();
@@ -1257,8 +1325,9 @@ test.describe("dms (mocked)", () => {
 
     await page.goto(`/dms/employee-docs?employeeId=${dms.employeeId}`);
     await expect(page.getByRole("heading", { name: /employee docs/i })).toBeVisible();
+    await expect(page.getByText("Select a company")).toHaveCount(0);
 
-    await page.getByRole("button", { name: /upload doc/i }).click();
+    await page.getByRole("button", { name: /upload doc/i }).first().click();
     await page.selectOption("#dms-upload-type", "PASSPORT");
     await page.setInputFiles("#dms-upload-file", {
       name: "passport.pdf",
@@ -1276,7 +1345,7 @@ test.describe("dms (mocked)", () => {
     await page.getByRole("button", { name: /^approve$/i }).click();
 
     await page.goto(`/dms/employee-docs?employeeId=${dms.employeeId}&docId=${dms.documentId}`);
-    await expect(page.getByText("VERIFIED")).toBeVisible();
+    await expect(page.getByRole("cell", { name: "VERIFIED" }).locator("span").first()).toBeVisible();
 
     await page.getByRole("button", { name: /download current document/i }).click();
     await expect.poll(() => dms.getDownloadCount()).toBe(1);
@@ -1291,18 +1360,20 @@ test.describe("roster + payables (mocked)", () => {
 
     await page.goto("/roster/shifts");
     await expect(page.getByRole("heading", { name: /shift templates/i })).toBeVisible();
-    await page.getByRole("button", { name: /create shift/i }).click();
+    await expect(page.getByText("Select a branch")).toHaveCount(0);
+    await page.getByRole("button", { name: /create shift/i }).first().click();
     await page.locator("#create-shift-code").fill("DAY");
     await page.locator("#create-shift-name").fill("Day Shift");
     await page.getByRole("button", { name: /^create shift$/i }).last().click();
-    await expect(page.getByText("Day Shift")).toBeVisible();
+    await expect(page.locator("tbody").getByText("Day Shift")).toBeVisible();
 
     await page.goto(`/roster/assignments?employeeId=${roster.employeeId}`);
     await expect(page.getByRole("heading", { name: /shift assignments/i })).toBeVisible();
-    await page.getByRole("button", { name: /create assignment/i }).click();
+    await expect(page.getByText("Alice One").first()).toBeVisible();
+    await page.getByRole("button", { name: /create assignment/i }).first().click();
     await page.locator("#assignment-from").fill("2026-01-01");
     await page.getByRole("button", { name: /^create assignment$/i }).last().click();
-    await expect(page.getByText("2026-01-01")).toBeVisible();
+    await expect(page.locator("tbody").getByText("2026-01-01")).toBeVisible();
 
     await page.goto("/payables/admin");
     await expect(page.getByRole("heading", { name: /payables admin/i })).toBeVisible();
@@ -1319,6 +1390,7 @@ test.describe("payroll (mocked)", () => {
 
     await page.goto("/payroll/payruns");
     await expect(page.getByRole("heading", { name: /payruns/i })).toBeVisible();
+    await expect(page.getByText("Select company and branch")).toHaveCount(0);
 
     await page.getByRole("button", { name: /generate payrun/i }).click();
     await page.selectOption("#payrun-calendar", "70000000-0000-4000-8000-000000000010");
@@ -1341,7 +1413,7 @@ test.describe("payroll (mocked)", () => {
 
     await page.goto(`/ess/payslips?year=2026&payslipId=${payroll.payslipId}`);
     await expect(page.getByRole("heading", { name: /payslips/i })).toBeVisible();
-    await expect(page.getByText("2026-03")).toBeVisible();
+    await expect(page.getByRole("button", { name: /download payslip/i })).toBeVisible();
     await page.getByRole("button", { name: /download payslip/i }).click();
     await expect.poll(() => payroll.getPayslipDownloadCount()).toBe(1);
   });

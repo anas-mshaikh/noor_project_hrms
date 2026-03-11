@@ -150,7 +150,10 @@ export default function EmployeeDocsPage() {
   });
 
   const items = React.useMemo(() => docsQ.data?.pages.flatMap((page) => page.items) ?? [], [docsQ.data]);
-  const selected = React.useMemo(() => items.find((item) => item.id === docId) ?? null, [docId, items]);
+  const selected = React.useMemo(
+    () => items.find((item) => item.id === docId) ?? (!docId ? items[0] ?? null : null),
+    [docId, items],
+  );
 
   React.useEffect(() => {
     if (!employeeId || docId || items.length === 0) return;

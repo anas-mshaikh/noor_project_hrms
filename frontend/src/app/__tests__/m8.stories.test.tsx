@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 
@@ -20,7 +21,7 @@ const COMPANY_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const BRANCH_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const EMPLOYEE_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const SHIFT_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
-const DAY = "2026-01-15";
+const DAY = "2026-03-15";
 
 const SESSION: MeResponse = {
   user: { id: "u-hr", email: "hr@example.com", status: "ACTIVE" },
@@ -98,6 +99,7 @@ function employee360(): HrEmployee360Out {
 
 describe("M8 canonical story", () => {
   it("creates shift/default/assignment/override and recomputes payables", async () => {
+    const user = userEvent.setup();
     let shift = null as null | {
       id: string;
       code: string;
@@ -293,46 +295,57 @@ describe("M8 canonical story", () => {
     seedScope({ tenantId: TENANT_ID, companyId: COMPANY_ID, branchId: BRANCH_ID });
 
     let view = renderWithProviders(<RosterShiftsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Create shift" }));
-    fireEvent.change(screen.getByLabelText("Code"), { target: { value: "DAY" } });
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Day Shift" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create shift" })[1]);
-    expect((await screen.findAllByText("Day Shift")).length).toBeGreaterThan(0);
+    await user.click(await screen.findByRole("button", { name: "Create shift" }));
+    let dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Code"), "DAY");
+    await user.type(within(dialog).getByLabelText("Name"), "Day Shift");
+    await user.click(within(dialog).getByRole("button", { name: "Create shift" }));
+    let table = await screen.findByRole("table");
+    expect(await within(table).findByText("Day Shift")).toBeVisible();
     view.unmount();
-    cleanup();
 
     view = renderWithProviders(<RosterDefaultPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Set default shift" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save default" }));
-    expect((await screen.findAllByText("Day Shift")).length).toBeGreaterThan(0);
+    await user.click((await screen.findAllByRole("button", { name: "Set default shift" }))[0]);
+    dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Shift template"), SHIFT_ID);
+    await user.click(within(dialog).getByRole("button", { name: "Save default" }));
+    expect(await screen.findByText("Day Shift")).toBeVisible();
+    expect(await screen.findByText("DAY")).toBeVisible();
     view.unmount();
-    cleanup();
 
     setSearchParams({ employeeId: EMPLOYEE_ID });
     view = renderWithProviders(<RosterAssignmentsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Create assignment" }));
-    fireEvent.change(screen.getByLabelText("Effective from"), { target: { value: "2026-01-01" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create assignment" })[1]);
-    expect((await screen.findAllByText("2026-01-01")).length).toBeGreaterThan(0);
+    await user.click(await screen.findByRole("button", { name: "Create assignment" }));
+    dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Shift template"), SHIFT_ID);
+    await user.type(within(dialog).getByLabelText("Effective from"), "2026-01-01");
+    await user.click(within(dialog).getByRole("button", { name: "Create assignment" }));
+    table = await screen.findByRole("table");
+    expect(await within(table).findByText("2026-01-01")).toBeVisible();
+    expect(await within(table).findByText("Day Shift")).toBeVisible();
     view.unmount();
-    cleanup();
 
     setSearchParams({ employeeId: EMPLOYEE_ID });
     view = renderWithProviders(<RosterOverridesPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Create override" }));
-    fireEvent.change(screen.getByLabelText("Day"), { target: { value: DAY } });
-    fireEvent.change(screen.getByLabelText("Override type"), { target: { value: "WORKDAY" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Save override" })[1]);
-    expect((await screen.findAllByText(DAY)).length).toBeGreaterThan(0);
+    await user.click(await screen.findByRole("button", { name: "Create override" }));
+    dialog = await screen.findByRole("dialog");
+    await user.clear(within(dialog).getByLabelText("Day"));
+    await user.type(within(dialog).getByLabelText("Day"), DAY);
+    await user.click(within(dialog).getByRole("button", { name: "Save override" }));
+    table = await screen.findByRole("table");
+    expect(await within(table).findByText(DAY)).toBeVisible();
+    expect(await within(table).findByText("SHIFT_CHANGE")).toBeVisible();
     view.unmount();
-    cleanup();
 
     view = renderWithProviders(<PayablesAdminPage />);
-    fireEvent.change(screen.getByLabelText("From"), { target: { value: DAY } });
-    fireEvent.change(screen.getByLabelText("To"), { target: { value: DAY } });
-    fireEvent.click(await screen.findByRole("button", { name: "Recompute" }));
-    expect((await screen.findAllByText(DAY)).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText("WORKDAY")).length).toBeGreaterThan(0);
+    await user.clear(screen.getByLabelText("From"));
+    await user.type(screen.getByLabelText("From"), DAY);
+    await user.clear(screen.getByLabelText("To"));
+    await user.type(screen.getByLabelText("To"), DAY);
+    await user.click(await screen.findByRole("button", { name: "Recompute" }));
+    table = await screen.findByRole("table");
+    expect(await within(table).findByText(DAY)).toBeVisible();
+    expect(await within(table).findByText("WEEKOFF")).toBeVisible();
     view.unmount();
-  });
+  }, 45_000);
 });

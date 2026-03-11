@@ -57,7 +57,7 @@ export default function EssPayslipsPage() {
 
   const items = React.useMemo(() => payslipsQ.data?.items ?? [], [payslipsQ.data]);
   const selected = React.useMemo<PayslipOut | null>(
-    () => items.find((item) => item.id === payslipId) ?? detailQ.data ?? null,
+    () => items.find((item) => item.id === payslipId) ?? (!payslipId ? items[0] ?? null : detailQ.data ?? null),
     [detailQ.data, items, payslipId],
   );
 

@@ -24,10 +24,10 @@ export function seedScope(opts: {
 }
 
 export function clearScope(): void {
+  useSelection.persist.clearStorage();
   useSelection.getState().reset();
 }
 
 export function seedSession(session: MeResponse): void {
   useAuth.getState().setFromSession(session);
 }
-

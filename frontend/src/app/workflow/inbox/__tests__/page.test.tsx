@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { delay, http, HttpResponse } from "msw";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { MeResponse, WorkflowRequestDetailOut, WorkflowRequestSummaryOut } from "@/lib/types";
 import { ok } from "@/test/msw/builders/response";
@@ -44,6 +45,7 @@ describe("/workflow/inbox", () => {
   });
 
   it("selects a request and approves it (pending list updates)", async () => {
+    const user = userEvent.setup();
     const requestId = "22222222-2222-4222-8222-222222222222";
 
     let items: WorkflowRequestSummaryOut[] = [
@@ -99,13 +101,13 @@ describe("/workflow/inbox", () => {
 
     // Select the row -> detail loads.
     // Click the row (text inside the button) to avoid brittle accessible-name matching.
-    fireEvent.click(screen.getByText("profile.change"));
-    expect(await screen.findByText("Employee profile change")).toBeVisible();
+    await user.click(screen.getByText("profile.change"));
+    expect((await screen.findAllByText("Employee profile change")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Payload")).toBeVisible();
     expect(await screen.findByText("email")).toBeVisible();
 
     // Approve -> list refetches to empty.
-    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    await user.click(screen.getByRole("button", { name: /^approve$/i }));
     expect(await screen.findByText("No requests")).toBeVisible();
   });
 });

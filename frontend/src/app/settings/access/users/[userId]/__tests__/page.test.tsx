@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { IamRoleAssignIn, MeResponse, RoleOut, UserRoleOut } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
@@ -37,6 +38,7 @@ describe("/settings/access/users/[userId]", () => {
   it(
     "validates branch role assignments and supports add/remove",
     async () => {
+    const user = userEvent.setup();
     const USER_ID = "00000000-0000-4000-8000-000000000001";
     const roles: RoleOut[] = [
       { code: "ADMIN", name: "Admin", description: "Full access" },
@@ -107,26 +109,28 @@ describe("/settings/access/users/[userId]", () => {
     // The page shows an "Add role" CTA in both the toolbar and the empty state.
     // Click the first (toolbar) one to open the assignment sheet.
     const addRoleButtons = await screen.findAllByRole("button", { name: /add role/i });
-    fireEvent.click(addRoleButtons[0]!);
+    await user.click(addRoleButtons[0]!);
+    const assignDialog = await screen.findByRole("dialog");
 
     // Select role and scope=Branch, but leave company/branch ids empty.
-    fireEvent.change(await screen.findByLabelText("Role"), { target: { value: "ADMIN" } });
-    fireEvent.change(await screen.findByLabelText("Scope"), { target: { value: "BRANCH" } });
-    fireEvent.click(screen.getByRole("button", { name: /^assign$/i }));
+    await user.selectOptions(within(assignDialog).getByLabelText("Role"), "ADMIN");
+    await user.selectOptions(within(assignDialog).getByLabelText("Scope"), "BRANCH");
+    await user.click(within(assignDialog).getByRole("button", { name: /^assign$/i }));
     expect(await screen.findByText("Company is required.")).toBeVisible();
 
-    fireEvent.change(await screen.findByLabelText("Company ID"), { target: { value: "c-1" } });
-    fireEvent.click(screen.getByRole("button", { name: /^assign$/i }));
+    await user.type(within(assignDialog).getByLabelText("Company ID"), "c-1");
+    await user.click(within(assignDialog).getByRole("button", { name: /^assign$/i }));
     expect(await screen.findByText("Branch is required.")).toBeVisible();
 
-    fireEvent.change(await screen.findByLabelText("Branch ID"), { target: { value: "b-1" } });
-    fireEvent.click(screen.getByRole("button", { name: /^assign$/i }));
+    await user.type(within(assignDialog).getByLabelText("Branch ID"), "b-1");
+    await user.click(within(assignDialog).getByRole("button", { name: /^assign$/i }));
 
     expect(await screen.findByText("ADMIN")).toBeVisible();
 
     // Remove the role assignment.
-    fireEvent.click(screen.getByRole("button", { name: /remove/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^remove$/i }));
+    await user.click(screen.getByRole("button", { name: /remove/i }));
+    const removeDialog = await screen.findByRole("dialog");
+    await user.click(within(removeDialog).getByRole("button", { name: /^remove$/i }));
 
     expect(await screen.findByText("No role assignments")).toBeVisible();
     },

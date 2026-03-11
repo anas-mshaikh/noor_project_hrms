@@ -31,6 +31,11 @@ export default function MssTeamMemberPage({ params }: { params: { employeeId?: s
     params?.employeeId ??
     null;
   const employeeId = parseUuidParam(employeeIdRaw);
+  const profileQ = useQuery({
+    queryKey: employeeId ? mssKeys.member(employeeId) : ["mss", "member", "invalid", employeeIdRaw ?? "missing"],
+    queryFn: () => getTeamMember(employeeId as string),
+    enabled: Boolean(employeeId),
+  });
 
   if (!employeeIdRaw) {
     return (
@@ -59,11 +64,6 @@ export default function MssTeamMemberPage({ params }: { params: { employeeId?: s
       />
     );
   }
-
-  const profileQ = useQuery({
-    queryKey: mssKeys.member(employeeId),
-    queryFn: () => getTeamMember(employeeId),
-  });
 
   const profile = profileQ.data as MssEmployeeProfileOut | undefined;
 

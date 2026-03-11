@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { fireEvent, screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { MeResponse } from "@/lib/types";
 import { renderWithProviders } from "@/test/utils/render";
@@ -28,19 +29,20 @@ const SESSION: MeResponse = {
 
 describe("/payroll/payruns", () => {
   it("generates a payrun and navigates to detail", async () => {
+    const user = userEvent.setup();
     seedSession(SESSION);
     seedScope({ tenantId: TENANT_ID, companyId: COMPANY_ID, branchId: BRANCH_ID });
 
     renderWithProviders(<PayrollPayrunsPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Generate payrun" }));
-    fireEvent.change(screen.getByLabelText("Calendar"), {
-      target: { value: "11111111-1111-4111-8111-111111111111" },
-    });
-    fireEvent.change(screen.getByLabelText("Period"), {
-      target: { value: "2026-03" },
-    });
-    fireEvent.click(screen.getAllByRole("button", { name: "Generate payrun" })[1]);
+    await user.click(await screen.findByRole("button", { name: "Generate payrun" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.selectOptions(
+      within(dialog).getByLabelText("Calendar"),
+      "11111111-1111-4111-8111-111111111111"
+    );
+    await user.selectOptions(within(dialog).getByLabelText("Period"), "2026-03");
+    await user.click(within(dialog).getByRole("button", { name: "Generate payrun" }));
 
     expect(routerPush).toHaveBeenCalledWith(`/payroll/payruns/${PAYRUN_ID}`);
   });

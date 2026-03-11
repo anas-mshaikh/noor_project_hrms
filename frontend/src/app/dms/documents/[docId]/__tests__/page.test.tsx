@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 
 import type { DmsDocumentOut, MeResponse } from "@/lib/types";
 import { fail, ok } from "@/test/msw/builders/response";
@@ -81,8 +81,9 @@ describe("/dms/documents/[docId]", () => {
 
     renderWithProviders(<DmsDocumentCompatibilityPage params={{ docId: DOC_ID }} />);
 
-    expect(await screen.findByText("Resolving the best document view for this link.")).toBeVisible();
-    expect(routerReplace).toHaveBeenCalledWith(`/dms/my-docs?docId=${DOC_ID}`);
+    await waitFor(() => {
+      expect(routerReplace).toHaveBeenLastCalledWith(`/dms/my-docs?docId=${DOC_ID}`);
+    });
   });
 
   it("shows a recovery screen when the document cannot be resolved", async () => {
@@ -100,7 +101,8 @@ describe("/dms/documents/[docId]", () => {
 
     renderWithProviders(<DmsDocumentCompatibilityPage params={{ docId: DOC_ID }} />);
 
-    expect(await screen.findByText("We could not open this document directly")).toBeVisible();
+    expect(await screen.findByText("Not found")).toBeVisible();
+    expect(screen.getByText("The requested document does not exist or is not accessible.")).toBeVisible();
     expect(await screen.findByText(`Document ID: ${DOC_ID}`)).toBeVisible();
   });
 });

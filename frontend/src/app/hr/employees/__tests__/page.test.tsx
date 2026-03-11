@@ -127,7 +127,20 @@ describe("/hr/employees", () => {
           HttpResponse.json(ok({ items: rows, paging: { limit: 25, offset: 0, total: rows.length } }))
         ),
         http.post("*/api/v1/hr/employees", async ({ request }) => {
-          const body = (await request.json()) as any;
+          const body = (await request.json()) as {
+            employee: {
+              company_id: string;
+              employee_code: string;
+              status?: string | null;
+              join_date?: string | null;
+            };
+            person: {
+              first_name: string;
+              last_name: string;
+              email?: string | null;
+              phone?: string | null;
+            };
+          };
           const employeeId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
           const created: HrEmployee360Out = {
             employee: {
