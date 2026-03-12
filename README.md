@@ -1,318 +1,208 @@
-# Attendance System
+# Noor HRMS
 
-Phase 1 (CCTV attendance, offline):
-- Upload door camera video → worker processes → events + attendance + analytics
+Noor HRMS is a multi-tenant HR and operations platform built around a FastAPI backend, a Next.js web application, background workers, and a shared workflow engine. The current platform covers HR core, workflow approvals, attendance and leave, employee documents, roster and payables, payroll, IAM, tenancy, and ESS surfaces.
 
-Phase 2 (Admin Import, Excel → Postgres → optional Firebase replica):
-- Admin uploads monthly `.xlsx` (POS + Attendance sheets) → backend parses/validates → stores normalized summaries in Postgres
-- Optional publish step can sync summary-only docs to Firebase Firestore for a mobile app
+## What is in this system
 
-## Local dev (Docker Compose)
+- HR Core and Employee 360: employee directory, profiles, employment context, linked-user flows, onboarding, and profile change requests.
+- Workflow backbone: request definitions, approvals, inbox and outbox, notifications, attachments, and terminal side effects across modules.
+- Attendance and Leave: attendance days, punch flows, corrections, leave requests, leave approvals, and team calendar views.
+- DMS: employee-scoped document library, document types, document verification workflows, expiry tracking, and ESS self-service document access.
+- Roster and Payables: shift templates, branch defaults, employee assignments, date overrides, and payable-day views for employee, team, and admin.
+- Payroll: calendars, periods, components, salary structures, compensation records, payruns, approval/publish flows, export, and ESS payslips.
+- Platform and IAM: multi-tenant scope, role and permission management, access users and roles, correlation IDs, notifications, and auditability.
 
-Run:
+## Repository layout
+
+- `backend/` - FastAPI app, SQLAlchemy models, Alembic migrations, RQ workers, and backend test suite.
+- `backend/app/` - API routers, domain services, middleware, auth and scope logic, and background jobs.
+- `backend/alembic/` - Alembic migration history and migration environment.
+- `backend/tests/` - Pytest suite, contract coverage, smoke checks, and golden API journeys.
+- `frontend/` - Next.js admin and ESS web app, Vitest and Playwright tests, DS components, and feature modules.
+- `mobile-application/` - Expo React Native client.
+- `docs/` - release, module, testing, production-readiness, and OpenAPI snapshot documentation.
+- `scripts/` - release-drill and backend CI helper scripts.
+- `docker-compose.yaml` - local multi-service stack for API, web, Postgres, Redis, workers, and test services.
+
+## Architecture at a glance
+
+- Backend: FastAPI with stable JSON envelopes for API responses and standardized error handling.
+- Frontend: Next.js app with DS templates, React Query, RTL/MSW tests, and Playwright smoke coverage.
+- Jobs and workers: Redis + RQ workers for workflow hooks, HR processing, notifications, and related background work.
+- Data: Postgres as the primary system of record, with Alembic-managed schema changes.
+- Scope and security: tenant, company, and branch context are fail-closed; correlation IDs are returned in headers and surfaced in error payloads.
+- Downloads: document and payroll download endpoints return raw bytes on success and standardized error envelopes on failure paths.
+
+## Local development
+
+### Full stack with Docker
+
+Run the full stack from the repository root:
 
 ```bash
 docker compose up --build
 ```
 
-Services:
-- Web (Next.js): `http://localhost:3000`
-- API (FastAPI docs): `http://localhost:8000/docs`
-- Postgres (pgvector): `localhost:5432` (db/user/pass: `attendance`)
-- Adminer (DB UI): `http://localhost:8080`
+Default local services:
+
+- Web app: `http://localhost:3000`
+- Backend API docs: `http://localhost:8000/docs`
+- Postgres: `localhost:5432`
+- Adminer: `http://localhost:8080`
 
 Notes:
-- DB migrations run automatically via the `migrate` service.
-- Persistent data and outputs live under `backend/data/` (mounted into containers).
-- Models live under `backend/models/` (mounted into containers).
 
-## Frontend i18n
+- Migrations run through the `migrate` service during startup.
+- Persistent local data is stored under `backend/data/`.
+- Local model caches and related assets are stored under `backend/models/`.
+- Default local DB credentials in Docker are `attendance / attendance / attendance`.
 
-The web admin supports locale selection with cookie-backed persistence.
-
-- Locale cookie: `attendance-admin-locale`
-- Supported locales: `en`, `ar`, `de`, `fr`, `es`
-- SSR applies `<html lang>` and `<html dir>` from cookie/accept-language before hydration.
-- Directionality: `ar` uses RTL; all other locales use LTR.
-- Coverage:
-  - `en` + `ar`: broad UI coverage
-  - `de` + `fr`: core-surface coverage (shell, login, settings, common strings)
-  - `es`: core surfaces + end-to-end HR resume screening module coverage (openings, runs, pipeline, screening details)
-  - Non-translated keys safely fall back to English
-
-## DB vNext (enterprise foundation)
-
-DB vNext introduces enterprise-ready HRMS foundation schemas (`tenancy`, `iam`, `hr_core`, `workflow`, `dms`) in the **same** Postgres database.
-
-- Details: `docs/DB_VNEXT.md`
-- Smoke test: `python3 backend/scripts/db_vnext_smoke_test.py`
-  - In Docker Compose, this also runs automatically via the `tests` service.
-- Alembic migrations are squashed into a single baseline revision for dev velocity:
-  - `backend/alembic/versions/000000000000_baseline_squash.py`
-  - If you have an older dev DB volume, either reset (`docker compose down -v`) or stamp the DB to `000000000000` (see `docs/DB_VNEXT.md`).
-
-Current API foundation state:
-- Legacy `/api/v1/organizations*` and `/api/v1/stores*` routes are removed.
-- Module APIs are branch-first (`/api/v1/branches/{branch_id}/...`).
-- Protected endpoints are tenant-scoped and permission-driven (RBAC via `iam.*`).
-- Multi-tenant users must send `X-Tenant-Id`; single-tenant users default automatically.
-- Responses include `X-Correlation-Id`; errors include `correlation_id`.
-- Critical IAM/HR mutations are audited in `audit.audit_log`.
-- In-app notifications flow through `workflow.notification_outbox` -> `workflow.notifications`.
-- Workflow Engine v1 is available under `/api/v1/workflow/*` (definitions, requests, approvals).
-- Leave Management v1 is available under `/api/v1/leave/*` (workflow-linked approvals).
-- DMS + Employee Documents v1 is available under `/api/v1/dms/*`, `/api/v1/hr/employees/{id}/documents`, `/api/v1/ess/me/documents`.
-
-## Leave Management v1
-
-Leave is implemented as a first-class domain (`leave.*`) integrated with the workflow engine:
-- Workflow links: `workflow.requests.entity_type="leave.leave_request"` and `entity_id=leave.leave_requests.id`
-- Approval side-effects (ledger consumption + `attendance.day_overrides`) are executed via workflow terminal hooks
-- Weekly off config is **required** per branch (`leave.weekly_off` must have all weekdays 0..6) or leave submission fails
-  - Default: branches are auto-initialized to **Fri+Sat off** (Saudi weekend); override per branch if needed.
-
-Docs: `docs/LEAVE.md`
-
-## Attendance Regularization v1
-
-Attendance regularization is implemented as a first-class domain (`attendance.attendance_corrections`) integrated with the workflow engine:
-- Workflow links: `workflow.requests.entity_type="attendance.attendance_correction"` and `entity_id=attendance.attendance_corrections.id`
-- Approval side-effects are executed via workflow terminal hooks:
-  - On approval, a deterministic override is written into `attendance.day_overrides` with `override_kind='CORRECTION'`
-- Effective status precedence is deterministic:
-  - Leave (`ON_LEAVE`) wins over correction overrides
-  - Correction overrides win over base attendance
-- v1 rule: attendance corrections are **strict-deny** on leave days (cannot create/approve corrections for a day with `ON_LEAVE`)
-
-Docs: `docs/ATTENDANCE_REGULARIZATION.md`
-
-## DMS + Employee Documents v1
-
-DMS is implemented as a first-class domain (`dms.*`) with:
-- File upload/download (LOCAL storage v1 under `backend/data/dms/`)
-- Employee document library (HR creates/versions; ESS reads own documents)
-- Workflow-based document verification (`DOCUMENT_VERIFICATION`) via workflow terminal hooks
-- Expiry rules + an idempotent expiry worker that emits in-app notifications
-
-Docs: `docs/DMS.md`
-
-## HR Profile Change v1
-
-HR Profile Change is implemented as a first-class domain (`hr_core.profile_change_requests`)
-integrated with the workflow engine:
-- Workflow links: `workflow.requests.entity_type="hr_core.profile_change_request"` and
-  `entity_id=hr_core.profile_change_requests.id`
-- On approval, the workflow terminal hook applies the approved change-set to
-  `hr_core.*` in the same DB transaction (no separate "apply" endpoint).
-
-Docs: `docs/PROFILE_CHANGE_V1.md`
-
-## Onboarding v2
-
-Onboarding v2 is implemented as a first-class domain (schema `onboarding`) with:
-- HR plan templates + template tasks
-- HR-created employee bundles with task snapshots
-- ESS task submissions (FORM/DOCUMENT/ACK)
-- DMS integration for DOCUMENT tasks (optional document verification workflow)
-- "Submit packet" aggregates submitted onboarding FORM tasks into a single
-  HR Profile Change request (workflow-powered)
-
-Docs: `docs/ONBOARDING_V2.md`
-
-### Safety backup / restore (dev)
-
-Backup (schema + data) using the Docker `db` container (no local Postgres tools required):
+### Frontend-only development
 
 ```bash
-mkdir -p backups
-docker compose exec -T db pg_dump -U attendance -d attendance --format=custom --file /tmp/attendance.dump
-docker compose cp db:/tmp/attendance.dump ./backups/attendance.dump
+cd frontend
+npm ci
+npm run dev
 ```
 
-Restore (OVERWRITES the database):
+### Backend-only development
 
 ```bash
-docker compose cp ./backups/attendance.dump db:/tmp/attendance.dump
-docker compose exec -T db pg_restore -U attendance -d attendance --clean --if-exists /tmp/attendance.dump
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pytest -q
 ```
 
-## Phase 2 Admin Import (Excel)
+## Testing and release gates
 
-Frontend page:
-- `http://localhost:3000/admin/import`
+### Frontend
 
-Dev-only admin gate:
-- In docker-compose, `ADMIN_PASSWORD` defaults to `admin`. Override with:
-  ```bash
-  ADMIN_PASSWORD="your-secret" docker compose up --build
-  ```
+Fast local gate:
 
-Backend endpoints:
-- `POST /api/v1/imports` (multipart: `file`, optional `month_key=YYYY-MM`, optional `uploaded_by`)
-- `POST /api/v1/imports/{dataset_id}/publish`
-- `GET /api/v1/months/{month_key}/leaderboard`
+```bash
+cd frontend
+npm ci
+npm run lint
+npx tsc --noEmit --pretty false
+npm run test:ci
+npm run build
+```
 
-Import retry behavior:
-- Uploads are idempotent per month by `(month_key, checksum)` (same file returns the same `dataset_id`).
-- If an import previously `FAILED`, re-uploading the same file will re-validate it (controlled by `IMPORTS_REVALIDATE_FAILED_ON_REUPLOAD`, default `true`).
-
-Firebase sync (optional):
-- Provide `FIREBASE_SERVICE_ACCOUNT_PATH` (mounted in the container) and set `MOBILE_SYNC_ENABLED=true`.
-
-## HR module (Phase 1: Openings + Resume parsing)
-
-What it does:
-- Create branch-scoped hiring openings
-- Upload resumes to local disk
-- Parse resumes in the background using RQ + Unstructured
-- Store parsed artifacts locally (`parsed.json` + `clean.txt`) for debugging
-
-Docker services:
-- The `hr_worker` service listens on the RQ queue named `hr`.
-
-Key endpoints:
-- `POST /api/v1/branches/{branch_id}/openings`
-- `GET  /api/v1/branches/{branch_id}/openings`
-- `GET  /api/v1/branches/{branch_id}/openings/{opening_id}`
-- `PATCH /api/v1/branches/{branch_id}/openings/{opening_id}`
-- `POST /api/v1/branches/{branch_id}/openings/{opening_id}/resumes/upload` (multipart files)
-- `GET  /api/v1/branches/{branch_id}/openings/{opening_id}/resumes`
-- `GET  /api/v1/branches/{branch_id}/resumes/{resume_id}/parsed` (debug artifact JSON)
-
-Local storage paths:
-- Raw uploads: `backend/data/hr/resumes/{opening_id}/{resume_id}/original/...`
-- Parsed artifacts: `backend/data/hr/resumes/{opening_id}/{resume_id}/parsed/parsed.json`
-
-## HR module (Phase 2: Resume embeddings + debug search)
-
-What it adds:
-- Builds 2–3 derived "views" per parsed resume (`full`, `skills`, `experience`)
-- Embeds those views with a local HuggingFace model (default: `BAAI/bge-m3`)
-- Stores embeddings in Postgres via `pgvector` for later retrieval/ranking
-
-How it runs:
-- Parsing happens first (`UPLOADED -> PARSING -> PARSED`)
-- After a resume is `PARSED`, the worker automatically enqueues an embedding job:
-  `PENDING -> EMBEDDING -> EMBEDDED` (or `FAILED`)
-
-Key debug endpoints:
-- `GET  /api/v1/branches/{branch_id}/openings/{opening_id}/resumes/index-status`
-- `GET  /api/v1/branches/{branch_id}/resumes/{resume_id}/views`
-- `POST /api/v1/branches/{branch_id}/openings/{opening_id}/search` (disabled unless `HR_SEARCH_DEBUG_ENABLED=true`)
-
-Config (env vars):
-- `HR_EMBEDDINGS_ENABLED=true|false`
-- `HR_EMBED_MODEL_NAME="BAAI/bge-m3"` (model switch lever)
-- `HR_EMBED_DIM=1024` (must match DB `vector(dim)`; change requires a migration)
-- `HR_EMBED_CACHE_DIR="./models/text_embeddings"` (mounted in Docker via `backend/models`)
-- `HR_EMBED_DEVICE="cpu"`
-- `HR_EMBED_MAX_SEQ_LENGTH=8192`
-- `HR_EMBED_MAX_CHARS=12000`
-- `HR_VIEW_MIN_CHARS=120`
-- `HR_SEARCH_DEBUG_ENABLED=false|true`
-
-Note on model switching:
-- The DB column is `vector(1024)` because BGE-M3 outputs 1024-d embeddings.
-- Switching to a model with a different embedding dimension will require a migration.
-
-## HR module (Phase 3: ScreeningRun = retrieve + rerank)
-
-What it adds:
-- An async "ScreeningRun" pipeline per opening:
-  1) **retrieve** Top-K candidates using embeddings (pgvector)
-  2) **rerank** a candidate pool using `BAAI/bge-reranker-v2-m3` (local, CPU OK)
-  3) persist ranked results for paging / audit
-
-Key endpoints:
-- `POST /api/v1/branches/{branch_id}/openings/{opening_id}/screening-runs` (create + enqueue)
-- `GET  /api/v1/branches/{branch_id}/screening-runs/{run_id}` (poll status + progress)
-- `POST /api/v1/branches/{branch_id}/screening-runs/{run_id}/cancel`
-- `POST /api/v1/branches/{branch_id}/screening-runs/{run_id}/retry` (creates a new run)
-- `GET  /api/v1/branches/{branch_id}/screening-runs/{run_id}/results?page=1&page_size=50`
-
-Config (env vars):
-- `HR_RERANK_ENABLED=true|false`
-- `HR_RERANKER_MODEL_NAME="BAAI/bge-reranker-v2-m3"`
-- `HR_RERANKER_BATCH_SIZE=32`
-- `HR_RERANKER_MAX_CHARS=12000`
-- `HR_SCREENING_JOB_TIMEOUT_SEC=3600`
-- Defaults for run config (optional overrides):
-  - `HR_SCREENING_DEFAULT_VIEW_TYPES='["skills","experience","full"]'`
-  - `HR_SCREENING_DEFAULT_K_PER_VIEW=200`
-  - `HR_SCREENING_DEFAULT_POOL_SIZE=400`
-  - `HR_SCREENING_DEFAULT_TOP_N=200`
-
-## HR module (Phase 4: Explanations = Gemini JSON, async)
-
-What it adds:
-- Post-ranking explanations for top ScreeningRun candidates using Gemini (structured JSON).
-- Stored in Postgres (`hr_screening_explanations`) as **JSON only** (no raw resume text stored).
-- Runs asynchronously via RQ (queue: `"hr"`) so ScreeningRuns are not blocked.
-
-Key endpoints:
-- `GET  /api/v1/branches/{branch_id}/screening-runs/{run_id}/results/{resume_id}/explanation`
-- `POST /api/v1/branches/{branch_id}/screening-runs/{run_id}/explanations` (enqueue explain top N)
-- `POST /api/v1/branches/{branch_id}/screening-runs/{run_id}/results/{resume_id}/explanation/recompute` (enqueue single)
-
-Config (env vars):
-- `GEMINI_API_KEY="..."` (required to run Phase 4)
-- `GEMINI_MODEL="gemini-2.0-flash-lite-001"`
-- `GEMINI_TIMEOUT_SEC=60`
-- `GEMINI_MAX_TOP_N=20` (cost/latency control)
-
-Behavior notes:
-- If `GEMINI_API_KEY` is missing/empty, the backend will **skip auto-enqueueing** explanations
-  after ScreeningRun completion, and manual endpoints will return a clear 400 error.
-
-## HR module (Phase 5: ATS MVP = pipeline stages + applications)
-
-What it adds:
-- A minimal Applicant Tracking System (ATS) layer on top of Openings + Resumes.
-- Treats each **resume** as the applicant (MVP simplification: 1 resume = 1 application).
-- Lets you create applications from ScreeningRun results (bulk) or manually, then move them
-  through a pipeline (Kanban stages) and add notes.
-
-Default pipeline stages:
-- Created automatically when an opening is created:
-  `Applied -> Screened -> Interview -> Offer -> Hired (terminal) / Rejected (terminal)`
-
-Key endpoints:
-- `GET  /api/v1/branches/{branch_id}/openings/{opening_id}/pipeline-stages`
-- `POST /api/v1/branches/{branch_id}/screening-runs/{run_id}/applications` (bulk add to pipeline)
-  - `{ "top_n": 20, "stage_name": "Screened" }`
-  - OR `{ "resume_ids": ["..."], "stage_name": "Screened" }`
-- `POST /api/v1/branches/{branch_id}/openings/{opening_id}/applications` (manual add)
-  - `{ "resume_id": "...", "stage_name": "Applied" }`
-- `GET  /api/v1/branches/{branch_id}/openings/{opening_id}/applications` (Kanban list)
-- `PATCH /api/v1/branches/{branch_id}/applications/{application_id}` (move stage)
-- `POST /api/v1/branches/{branch_id}/applications/{application_id}/reject`
-- `POST /api/v1/branches/{branch_id}/applications/{application_id}/hire`
-- Notes:
-  - `POST /api/v1/branches/{branch_id}/applications/{application_id}/notes`
-  - `GET  /api/v1/branches/{branch_id}/applications/{application_id}/notes`
-
-## Notifications (Milestone 1)
-
-In-app notifications are enabled (email is intentionally deferred).
-
-Worker pipeline:
-- Producer table: `workflow.notification_outbox`
-- Consumer process: `backend/app/worker/notification_worker.py`
-- User inbox table: `workflow.notifications`
-
-API endpoints:
-- `GET  /api/v1/notifications?unread_only=0|1&limit&cursor`
-- `GET  /api/v1/notifications/unread-count`
-- `POST /api/v1/notifications/{id}/read`
-- `POST /api/v1/notifications/read-all`
-
-## Test status and commands
-
-Primary backend validation:
+Compose-backed integration gate:
 
 ```bash
 docker compose up --build --abort-on-container-exit --exit-code-from tests tests
 ```
 
-Current baseline:
-- Backend tests pass in Docker (`18 passed`).
+Playwright smoke:
+
+```bash
+cd frontend
+npm run test:e2e -- --project=chromium
+```
+
+Release-candidate drill:
+
+```bash
+./scripts/rc-check.sh
+RUN_E2E=1 ./scripts/rc-check.sh
+```
+
+### Backend
+
+Fast backend gate:
+
+```bash
+./scripts/backend-ci.sh
+```
+
+Backend integration gate:
+
+```bash
+./scripts/backend-integration.sh
+```
+
+Golden backend journeys:
+
+```bash
+RUN_GOLDEN=1 ./scripts/backend-nightly.sh
+```
+
+Full backend test entrypoint:
+
+```bash
+python3 backend/scripts/run_all_tests.py
+```
+
+## CI/CD
+
+Frontend and backend both have GitHub Actions workflows plus local `act` parity.
+
+- Frontend CI and release docs: `docs/CI_CD/CI_CD.md`
+- Backend CI docs: `docs/CI_CD/CI_CD_BACKEND.md`
+- Frontend release checklist: `docs/CI_CD/PROD_RELEASE_CHECKLIST.md`
+- Backend release checklist: `docs/CI_CD/BACKEND_RELEASE_CHECKLIST.md`
+- Rollback and deployment references:
+  - `docs/CI_CD/ROLLBACK.md`
+  - `docs/CI_CD/DEPLOYMENT.md`
+
+If you use `act` locally on Apple Silicon, use `--container-architecture linux/amd64`.
+
+## Documentation map
+
+### Production and readiness
+
+- Production overview: `docs/V0_production.md`
+- Frontend production audit: `docs/frontend/V0_PRODUCTION_READINESS_AUDIT.md`
+- Testing guidance: `docs/Tests/TESTING_GUIDELINES.md`
+- OpenAPI contract snapshot: `docs/openapi/backend.openapi.snapshot.json`
+
+### Frontend milestone docs
+
+- Platform hardening: `docs/frontend/M2_PLATFORM_HARDENING.md`
+- Client setup pack: `docs/frontend/M3_CLIENT_SETUP_PACK.md`
+- HR Core and Employee 360: `docs/frontend/M4_HR_CORE_EMPLOYEE_360.md`
+- Workflow: `docs/frontend/M5_WORKFLOW.md`
+- Attendance and Leave: `docs/frontend/M6_ATTENDANCE_LEAVE.md`
+
+### Module packs
+
+- DMS: `docs/Modules/M7_DMS.md`
+- Roster and Payables: `docs/Modules/M8_ROSTER_PAYABLES.md`
+- Payroll: `docs/Modules/M9_PAYROLL.md`
+
+### Operations and support
+
+- Frontend support runbook: `docs/CI_CD/SUPPORT_RUNBOOK.md`
+- Backend support runbook: `docs/CI_CD/BACKEND_SUPPORT_RUNBOOK.md`
+- RBAC matrix: `docs/CI_CD/RBAC_MATRIX.md`
+
+## API and platform guarantees
+
+- JSON APIs follow the stable envelope contract:
+  - success: `{ "ok": true, "data": ... }`
+  - failure: `{ "ok": false, "error": { "code": "...", "message": "...", "details": ..., "correlation_id": "..." } }`
+- Successful and failed responses include `X-Correlation-Id`.
+- Multi-tenant scope is fail-closed for tenant, company, and branch selection.
+- Raw download endpoints keep byte responses on success and standardized error behavior on failure.
+- Workflow remains the approval mechanism across leave, attendance correction, DMS verification, payroll approval, and related cross-module actions.
+
+## Security and configuration notes
+
+- Do not commit secrets. Sensitive settings stay env-driven.
+- Shared local Docker environments should override the default admin password:
+
+```bash
+ADMIN_PASSWORD="your-secret" docker compose up --build
+```
+
+- Common environment-driven integrations include API keys, service-account paths, and storage settings; keep them outside the repository.
+
+## Recommended starting points
+
+- Product and rollout context: `docs/V0_production.md`
+- Frontend release process: `docs/CI_CD/PROD_RELEASE_CHECKLIST.md`
+- Backend release process: `docs/CI_CD/BACKEND_RELEASE_CHECKLIST.md`
+- Local and GitHub CI usage: `docs/CI_CD/CI_CD.md` and `docs/CI_CD/CI_CD_BACKEND.md`
