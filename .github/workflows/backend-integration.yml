@@ -1,0 +1,85 @@
+name: Backend Integration CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CI: "1"
+  DOCKER_BUILDKIT: "1"
+  COMPOSE_DOCKER_CLI_BUILD: "1"
+
+jobs:
+  backend_integration:
+    name: Backend integration + contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Disk usage before cleanup
+        run: df -h
+      - name: Free runner disk space
+        run: |
+          if [ "${ACT:-false}" = "true" ]; then
+            echo "Skipping GitHub-hosted runner cleanup under act"
+            exit 0
+          fi
+
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+
+          df -h
+      - name: Docker disk usage before compose
+        run: docker system df || true
+      - name: Start backend infra
+        run: docker compose up -d db redis
+      - name: Run migrations from scratch
+        run: docker compose up --build --abort-on-container-exit backend_image migrate
+      - name: Run backend API/integration/contract suite
+        run: docker compose run --rm backend_tests pytest -q -c tests/pytest.ini -m "api or integration or contract"
+      - name: Run DB smoke
+        run: docker compose run --rm backend_tests python tests/smoke/test_db_vnext_smoke.py
+      - name: Check OpenAPI snapshot
+        run: docker compose run --rm backend_tests python scripts/openapi_snapshot.py --check
+      - name: Disk usage after backend integration
+        if: always()
+        run: |
+          df -h
+          docker system df || true
+      - name: Dump compose logs on failure
+        if: failure()
+        run: docker compose logs --no-color > backend-compose.log
+      - name: Upload backend integration logs
+        if: failure() && hashFiles('backend-compose.log') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-integration-logs
+          path: backend-compose.log
+          if-no-files-found: ignore
+          retention-days: 5
+      - name: Publish backend integration summary
+        if: always()
+        run: |
+          {
+            echo "## Backend integration disk usage"
+            echo '```'
+            df -h
+            echo
+            docker system df || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Tear down compose stack
+        if: always()
+        run: docker compose down -v --remove-orphans

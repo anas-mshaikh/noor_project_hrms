@@ -1,0 +1,50 @@
+name: Backend CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CI: "1"
+  PYTHON_VERSION: "3.12"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  DATABASE_URL: "postgresql+psycopg://attendance:attendance@localhost:5432/attendance"
+  REDIS_URL: "redis://localhost:6379/0"
+
+jobs:
+  backend_fast_gate:
+    name: Backend lint + typecheck + fast pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Disk usage before install
+        run: df -h
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements-ci.txt
+      - name: Install backend dev dependencies
+        run: python -m pip install --no-input -r requirements-ci.txt
+      - name: Backend lint
+        run: python -m ruff check app/core app/auth app/shared tests/support tests/domains/platform scripts
+      - name: Backend typecheck
+        run: python -m mypy --follow-imports=skip app/core app/shared tests/support scripts/openapi_snapshot.py scripts/db_vnext_smoke_test.py app/api/v1/health.py
+      - name: Backend pytest fast
+        run: pytest -q -c tests/pytest.ini -m "not slow and not e2e and not golden" tests/domains/profile_change/unit
+      - name: Disk usage after fast gate
+        if: always()
+        run: df -h

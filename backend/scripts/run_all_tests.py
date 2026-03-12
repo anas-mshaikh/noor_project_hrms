@@ -44,12 +44,12 @@ def main() -> int:
 
     # Keep CI-friendly defaults:
     # - Use tests/pytest.ini for marker definitions and shared options.
-    # - Skip "slow" tests unless explicitly requested by the developer.
+    # - Skip "slow" and live golden/e2e tests unless explicitly requested.
     #
     # Developers can override the marker expression by passing:
     #   PYTEST_MARK_EXPR="slow" python scripts/run_all_tests.py
     pytest_ini = tests_dir / "pytest.ini"
-    marker_expr = "not slow"
+    marker_expr = "not slow and not e2e and not golden"
     if "PYTEST_MARK_EXPR" in os.environ:
         marker_expr = os.environ["PYTEST_MARK_EXPR"].strip() or marker_expr
 

@@ -76,6 +76,12 @@ def _warn(msg: str) -> None:
     print(f"[db_vnext_smoke] WARN: {msg}")
 
 
+def _assert_required_columns(conn, schema: str, table: str, columns: list[str]) -> None:
+    missing = [column for column in columns if not _column_exists(conn, schema, table, column)]
+    if missing:
+        raise RuntimeError(f"Missing columns on {schema}.{table}: {', '.join(missing)}")
+
+
 def _assert_index(conn, schema: str, index_name: str) -> None:
     row = conn.execute(
         text(
@@ -430,7 +436,11 @@ def main() -> int:
                     )
                     """
                 ),
-                {"id": request_step_id, "request_id": request_id, "approver_user_id": approver_user_id},
+                {
+                    "id": request_step_id,
+                    "request_id": request_id,
+                    "approver_user_id": approver_user_id,
+                },
             )
 
             # ------------------------------------------------------------------
@@ -448,7 +458,11 @@ def main() -> int:
                     )
                     """
                 ),
-                {"id": file_id, "tenant_id": tenant_id, "object_key": f"smoke/{file_id.hex}/smoke.txt"},
+                {
+                    "id": file_id,
+                    "tenant_id": tenant_id,
+                    "object_key": f"smoke/{file_id.hex}/smoke.txt",
+                },
             )
             conn.execute(
                 text(
@@ -532,7 +546,43 @@ def main() -> int:
                 _warn("face.employee_faces not found; skipping face rewiring check")
 
             # ------------------------------------------------------------------
-            # Index checks (keeps this lightweight; more can be added as needed).
+            # Tenant/scope column checks for critical tables.
+            # ------------------------------------------------------------------
+            critical_columns = {
+                ("tenancy", "companies"): ["tenant_id"],
+                ("tenancy", "branches"): ["tenant_id", "company_id"],
+                ("iam", "user_roles"): ["tenant_id", "company_id", "branch_id"],
+                ("hr_core", "persons"): ["tenant_id"],
+                ("hr_core", "employees"): ["tenant_id", "company_id"],
+                ("hr_core", "employee_employment"): ["tenant_id", "company_id", "branch_id"],
+                ("workflow", "workflow_definitions"): ["tenant_id", "company_id"],
+                ("workflow", "requests"): ["tenant_id", "company_id", "branch_id"],
+                ("dms", "files"): ["tenant_id"],
+                ("dms", "document_types"): ["tenant_id"],
+                ("dms", "documents"): ["tenant_id"],
+                ("roster", "shift_templates"): ["tenant_id", "branch_id"],
+                ("roster", "branch_defaults"): ["tenant_id", "branch_id"],
+                ("roster", "shift_assignments"): ["tenant_id", "branch_id", "employee_id"],
+                ("roster", "roster_overrides"): ["tenant_id", "branch_id", "employee_id"],
+                ("attendance", "payable_day_summaries"): ["tenant_id", "branch_id", "employee_id"],
+                ("payroll", "calendars"): ["tenant_id"],
+                ("payroll", "periods"): ["tenant_id", "calendar_id"],
+                ("payroll", "components"): ["tenant_id"],
+                ("payroll", "salary_structures"): ["tenant_id"],
+                ("payroll", "employee_compensations"): [
+                    "tenant_id",
+                    "employee_id",
+                    "salary_structure_id",
+                ],
+                ("payroll", "payruns"): ["tenant_id", "branch_id", "calendar_id"],
+                ("payroll", "payslips"): ["tenant_id", "employee_id", "payrun_id"],
+            }
+            for (schema, table), columns in critical_columns.items():
+                if _table_exists(conn, schema, table):
+                    _assert_required_columns(conn, schema, table, columns)
+
+            # ------------------------------------------------------------------
+            # Index checks (keeps this lightweight; fail only on critical misses).
             # ------------------------------------------------------------------
             _assert_index(conn, "workflow", "ix_requests_tenant_status_type_created_at")
             _assert_index(conn, "workflow", "ix_request_steps_approver_decided_at")
@@ -541,8 +591,30 @@ def main() -> int:
             _assert_index(conn, "workflow", "ix_notification_outbox_tenant_status_retry")
             _assert_index(conn, "dms", "ix_documents_tenant_expires_at")
             _assert_index(conn, "dms", "ix_document_links_tenant_entity")
+            _assert_index(conn, "dms", "ix_document_types_tenant_is_active")
+            _assert_index(conn, "dms", "ix_documents_tenant_owner")
+            _assert_index(conn, "dms", "ix_documents_tenant_status")
+            _assert_index(conn, "dms", "ix_document_versions_tenant_doc_created_at")
+            _assert_index(conn, "dms", "ix_expiry_events_tenant_notify_on_date")
             _assert_index(conn, "hr_core", "ix_employee_government_ids_tenant_expires_at")
             _assert_index(conn, "iam", "uq_users_email_not_deleted")
+            _assert_index(conn, "roster", "ix_shift_assignments_employee_effective_from")
+            _assert_index(conn, "roster", "ix_shift_assignments_branch_effective_from")
+            _assert_index(conn, "roster", "ix_roster_overrides_branch_day")
+            _assert_index(conn, "attendance", "ix_payable_day_summaries_branch_day")
+            _assert_index(conn, "attendance", "ix_payable_day_summaries_employee_day")
+            _assert_index(conn, "payroll", "ix_payroll_calendars_tenant_active")
+            _assert_index(conn, "payroll", "ix_payroll_periods_tenant_dates")
+            _assert_index(conn, "payroll", "ix_payroll_components_tenant_type_active")
+            _assert_index(conn, "payroll", "ix_payroll_salary_structures_tenant_active")
+            _assert_index(
+                conn, "payroll", "ix_payroll_employee_compensations_employee_effective_from"
+            )
+            _assert_index(conn, "payroll", "ix_payroll_payruns_tenant_period_status")
+            _assert_index(conn, "payroll", "ix_payroll_payrun_items_payrun")
+            _assert_index(conn, "payroll", "ix_payroll_payrun_items_employee")
+            _assert_index(conn, "payroll", "ix_payroll_payrun_item_lines_item")
+            _assert_index(conn, "payroll", "ix_payroll_payslips_employee_created_at")
         finally:
             # Keep the smoke test safe to run on every startup.
             tx.rollback()

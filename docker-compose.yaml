@@ -64,7 +64,10 @@ services:
 
   backend_tests:
     # Runs DB vNext smoke + all backend tests after migrations, then exits.
-    image: attendence_system-backend
+    image: attendence_system-backend-tests
+    build:
+      context: ./backend
+      target: test_deps
     env_file:
       - ./backend/.env.docker
     environment:
@@ -72,10 +75,9 @@ services:
     volumes:
       # Mount backend source so tests always run against the working tree.
       - ./backend:/app
+      - ./docs:/docs
     depends_on:
       migrate:
-        condition: service_completed_successfully
-      backend_image:
         condition: service_completed_successfully
     command:
       [
@@ -164,11 +166,43 @@ services:
           "CMD",
           "python",
           "-c",
-          "import sys,urllib.request; u='http://localhost:8000/api/v1/health'; sys.exit(0 if urllib.request.urlopen(u, timeout=2).status==200 else 1)",
+          "import sys,urllib.request; u='http://localhost:8000/api/v1/readyz'; sys.exit(0 if urllib.request.urlopen(u, timeout=2).status==200 else 1)",
         ]
       interval: 5s
       timeout: 3s
       retries: 30
+
+  backend_ci:
+    image: attendence_system-backend
+    env_file:
+      - ./backend/.env.docker
+    volumes:
+      - ./backend:/app
+      - ./backend/data:/app/data
+      - ./backend/models:/app/models
+      - ./backend/secrets:/app/secrets:ro
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      backend_image:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys,urllib.request; u='http://localhost:8000/api/v1/readyz'; sys.exit(0 if urllib.request.urlopen(u, timeout=2).status==200 else 1)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    profiles: ["backend-ci"]
 
   worker:
     image: attendence_system-backend

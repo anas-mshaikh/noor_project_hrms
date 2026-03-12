@@ -1,0 +1,81 @@
+name: Backend Golden API Journeys
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CI: "1"
+  DOCKER_BUILDKIT: "1"
+  COMPOSE_DOCKER_CLI_BUILD: "1"
+
+jobs:
+  backend_golden:
+    name: Backend golden journeys
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Disk usage before cleanup
+        run: df -h
+      - name: Free runner disk space
+        run: |
+          if [ "${ACT:-false}" = "true" ]; then
+            echo "Skipping GitHub-hosted runner cleanup under act"
+            exit 0
+          fi
+
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+
+          df -h
+      - name: Docker disk usage before compose
+        run: docker system df || true
+      - name: Start backend golden stack
+        run: docker compose --profile backend-ci up -d db redis
+      - name: Run migrations
+        run: docker compose --profile backend-ci up --build --abort-on-container-exit backend_image migrate
+      - name: Start backend CI API service
+        run: docker compose --profile backend-ci up -d backend_ci
+      - name: Run golden API journeys
+        run: docker compose --profile backend-ci run --rm -e BASE_URL=http://backend_ci:8000 backend_tests pytest -q -c tests/pytest.ini -m golden
+      - name: Disk usage after backend golden journeys
+        if: always()
+        run: |
+          df -h
+          docker system df || true
+      - name: Dump compose logs on failure
+        if: failure()
+        run: docker compose --profile backend-ci logs --no-color > backend-golden-compose.log
+      - name: Upload backend golden logs
+        if: failure() && hashFiles('backend-golden-compose.log') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-golden-logs
+          path: backend-golden-compose.log
+          if-no-files-found: ignore
+          retention-days: 5
+      - name: Publish backend golden summary
+        if: always()
+        run: |
+          {
+            echo "## Backend golden disk usage"
+            echo '```'
+            df -h
+            echo
+            docker system df || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Tear down compose stack
+        if: always()
+        run: docker compose --profile backend-ci down -v --remove-orphans

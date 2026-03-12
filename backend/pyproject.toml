@@ -1,0 +1,36 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [
+  "alembic/versions_archive",
+  "data",
+  "models",
+]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+ignore_missing_imports = true
+no_implicit_optional = true
+check_untyped_defs = false
+pretty = true
+exclude = [
+  "alembic/versions_archive/",
+  "alembic/versions/",
+  "models/",
+  "data/",
+]
+
+[[tool.mypy.overrides]]
+module = [
+  "app.core.*",
+  "app.auth.*",
+  "app.shared.*",
+  "tests.support.*",
+  "scripts.*",
+]
+disallow_untyped_defs = false

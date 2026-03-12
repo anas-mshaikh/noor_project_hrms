@@ -4,12 +4,9 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 2 * * *"
-  push:
-    branches:
-      - main
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: e2e-smoke-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -17,33 +14,91 @@ permissions:
 
 env:
   CI: "1"
+  NODE_VERSION: "20"
+  NEXT_TELEMETRY_DISABLED: "1"
+  PLAYWRIGHT_BASE_URL: "http://127.0.0.1:3000"
 
 jobs:
   playwright_smoke:
-    name: Playwright smoke
+    name: Frontend smoke (Chromium)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-      - name: Run compose Playwright smoke
-        run: docker compose --profile e2e up --build --abort-on-container-exit --exit-code-from frontend_e2e frontend_e2e
-      - name: Dump compose logs on failure
-        if: failure()
-        run: docker compose --profile e2e logs --no-color
-      - name: Upload Playwright report
+
+      - name: Disk usage before cleanup
+        run: df -h
+
+      - name: Free runner disk space
+        run: |
+          if [ "${ACT:-false}" = "true" ]; then
+            echo "Skipping GitHub-hosted runner cleanup under act"
+            exit 0
+          fi
+
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+
+          df -h
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Clean previous frontend outputs
+        run: rm -rf .next playwright-report test-results
+
+      - name: Install frontend dependencies
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Disk usage before tests
+        run: |
+          df -h
+          du -sh node_modules .next "$HOME/.cache/ms-playwright" 2>/dev/null || true
+
+      - name: Run Playwright smoke suite
+        run: npx playwright test e2e/smoke.spec.ts --project=chromium
+
+      - name: Disk usage after tests
+        if: always()
+        run: |
+          df -h
+          du -sh .next playwright-report test-results "$HOME/.cache/ms-playwright" 2>/dev/null || true
+
+      - name: Upload Playwright HTML report
         if: failure() && hashFiles('frontend/playwright-report/**') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-smoke-report
           path: frontend/playwright-report
-          retention-days: 14
-      - name: Upload Playwright test results
-        if: failure() && hashFiles('frontend/test-results/**') != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-test-results
-          path: frontend/test-results
-          retention-days: 14
-      - name: Tear down compose stack
+          if-no-files-found: ignore
+          retention-days: 5
+
+      - name: Publish job summary
         if: always()
-        run: docker compose --profile e2e down -v --remove-orphans
+        run: |
+          {
+            echo "## Disk usage"
+            echo '```'
+            df -h
+            echo '```'
+            echo
+            echo "## Frontend outputs"
+            echo '```'
+            du -sh .next playwright-report test-results "$HOME/.cache/ms-playwright" 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean frontend test artifacts
+        if: always()
+        run: rm -rf .next playwright-report test-results

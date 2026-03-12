@@ -26,6 +26,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # "runtime_deps" intentionally does not COPY app code: docker-compose mounts the
 # working tree for dev and tests. This keeps rebuilds fast when code changes.
 
+FROM runtime_deps AS test_deps
+
+COPY requirements-dev.txt /app/requirements-dev.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r /app/requirements-dev.txt
+
 FROM runtime_deps AS runtime
 
 COPY alembic /app/alembic

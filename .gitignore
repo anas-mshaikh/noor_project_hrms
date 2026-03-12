@@ -33,3 +33,4 @@ backend/legacy_test_scripts/
 # Large demo videos
 docs/Demo_videos/
 *.mov
+*.mypy_cache/
