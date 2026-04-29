@@ -25,7 +25,7 @@ npm run build
 
 ### Integration gate
 ```bash
-docker compose up --build --abort-on-container-exit --exit-code-from tests tests
+SKIP_TESTS=0 docker compose up --build --abort-on-container-exit --exit-code-from tests tests
 ```
 
 ### E2E smoke gate
@@ -66,6 +66,8 @@ act workflow_dispatch --container-architecture linux/amd64 -W .github/workflows/
 - `act push` is the closest workflow-level simulation of the required PR and main-branch gates.
 - Integration and e2e workflows call `docker compose` from inside the workflow. If your local `act` image does not expose the host Docker socket correctly, run the equivalent commands directly from the repo root instead.
 - These workflows do not require application secrets for lint, typecheck, unit/component, integration, or smoke runs.
+- Local `docker compose up` skips the compose test gate by default.
+- Use `SKIP_TESTS=0` only when you intentionally want the compose-backed tests to run.
 - CI must never use `SKIP_TESTS=1`. That escape hatch is for local dev containers only.
 - `./scripts/rc-check.sh` is the canonical local release-candidate drill. Use `RUN_E2E=1 ./scripts/rc-check.sh` when you want the compose-backed smoke gate included.
 

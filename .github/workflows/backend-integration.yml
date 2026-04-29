@@ -48,11 +48,11 @@ jobs:
       - name: Run migrations from scratch
         run: docker compose up --build --abort-on-container-exit backend_image migrate
       - name: Run backend API/integration/contract suite
-        run: docker compose run --rm backend_tests pytest -q -c tests/pytest.ini -m "api or integration or contract"
+        run: SKIP_TESTS=0 docker compose run --rm backend_tests pytest -q -c tests/pytest.ini -m "api or integration or contract"
       - name: Run DB smoke
-        run: docker compose run --rm backend_tests python tests/smoke/test_db_vnext_smoke.py
+        run: SKIP_TESTS=0 docker compose run --rm backend_tests python tests/smoke/test_db_vnext_smoke.py
       - name: Check OpenAPI snapshot
-        run: docker compose run --rm backend_tests python scripts/openapi_snapshot.py --check
+        run: SKIP_TESTS=0 docker compose run --rm backend_tests python scripts/openapi_snapshot.py --check
       - name: Disk usage after backend integration
         if: always()
         run: |

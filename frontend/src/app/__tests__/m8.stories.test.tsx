@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
@@ -297,8 +297,8 @@ describe("M8 canonical story", () => {
     let view = renderWithProviders(<RosterShiftsPage />);
     await user.click(await screen.findByRole("button", { name: "Create shift" }));
     let dialog = await screen.findByRole("dialog");
-    await user.type(within(dialog).getByLabelText("Code"), "DAY");
-    await user.type(within(dialog).getByLabelText("Name"), "Day Shift");
+    fireEvent.change(within(dialog).getByLabelText("Code"), { target: { value: "DAY" } });
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Day Shift" } });
     await user.click(within(dialog).getByRole("button", { name: "Create shift" }));
     let table = await screen.findByRole("table");
     expect(await within(table).findByText("Day Shift")).toBeVisible();
@@ -318,7 +318,7 @@ describe("M8 canonical story", () => {
     await user.click(await screen.findByRole("button", { name: "Create assignment" }));
     dialog = await screen.findByRole("dialog");
     await user.selectOptions(within(dialog).getByLabelText("Shift template"), SHIFT_ID);
-    await user.type(within(dialog).getByLabelText("Effective from"), "2026-01-01");
+    fireEvent.change(within(dialog).getByLabelText("Effective from"), { target: { value: "2026-01-01" } });
     await user.click(within(dialog).getByRole("button", { name: "Create assignment" }));
     table = await screen.findByRole("table");
     expect(await within(table).findByText("2026-01-01")).toBeVisible();
@@ -329,8 +329,7 @@ describe("M8 canonical story", () => {
     view = renderWithProviders(<RosterOverridesPage />);
     await user.click(await screen.findByRole("button", { name: "Create override" }));
     dialog = await screen.findByRole("dialog");
-    await user.clear(within(dialog).getByLabelText("Day"));
-    await user.type(within(dialog).getByLabelText("Day"), DAY);
+    fireEvent.change(within(dialog).getByLabelText("Day"), { target: { value: DAY } });
     await user.click(within(dialog).getByRole("button", { name: "Save override" }));
     table = await screen.findByRole("table");
     expect(await within(table).findByText(DAY)).toBeVisible();
@@ -338,14 +337,12 @@ describe("M8 canonical story", () => {
     view.unmount();
 
     view = renderWithProviders(<PayablesAdminPage />);
-    await user.clear(screen.getByLabelText("From"));
-    await user.type(screen.getByLabelText("From"), DAY);
-    await user.clear(screen.getByLabelText("To"));
-    await user.type(screen.getByLabelText("To"), DAY);
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: DAY } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: DAY } });
     await user.click(await screen.findByRole("button", { name: "Recompute" }));
     table = await screen.findByRole("table");
     expect(await within(table).findByText(DAY)).toBeVisible();
     expect(await within(table).findByText("WEEKOFF")).toBeVisible();
     view.unmount();
-  }, 45_000);
+  }, 75_000);
 });

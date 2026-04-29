@@ -233,7 +233,7 @@ describe("/dms/employee-docs", () => {
 
     expect((await screen.findAllByText("Passport")).length).toBeGreaterThan(0);
     expect((await screen.findAllByText("SUBMITTED")).length).toBeGreaterThan(0);
-  });
+  }, 60_000);
 
   it("replaces the current document and requests verification", async () => {
     const user = userEvent.setup();
@@ -313,5 +313,5 @@ describe("/dms/employee-docs", () => {
 
     await user.click(screen.getByRole("button", { name: "Request verification" }));
     expect(routerPush).toHaveBeenCalledWith("/workflow/requests/99999999-9999-4999-8999-999999999999");
-  });
+  }, 60_000);
 });

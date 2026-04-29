@@ -23,7 +23,7 @@ docker compose --profile backend-ci up --build --abort-on-container-exit backend
 docker compose --profile backend-ci up -d backend_ci
 
 if [[ "$RUN_GOLDEN" == "1" ]]; then
-  docker compose --profile backend-ci run --rm -e BASE_URL=http://backend_ci:8000 backend_tests pytest -q -c tests/pytest.ini -m golden
+  SKIP_TESTS=0 docker compose --profile backend-ci run --rm -e BASE_URL=http://backend_ci:8000 backend_tests pytest -q -c tests/pytest.ini -m golden
 fi
 
 df -h

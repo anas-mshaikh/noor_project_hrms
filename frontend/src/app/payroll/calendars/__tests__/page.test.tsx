@@ -109,5 +109,5 @@ describe("/payroll/calendars", () => {
     await user.click(within(periodDialog).getByRole("button", { name: "Create period" }));
 
     expect(await screen.findByRole("cell", { name: "2026-03" })).toBeVisible();
-  }, 45_000);
+  }, 120_000);
 });

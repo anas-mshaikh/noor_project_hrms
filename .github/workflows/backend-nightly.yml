@@ -48,7 +48,7 @@ jobs:
       - name: Start backend CI API service
         run: docker compose --profile backend-ci up -d backend_ci
       - name: Run golden API journeys
-        run: docker compose --profile backend-ci run --rm -e BASE_URL=http://backend_ci:8000 backend_tests pytest -q -c tests/pytest.ini -m golden
+        run: SKIP_TESTS=0 docker compose --profile backend-ci run --rm -e BASE_URL=http://backend_ci:8000 backend_tests pytest -q -c tests/pytest.ini -m golden
       - name: Disk usage after backend golden journeys
         if: always()
         run: |

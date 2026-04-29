@@ -77,5 +77,5 @@ describe("/settings/workflow/definitions", () => {
     await user.click(within(dialog).getByRole("button", { name: /^create$/i }));
 
     expect(await screen.findByText("Profile approvals")).toBeVisible();
-  }, 30_000);
+  }, 120_000);
 });

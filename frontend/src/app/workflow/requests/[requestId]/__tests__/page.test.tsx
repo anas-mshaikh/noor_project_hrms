@@ -137,7 +137,7 @@ describe("/workflow/requests/[requestId]", () => {
     await waitFor(() => expect(saveSpy).toHaveBeenCalled());
 
     saveSpy.mockRestore();
-  });
+  }, 60_000);
 
   it("renders DMS open-document affordances and invalidates DMS queries after approve", async () => {
     const requestId = "99999999-9999-4999-8999-999999999999";

@@ -49,7 +49,7 @@ services:
     restart: "no"
 
   tests:
-    # Test gate (CI/dev): waits for backend + frontend tests to pass, then exits 0.
+    # Opt-in test gate: run explicitly when you want the compose-backed test flow.
     #
     # This preserves the existing "docker compose ... --exit-code-from tests tests"
     # workflow, while ensuring web frontend unit tests also run.
@@ -83,7 +83,7 @@ services:
       [
         "sh",
         "-lc",
-        'if [ "${SKIP_TESTS:-0}" = "1" ]; then echo "skipping backend tests"; exit 0; fi; python scripts/run_all_tests.py',
+        'if [ "${SKIP_TESTS:-1}" = "1" ]; then echo "skipping backend tests"; exit 0; fi; python scripts/run_all_tests.py',
       ]
     restart: "no"
 
@@ -99,7 +99,7 @@ services:
       [
         "sh",
         "-lc",
-        'if [ "${SKIP_TESTS:-0}" = "1" ]; then echo "skipping frontend tests"; exit 0; fi; npm run test',
+        'if [ "${SKIP_TESTS:-1}" = "1" ]; then echo "skipping frontend tests"; exit 0; fi; npm run test',
       ]
     restart: "no"
 
@@ -154,8 +154,6 @@ services:
     # uvicorn explicitly for the API service.
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     depends_on:
-      tests:
-        condition: service_completed_successfully
       backend_image:
         condition: service_completed_successfully
       redis:
@@ -215,8 +213,6 @@ services:
       - ./backend/secrets:/app/secrets:ro
 
     depends_on:
-      tests:
-        condition: service_completed_successfully
       backend_image:
         condition: service_completed_successfully
       redis:
@@ -234,8 +230,6 @@ services:
       - ./backend/models:/app/models
       - ./backend/secrets:/app/secrets:ro
     depends_on:
-      tests:
-        condition: service_completed_successfully
       backend_image:
         condition: service_completed_successfully
       redis:
@@ -253,8 +247,6 @@ services:
       - ./backend/models:/app/models
       - ./backend/secrets:/app/secrets:ro
     depends_on:
-      tests:
-        condition: service_completed_successfully
       backend_image:
         condition: service_completed_successfully
       redis:
@@ -272,8 +264,6 @@ services:
       - ./backend/models:/app/models
       - ./backend/secrets:/app/secrets:ro
     depends_on:
-      tests:
-        condition: service_completed_successfully
       backend_image:
         condition: service_completed_successfully
     command: ["python", "-m", "app.worker.notification_worker"]

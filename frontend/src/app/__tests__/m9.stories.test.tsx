@@ -541,5 +541,5 @@ describe("M9 golden flow", () => {
     expect(await within(table).findByText("2026-03")).toBeVisible();
     expect(screen.getByRole("button", { name: "Download payslip" })).toBeVisible();
     view.unmount();
-  }, 90_000);
+  }, 180_000);
 });

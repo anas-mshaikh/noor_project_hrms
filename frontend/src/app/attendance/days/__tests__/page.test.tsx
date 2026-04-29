@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { fireEvent, screen } from "@testing-library/react";
 
+import { ymdFromDateLocal } from "@/lib/dateRange";
 import type { MeResponse } from "@/lib/types";
 import { ok } from "@/test/msw/builders/response";
 import { server } from "@/test/msw/server";
@@ -26,13 +27,17 @@ const SESSION: MeResponse = {
 
 describe("/attendance/days", () => {
   it("renders days and opens a day detail panel", async () => {
+    const now = new Date();
+    const day1 = ymdFromDateLocal(new Date(now.getFullYear(), now.getMonth(), 1));
+    const day2 = ymdFromDateLocal(new Date(now.getFullYear(), now.getMonth(), 2));
+
     server.use(
       http.get("*/api/v1/attendance/me/days", () =>
         HttpResponse.json(
           ok({
             items: [
               {
-                day: "2026-03-01",
+                day: day1,
                 base_status: "ABSENT",
                 effective_status: "PRESENT_OVERRIDE",
                 base_minutes: 0,
@@ -49,13 +54,13 @@ describe("/attendance/days", () => {
                 },
               },
               {
-                day: "2026-03-02",
+                day: day2,
                 base_status: "PRESENT",
                 effective_status: "PRESENT",
                 base_minutes: 510,
                 effective_minutes: 510,
-                first_in: "2026-03-02T09:00:00Z",
-                last_out: "2026-03-02T17:30:00Z",
+                first_in: `${day2}T09:00:00Z`,
+                last_out: `${day2}T17:30:00Z`,
                 has_open_session: false,
                 sources: ["PUNCH"],
                 override: null,
@@ -69,13 +74,12 @@ describe("/attendance/days", () => {
     seedSession(SESSION);
     renderWithProviders(<AttendanceDaysPage />);
 
-    expect(await screen.findByText("2026-03-01")).toBeVisible();
-    expect(screen.getByText("2026-03-02")).toBeVisible();
+    expect(await screen.findByText(day1)).toBeVisible();
+    expect(screen.getByText(day2)).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "2026-03-01" }));
+    fireEvent.click(screen.getByRole("button", { name: day1 }));
 
     const link = await screen.findByRole("link", { name: "Request correction" });
-    expect(link).toHaveAttribute("href", "/attendance/corrections/new?day=2026-03-01");
+    expect(link).toHaveAttribute("href", `/attendance/corrections/new?day=${day1}`);
   });
 });
-
